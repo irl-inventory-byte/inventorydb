@@ -168,6 +168,7 @@ export default async function ReceivePage({
             id: item.item_id,
             status: item.status,
             hub: item.current_hub,
+            type: item.item_type === "rig" ? "rig" : "sd_card",
           }))}
         />
 

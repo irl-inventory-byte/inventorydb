@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { STATUS_LABELS } from "@/lib/labels";
 import { classifyScans, type ScanState } from "@/lib/scan";
 import { OUT_STATUSES, type Status } from "@/lib/schema";
+import { TypeBadge, TypeCounts } from "../ItemTypeBadge";
 import styles from "./scanbox.module.css";
 
 // What each action accepts: sending needs stock, receiving needs a card that is out.
@@ -31,7 +32,7 @@ export default function ScanBox({
   injected,
 }: {
   id: string;
-  items: { id: string; status: Status; hub: string }[];
+  items: { id: string; status: Status; hub: string; type?: string }[];
   mode: "send" | "receive";
   rows?: number;
   hub?: string; // receive only: the hub chosen in "Receiving at"
@@ -82,6 +83,9 @@ export default function ScanBox({
     });
   }, [text, statuses, items, mode, hub]);
   const ok = results.filter((r) => r.state === "ok").length;
+  // SD card or Rig for each matched item, so mixed batches are easy to check.
+  const typeOf = useMemo(() => new Map(items.map((i) => [i.id, i.type ?? "sd_card"])), [items]);
+  const okTypes = results.filter((r) => r.state === "ok" && r.id).map((r) => typeOf.get(r.id!));
   const problems = results.filter((r) => r.state === "wrong" || r.state === "unknown").length;
 
   return (
@@ -115,6 +119,11 @@ export default function ScanBox({
         <div className={styles.summary}>
           <strong>{results.length}</strong> scanned · <strong>{ok}</strong> ready
           {problems > 0 && <span className={styles.bad}> · {problems} problem(s)</span>}
+          {okTypes.length > 0 && (
+            <span style={{ marginLeft: 10 }}>
+              <TypeCounts types={okTypes} />
+            </span>
+          )}
           <button type="button" className={styles.clear} onClick={() => setText("")}>
             Clear
           </button>
@@ -130,6 +139,7 @@ export default function ScanBox({
           {[...results].reverse().map((r, i) => (
             <li key={`${r.code}-${i}`} className={r.state === "ok" ? styles.ok : r.state === "duplicate" ? styles.dup : styles.bad}>
               <span aria-hidden>{MARK[r.state]}</span>
+              {r.id && typeOf.has(r.id) && <TypeBadge type={typeOf.get(r.id)} />}
               <code>{r.id ?? r.code}</code>
               <span className={styles.msg}>
                 {r.state === "ok" && (STATUS_LABELS[r.status as Status] ?? r.status)}

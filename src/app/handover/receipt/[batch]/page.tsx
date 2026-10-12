@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { TypeBadge, TypeCounts, rowTint } from "../../../ItemTypeBadge";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { toDataURL as qrToDataURL } from "qrcode";
@@ -168,6 +169,23 @@ export default async function ReceiptPage({
       ? "Known penalty amounts subtotal"
       : "Total penalty (items not returned)";
 
+  // Penalty subtotal per item type (shown only when both types are in the batch).
+  const amount = (raw: string) => {
+    const n = Number(String(raw ?? "").replace(/[^0-9.]/g, ""));
+    return Number.isFinite(n) ? n : 0;
+  };
+  const typeSplit = (
+    [
+      ["sd_card", "SD cards"],
+      ["rig", "Rigs"],
+    ] as const
+  )
+    .map(([type, label]) => {
+      const rows = summary.items.filter((i) => i.itemType === type);
+      return { label, count: rows.length, total: rows.reduce((sum, i) => sum + amount(i.price), 0) };
+    })
+    .filter((t) => t.count > 0);
+
   const fromLocation = summary.fromHubName || "—";
   const toLocation = summary.hubName || "—";
 
@@ -317,7 +335,10 @@ export default async function ReceiptPage({
           )}
         </dl>
 
-        <h2>{ret ? `${itemCountLabel} returned` : itemCountLabel}</h2>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px 14px", margin: "16px 0 10px" }}>
+          <h2 style={{ margin: 0 }}>{ret ? `${itemCountLabel} returned` : itemCountLabel}</h2>
+          <TypeCounts types={summary.items.map((i) => i.itemType)} />
+        </div>
 
         {/* Item list. The header row repeats on each printed page.
             There is no table footer, so the total prints only once, at the end. */}
@@ -325,6 +346,7 @@ export default async function ReceiptPage({
           <thead>
             <tr>
               <th scope="col">#</th>
+              <th scope="col">Type</th>
               <th scope="col">Serial</th>
               <th scope="col">Prism no.</th>
               <th scope="col">Brand / Model</th>
@@ -336,8 +358,9 @@ export default async function ReceiptPage({
 
           <tbody>
             {summary.items.map((item, index) => (
-              <tr key={item.itemId} style={{ breakInside: "avoid" }}>
+              <tr key={item.itemId} style={{ breakInside: "avoid", ...rowTint(item.itemType) }}>
                 <td>{index + 1}</td>
+                <td><TypeBadge type={item.itemType} /></td>
                 <td style={{ overflowWrap: "anywhere" }}>{item.itemId}</td>
                 <td style={{ overflowWrap: "anywhere" }}>
                   {item.prismNo || "—"}
@@ -368,6 +391,7 @@ export default async function ReceiptPage({
               <thead>
                 <tr>
                   <th scope="col">#</th>
+                  <th scope="col">Type</th>
                   <th scope="col">Serial</th>
                   <th scope="col">Prism no.</th>
                   <th scope="col">Brand / Model</th>
@@ -379,8 +403,9 @@ export default async function ReceiptPage({
 
               <tbody>
                 {ret.missing.map((item: ReceiptItem, index: number) => (
-                  <tr key={item.itemId} style={{ breakInside: "avoid" }}>
+                  <tr key={item.itemId} style={{ breakInside: "avoid", ...rowTint(item.itemType) }}>
                     <td>{index + 1}</td>
+                    <td><TypeBadge type={item.itemType} /></td>
                     <td style={{ overflowWrap: "anywhere" }}>{item.itemId}</td>
                     <td style={{ overflowWrap: "anywhere" }}>
                       {item.prismNo || "—"}
@@ -484,6 +509,17 @@ export default async function ReceiptPage({
                 <span>{summary.items.length}</span>
               </div>
 
+              {/* Split by type when SD cards and rigs are mixed. */}
+              {typeSplit.length > 1 &&
+                typeSplit.map((t) => (
+                  <div key={t.label} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                    <span className={styles.muted}>
+                      {t.label} ({t.count})
+                    </span>
+                    <span style={{ whiteSpace: "nowrap" }}>{formatPrice(String(t.total)) || "—"}</span>
+                  </div>
+                ))}
+
               <div
                 style={{
                   display: "flex",
@@ -547,4 +583,4 @@ export default async function ReceiptPage({
       </div>
     </main>
   );
-}
+} 

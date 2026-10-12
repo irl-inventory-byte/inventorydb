@@ -16,7 +16,7 @@ export default function SendScanFields({
 }: {
   hubs: { id: string; name: string }[];
   defaultHub: string;
-  items: { id: string; status: Status; hub: string }[];
+  items: { id: string; status: Status; hub: string; type?: string }[];
 }) {
   const [hub, setHub] = useState(defaultHub);
   const hubNames = Object.fromEntries(hubs.map((h) => [h.id, h.name]));

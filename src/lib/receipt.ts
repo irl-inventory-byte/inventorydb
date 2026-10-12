@@ -2,6 +2,8 @@ import type { Action, Hub, Item, ItemEvent, Status } from "./schema";
 
 export interface ReceiptLine {
   itemId: string;
+  // "sd_card" or "rig". Older items without a type are SD cards.
+  itemType: string;
   brand: string;
   model: string;
   prismNo: string;
@@ -246,6 +248,7 @@ export function summarizeBatch(
 
       return {
         itemId: r.item_id,
+        itemType: item?.item_type === "rig" ? "rig" : "sd_card",
         brand: item?.brand ?? "",
         model: item?.model ?? "",
         prismNo: item?.prism_no ?? "",

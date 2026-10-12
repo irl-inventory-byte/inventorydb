@@ -2,11 +2,12 @@ import Link from "next/link";
 import { formatAttributes } from "@/lib/attributes";
 import { requireRole } from "@/lib/authz";
 import { LATE_AFTER_HOURS } from "@/lib/dashboard";
-import { STATUS_LABELS, one } from "@/lib/labels";
-import { STATUSES, type Status } from "@/lib/schema";
+import { QC_LABELS, STATUS_LABELS, one } from "@/lib/labels";
+import { STATUSES, type QcCheck, type Status } from "@/lib/schema";
 import { ADD_ROLES, canSeeType, storeFor, typeParam } from "@/lib/access";
 import { formatIst } from "@/lib/time";
 import styles from "../admin/admin.module.css";
+import { TypeBadge, rowTint } from "../ItemTypeBadge";
 import TypeSwitch from "../TypeSwitch";
 import AddCardForm from "./AddCardForm";
 import RigAddForm from "./RigAddForm";
@@ -143,12 +144,19 @@ export default async function InventoryPage({
 
   const store = storeFor(user.role, type);
 
-  const [items, hubs, people, events] = await Promise.all([
+  const [items, hubs, people, events, qcChecks] = await Promise.all([
     store.list("items"),
     store.list("hubs"),
     store.list("people"),
     store.list("events"),
+    canSeeType(user.role, "rig") ? store.list("qc_checks") : Promise.resolve([] as QcCheck[]),
   ]);
+
+  // Latest QC result per rig (rows are oldest first, so the last one wins).
+  const latestQc = new Map<string, string>();
+  for (const c of qcChecks) latestQc.set(c.item_id, c.qc_status);
+  const showQc = canSeeType(user.role, "rig") && type !== "sd_card";
+  const QC_COLOR: Record<string, string> = { pass: "#15803D", fail: "#B42318", qc_pending: "#8A4B00" };
 
   // Each item's latest movement, used for the From / To columns.
   const eventById = new Map(
@@ -227,7 +235,7 @@ export default async function InventoryPage({
 
   // Includes optional Admin checkbox and holder-specific Since column.
   const columnCount =
-    14 + (isAdmin ? 1 : 0) + (holder ? 1 : 0);
+    15 + (isAdmin ? 1 : 0) + (holder ? 1 : 0) + (showQc ? 1 : 0);
 
   const table = (
     <div
@@ -247,6 +255,7 @@ export default async function InventoryPage({
               <th scope="col" aria-label="Select items" />
             )}
 
+            <th scope="col">Type</th>
             <th scope="col">Serial</th>
             <th scope="col">Prism no.</th>
             <th scope="col">Brand</th>
@@ -256,6 +265,7 @@ export default async function InventoryPage({
             <th scope="col">Price / Penalty</th>
             <th scope="col">Attributes</th>
             <th scope="col">Status</th>
+            {showQc && <th scope="col">QC</th>}
             <th scope="col">From</th>
             <th scope="col">To</th>
             <th scope="col">Current hub</th>
@@ -293,7 +303,7 @@ export default async function InventoryPage({
                 : "";
 
               return (
-                <tr key={item.item_id}>
+                <tr key={item.item_id} style={rowTint(item.item_type)}>
                   {isAdmin && (
                     <td>
                       <input
@@ -304,6 +314,10 @@ export default async function InventoryPage({
                       />
                     </td>
                   )}
+
+                  <td>
+                    <TypeBadge type={item.item_type} />
+                  </td>
 
                   <td>
                     <Link href={itemUrl}>
@@ -353,6 +367,14 @@ export default async function InventoryPage({
                   <td>
                     {STATUS_LABELS[item.status] ?? item.status}
                   </td>
+
+                  {showQc && (
+                    <td style={{ whiteSpace: "nowrap", fontWeight: 600, color: QC_COLOR[latestQc.get(item.item_id) ?? ""] }}>
+                      {item.item_type === "rig"
+                        ? QC_LABELS[latestQc.get(item.item_id) ?? "qc_pending"]
+                        : "—"}
+                    </td>
+                  )}
 
                   <td>
                     {last?.from_person || fromHub ? (

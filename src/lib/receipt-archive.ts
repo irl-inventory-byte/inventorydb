@@ -345,19 +345,30 @@ export async function buildReceiptPdf(
   }
 
   y -= 8;
+  // e.g. "5 items" then, when rigs are present, "3 SD cards · 2 Rigs" beside it.
+  const sdCount = summary.items.filter((i) => i.itemType !== "rig").length;
+  const rigCount = summary.items.length - sdCount;
   text(itemCountLabel, margin, 13, bold);
+  if (rigCount > 0) {
+    const parts = [
+      sdCount ? `${sdCount} SD card${sdCount === 1 ? "" : "s"}` : "",
+      `${rigCount} Rig${rigCount === 1 ? "" : "s"}`,
+    ].filter(Boolean);
+    text(parts.join("  ·  "), margin + bold.widthOfTextAtSize(itemCountLabel, 13) + 14, 10.5, regular, grey);
+  }
   y -= 22;
 
   // Items table. The header repeats on each new page; the total comes once, at the end.
   const cols = [
-    { title: "#", width: 22 },
-    { title: "Serial", width: 100 },
-    { title: "Prism no.", width: 58 },
-    { title: "Brand / Model", width: 112 },
-    { title: "Storage", width: 46 },
-    { title: "Colour", width: 40 },
+    { title: "#", width: 20 },
+    { title: "Type", width: 40 },
+    { title: "Serial", width: 96 },
+    { title: "Prism no.", width: 56 },
+    { title: "Brand / Model", width: 100 },
+    { title: "Storage", width: 44 },
+    { title: "Colour", width: 38 },
     { title: "Penalty", width: 56 },
-    { title: "Status", width: contentWidth - 434 },
+    { title: "Status", width: contentWidth - 450 },
   ];
 
   const drawRow = (cells: string[], font: PDFFont) => {
@@ -381,9 +392,21 @@ export async function buildReceiptPdf(
   summary.items.forEach((item, index) => {
     ensureSpace(24, () => drawRow(header, bold));
 
+    // Rigs get a light orange row so they stand out from SD cards.
+    if (item.itemType === "rig") {
+      page.drawRectangle({
+        x: margin,
+        y: y - 6,
+        width: contentWidth,
+        height: 19,
+        color: rgb(1, 0.984, 0.957),
+      });
+    }
+
     drawRow(
       [
         String(index + 1),
+        item.itemType === "rig" ? "Rig" : "SD card",
         item.itemId,
         item.prismNo || "—",
         item.model || item.brand || "—",

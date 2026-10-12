@@ -19,7 +19,7 @@ export default function ReceiveScanArea({
 }: {
   hub: string;
   hubNames: Record<string, string>;
-  items: { id: string; status: Status; hub: string }[];
+  items: { id: string; status: Status; hub: string; type?: string }[];
 }) {
   const [code, setCode] = useState("");
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
