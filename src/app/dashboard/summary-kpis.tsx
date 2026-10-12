@@ -273,11 +273,12 @@ export async function SummaryKpis({
               d.oldestLateHours ?? 0
             )}`
           : `Nothing over ${LATE_AFTER_HOURS} hours`,
-      href: hubParam
-        ? list({
-            status: "with_fo,traveling,pending",
-          })
-        : "/dashboard#attention",
+      // Opens the inventory list with ONLY the late items
+      // (and only this city's hubs when clicked from a city page).
+      href: list({
+        status: "with_fo,traveling,pending",
+        late: "1",
+      }),
       warn: d.lateCards > 0,
     },
   ];
@@ -373,7 +374,7 @@ export async function SummaryKpis({
                   gap: 8,
                 }}
               >
-                                {fleetDetails.map((detail) => (
+                {fleetDetails.map((detail) => (
                   <span
                     key={detail.label}
                     style={{

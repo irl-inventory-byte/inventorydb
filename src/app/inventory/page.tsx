@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { formatAttributes } from "@/lib/attributes";
 import { requireRole } from "@/lib/authz";
+import { LATE_AFTER_HOURS } from "@/lib/dashboard";
 import { STATUS_LABELS, one } from "@/lib/labels";
 import { STATUSES, type Status } from "@/lib/schema";
 import { getStore } from "@/lib/store";
@@ -124,6 +125,7 @@ export default async function InventoryPage({
   const hubIds = hub.split(",").filter(Boolean);
 
   const holder = one(sp.holder);
+  const lateOnly = one(sp.late) === "1";
   const requestedPage = Number(one(sp.page));
 
   const validPage =
@@ -153,8 +155,23 @@ export default async function InventoryPage({
     people.map((p) => [p.person_id, p.name])
   );
 
+  // Late = with an FO, traveling, or sent and not received, for more than LATE_AFTER_HOURS
+  // since its last movement. Same rule as the "Late items" tile on the dashboard.
+  const lastAt = new Map<string, number>();
+  for (const e of events) {
+    const t = Date.parse(e.occurred_at);
+    if (!Number.isNaN(t) && t > (lastAt.get(e.item_id) ?? -Infinity)) lastAt.set(e.item_id, t);
+  }
+  const nowMs = Date.now();
+  const isLate = (item: (typeof items)[number]) => {
+    if (item.status !== "with_fo" && item.status !== "traveling" && item.status !== "pending") return false;
+    const t = lastAt.get(item.item_id) ?? Date.parse(item.updated_at);
+    return !Number.isNaN(t) && (nowMs - t) / 3_600_000 > LATE_AFTER_HOURS;
+  };
+
   const matches = items.filter(
     (item) =>
+      (!lateOnly || isLate(item)) &&
       (!statuses.length || statuses.includes(item.status)) &&
       (!hubIds.length || hubIds.includes(item.current_hub)) &&
       (!holder || item.current_holder === holder) &&
@@ -192,6 +209,7 @@ export default async function InventoryPage({
       ...(status && { status }),
       ...(hub && { hub }),
       ...(holder && { holder }),
+      ...(lateOnly && { late: "1" }),
       page: String(p),
     });
 
@@ -532,6 +550,16 @@ export default async function InventoryPage({
 
         {holder && (
           <input type="hidden" name="holder" value={holder} />
+        )}
+
+        {lateOnly && (
+          <>
+            <input type="hidden" name="late" value="1" />
+            <span className={styles.muted}>
+              Late items only (over {LATE_AFTER_HOURS} hours) ·{" "}
+              <Link href="/inventory">clear</Link>
+            </span>
+          </>
         )}
 
         <button type="submit">Filter</button>
