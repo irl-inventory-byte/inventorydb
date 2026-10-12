@@ -83,6 +83,14 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       icon: "alert",
       color: "var(--critical)",
     },
+    {
+      label: "Retired",
+      value: s.retired,
+      hint: share(s.retired),
+      href: inventory({ status: "retired" }),
+      icon: "archive",
+      color: "var(--text-muted)",
+    },
   ];
 
   // Bars: one series, one colour. Every bar opens the matching list or hub.
