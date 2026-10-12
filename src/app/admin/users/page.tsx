@@ -9,7 +9,7 @@ import UserRow from "./UserRow";
 const ERRORS: Record<string, string> = {
   invalid: "Please enter a valid email and role.",
   exists: "That email already has access.",
-  person: "An IM login must be linked to an active IM, and a Rig login to an active rig team member, from the People tab.",
+  person: "An IM login must be linked to an active IM, and a Rig login to an active rig team member, from the People tab. FO, Hardware and QC logins may only be linked to a person of the same role.",
   self: "You can't change your own access. Ask another admin.",
 };
 
@@ -21,13 +21,16 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
   users.sort((a, b) => a.email.localeCompare(b.email));
   // Logins link to an IM or a rig team member; the server checks the role matches the login's role.
   const linkable = people
-    .filter((p) => (p.role === "im" || p.role === "rig") && p.active !== "false")
+    .filter((p) => ["im", "rig", "fo", "hardware", "qc"].includes(p.role) && p.active !== "false")
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const roleSelect = (value?: string) => (
     <select name="role" defaultValue={value ?? "im"}>
       <option value="im">IM</option>
       <option value="rig">Rig</option>
+      <option value="fo">FO</option>
+      <option value="hardware">Hardware team</option>
+      <option value="qc">QC team</option>
       <option value="admin">Admin</option>
     </select>
   );

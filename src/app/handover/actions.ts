@@ -10,7 +10,7 @@ import { planReceive, planSend, type HandoverContext, type HandoverPlan } from "
 import type { Item } from "@/lib/schema";
 import { collectIds } from "@/lib/scan";
 import { archiveReceipt } from "@/lib/receipt-archive";
-import { getStore } from "@/lib/store";
+import { HANDLER_ROLES, storeFor } from "@/lib/access";
 import { istTimestamp } from "@/lib/time";
 
 // The site's own address, used for the QR code link inside the archived PDF.
@@ -30,11 +30,12 @@ async function run(
   build: (targets: Item[], ctx: HandoverContext) => HandoverPlan | Promise<HandoverPlan>,
   summary: (plan: HandoverPlan) => Record<string, string>,
   onSaved?: (plan: HandoverPlan) => void | Promise<void>,
-) {  const user = await requireRole("admin", "im", "rig");
+) {  const user = await requireRole(...HANDLER_ROLES);
   const ids = collectIds(String(formData.get("scanned") ?? ""), formData.getAll("ids").map(String));
   if (!ids.length) redirect(go(path, { error: "Scan or tick at least one item." }));
 
-  const store = getStore();
+  // Scoped: the rig team can't scan rigs, and nobody can scan a type they can't see.
+  const store = storeFor(user.role);
   const [found, hubs, people, users] = await Promise.all([
     store.getItemsByIds(ids),
     store.list("hubs"),

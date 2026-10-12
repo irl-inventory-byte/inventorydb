@@ -4,10 +4,12 @@ import { requireRole } from "@/lib/authz";
 import { LATE_AFTER_HOURS } from "@/lib/dashboard";
 import { STATUS_LABELS, one } from "@/lib/labels";
 import { STATUSES, type Status } from "@/lib/schema";
-import { getStore } from "@/lib/store";
+import { ADD_ROLES, canSeeType, storeFor, typeParam } from "@/lib/access";
 import { formatIst } from "@/lib/time";
 import styles from "../admin/admin.module.css";
+import TypeSwitch from "../TypeSwitch";
 import AddCardForm from "./AddCardForm";
+import RigAddForm from "./RigAddForm";
 import BulkAddForm from "./BulkAddForm";
 import { applyCorrection } from "./actions";
 import CorrectionPanel from "./CorrectionPanel";
@@ -110,12 +112,18 @@ export default async function InventoryPage({
   const isAdmin = user.role === "admin";
 
   // CHANGED: show Add item to Admin, IM and Rig.
-  const canAdd =
-    user.role === "admin" ||
-    user.role === "im" ||
-    user.role === "rig";
-
   const sp = await searchParams;
+  // "SD cards / Rigs" switch; each login only ever sees its allowed types.
+  const type = typeParam(one(sp.type), user.role);
+
+  // SD cards: Admin, IM and Rig team. Rigs: Admin and IM.
+  const canAdd =
+    ADD_ROLES.includes(user.role) &&
+    canSeeType(user.role, "sd_card") &&
+    type !== "rig";
+  const canAddRig =
+    (user.role === "admin" || user.role === "im") && type !== "sd_card";
+
   const q = one(sp.q).trim().toLowerCase();
 
   const status = one(sp.status);
@@ -133,7 +141,7 @@ export default async function InventoryPage({
       ? requestedPage
       : 1;
 
-  const store = getStore();
+  const store = storeFor(user.role, type);
 
   const [items, hubs, people, events] = await Promise.all([
     store.list("items"),
@@ -210,6 +218,7 @@ export default async function InventoryPage({
       ...(hub && { hub }),
       ...(holder && { holder }),
       ...(lateOnly && { late: "1" }),
+      ...(type && { type }),
       page: String(p),
     });
 
@@ -412,6 +421,13 @@ export default async function InventoryPage({
         <h1>Inventory</h1>
       </div>
 
+      <TypeSwitch
+        role={user.role}
+        current={type}
+        path="/inventory"
+        params={{ q: one(sp.q), status, hub, holder, late: lateOnly ? "1" : "" }}
+      />
+
       {one(sp.done) && (
         <p className={styles.ok}>
           Updated {one(sp.done)} item(s)
@@ -441,7 +457,7 @@ export default async function InventoryPage({
             undefined
           }
         >
-          <summary>+ Add an item</summary>
+          <summary>+ Add an SD card</summary>
 
           <p className={styles.muted}>
             For an item that isn&apos;t in the inventory yet.
@@ -476,7 +492,7 @@ export default async function InventoryPage({
       {/* Add many items at once: one home hub, many serials. */}
       {canAdd && (
         <details className={styles.details}>
-          <summary>+ Add multiple items</summary>
+          <summary>+ Add multiple SD cards</summary>
 
           <p className={styles.muted}>
             Scan or paste several Serial / Asset Tags. Details load
@@ -488,7 +504,37 @@ export default async function InventoryPage({
         </details>
       )}
 
+      {/* Add a rig: Admin and IM. Details load from the rig sheet. */}
+      {canAddRig && (
+        <details
+          className={styles.details}
+          open={type === "rig" && (!!one(sp.added) || !!one(sp.addError)) ? true : undefined}
+        >
+          <summary>+ Add a rig</summary>
+
+          <p className={styles.muted}>
+            For a rig that isn&apos;t in the inventory yet. It starts in stock
+            at the hub you choose, with QC pending.
+          </p>
+
+          {type === "rig" && one(sp.added) && (
+            <p className={styles.ok}>
+              Added rig {one(sp.added)}.{" "}
+              <Link href={`/inventory/${encodeURIComponent(one(sp.added))}`}>View it</Link>
+              , or add another below.
+            </p>
+          )}
+
+          {type === "rig" && one(sp.addError) && (
+            <p className={styles.error}>{one(sp.addError)}</p>
+          )}
+
+          <RigAddForm hubs={activeHubs} />
+        </details>
+      )}
+
       <form className={styles.row} method="get">
+        {type && <input type="hidden" name="type" value={type} />}
         <input
           name="q"
           defaultValue={one(sp.q)}

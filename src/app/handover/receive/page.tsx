@@ -6,7 +6,7 @@ import {
 } from "@/lib/actors";
 import { requireRole } from "@/lib/authz";
 import { one } from "@/lib/labels";
-import { getStore } from "@/lib/store";
+import { HANDLER_ROLES, storeFor } from "@/lib/access";
 import styles from "../../admin/admin.module.css";
 import { receiveCards } from "../actions";
 import HubSelect from "./HubSelect";
@@ -15,9 +15,9 @@ import ReceiveScanArea from "./ReceiveScanArea";
 export default async function ReceivePage({
   searchParams,
 }: PageProps<"/handover/receive">) {
-  const user = await requireRole("admin", "im", "rig");
+  const user = await requireRole(...HANDLER_ROLES);
   const sp = await searchParams;
-  const store = getStore();
+  const store = storeFor(user.role);
 
   const [items, hubs, people, users] = await Promise.all([
     store.list("items"),

@@ -14,19 +14,77 @@ import type {
   TableBackend,
 } from "./backend";
 
+// An item's type. Older rows without a type are SD cards.
+const typeOf = (item: Row) => (item.item_type === "rig" ? "rig" : "sd_card");
+
 export class Store {
-  constructor(private backend: TableBackend) {}
+  /**
+   * @param types When set, only items of these types (and their events,
+   *   hardware updates and QC checks) are returned. Writes are not filtered.
+   */
+  constructor(
+    private backend: TableBackend,
+    private types?: ReadonlySet<string>
+  ) {}
+
+  /**
+   * The same store, limited to some item types. Used so each login only
+   * sees the items it is allowed to (see lib/access.ts).
+   */
+  forTypes(types: readonly string[]): Store {
+    const all = types.includes("sd_card") && types.includes("rig");
+    return all && !this.types ? this : new Store(this.backend, new Set(types));
+  }
 
   init() {
     return this.backend.ensureTabs();
   }
 
+  /** Read a tab that may not exist yet (new tabs are created on first write). */
+  private async readOptional(tab: TabName): Promise<Row[]> {
+    try {
+      return await this.backend.readAll(tab);
+    } catch {
+      return [];
+    }
+  }
+
   async list<T extends TabName>(
     tab: T
   ): Promise<TabRows[T][]> {
-    return (
-      await this.backend.readAll(tab)
-    ) as unknown as TabRows[T][];
+    const optional = tab === "hardware_updates" || tab === "qc_checks";
+    const rows = optional
+      ? await this.readOptional(tab)
+      : await this.backend.readAll(tab);
+
+    const types = this.types;
+    if (!types) return rows as unknown as TabRows[T][];
+
+    if (tab === "items") {
+      return rows.filter((row) => types.has(typeOf(row))) as unknown as TabRows[T][];
+    }
+
+    if (tab === "events" || optional) {
+      // Keep rows that belong to a visible item.
+      const visible = new Set(
+        (await this.backend.readAll("items"))
+          .filter((item) => types.has(typeOf(item)))
+          .map((item) => item.item_id)
+      );
+      return rows.filter((row) => visible.has(row.item_id)) as unknown as TabRows[T][];
+    }
+
+    return rows as unknown as TabRows[T][];
+  }
+
+  /** Add rows to a tab, creating the tab first if it does not exist yet. */
+  async appendRows<T extends TabName>(tab: T, rows: TabRows[T][]) {
+    try {
+      await this.backend.append(tab, rows as unknown as Row[]);
+    } catch {
+      await this.backend.ensureTabs();
+      await this.backend.append(tab, rows as unknown as Row[]);
+    }
   }
 
   upsert<T extends TabName>(

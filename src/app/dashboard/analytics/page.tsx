@@ -4,7 +4,8 @@ import { requireRole } from "@/lib/authz";
 import { LATE_AFTER_HOURS, computeDashboard } from "@/lib/dashboard";
 import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
 import type { Status } from "@/lib/schema";
-import { getStore } from "@/lib/store";
+import { storeFor, typeParam } from "@/lib/access";
+import TypeSwitch from "../../TypeSwitch";
 import { ActivityChart, BarList, n } from "../charts";
 import styles from "../dashboard.module.css";
 
@@ -97,10 +98,11 @@ const fullNameStyle: CSSProperties = {
 export default async function AnalyticsPage({
   searchParams,
 }: PageProps<"/dashboard/analytics">) {
-  await requireRole();
+  const user = await requireRole();
 
   const sp = await searchParams;
-  const store = getStore();
+  const type = typeParam(one(sp.type), user.role);
+  const store = storeFor(user.role, type);
 
   const [items, events, people, hubs] = await Promise.all([
     store.list("items"),
@@ -164,6 +166,8 @@ export default async function AnalyticsPage({
         </p>
 
         <h1>More analytics</h1>
+
+        <TypeSwitch role={user.role} current={type} path="/dashboard/analytics" params={{ hub: one(sp.hub) }} />
 
         <form className={styles.filters} method="get">
           <select name="hub" defaultValue={hub} aria-label="Hub">

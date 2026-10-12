@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireRole } from "@/lib/authz";
 import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
 import { OUT_STATUSES } from "@/lib/schema";
-import { getStore } from "@/lib/store";
+import { HANDLER_ROLES, storeFor } from "@/lib/access";
 import { formatIst } from "@/lib/time";
 import styles from "../dashboard.module.css";
 
@@ -57,7 +57,7 @@ export default async function MyDashboardPage({
   }>;
 }) {
   // Authenticate and authorize on the server.
-  const user = await requireRole("admin", "im", "rig");
+  const user = await requireRole(...HANDLER_ROLES);
   const email = normalizeEmail(user.email ?? "");
 
   // Never match an empty login email to blank event records.
@@ -81,7 +81,7 @@ export default async function MyDashboardPage({
   }
 
   const sp = await searchParams;
-  const store = getStore();
+  const store = storeFor(user.role);
 
   const [events, items, people, hubs, users] = await Promise.all([
     store.list("events"),

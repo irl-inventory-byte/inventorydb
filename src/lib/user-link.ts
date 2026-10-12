@@ -1,9 +1,11 @@
 import type { Person } from "./schema";
 
-export type LoginRole = "admin" | "im" | "rig";
+export type LoginRole = "admin" | "im" | "rig" | "fo" | "hardware" | "qc";
 
 // The person role a login role must be linked to. An admin login may be linked to anyone, or no one.
 const NEEDS: Partial<Record<LoginRole, Person["role"]>> = { im: "im", rig: "rig" };
+// Logins that MAY be linked to a person of the same role, but don't have to be.
+const MAY_LINK: Partial<Record<LoginRole, Person["role"]>> = { fo: "fo", hardware: "hardware", qc: "qc" };
 
 /**
  * The person a login acts as. A valid link saved on the login wins. If it is blank (for example the logins
@@ -16,7 +18,7 @@ export function resolveLinkedPerson(
 ): string {
   const saved = user.person_id ? checkUserLink(user.role, user.person_id, people) : undefined;
   if (saved) return saved;
-  const need = NEEDS[user.role];
+  const need = NEEDS[user.role] ?? MAY_LINK[user.role];
   if (!need) return "";
   const email = user.email.toLowerCase();
   return people.find((p) => p.active !== "false" && p.role === need && p.linked_user.toLowerCase() === email)?.person_id ?? "";
@@ -29,8 +31,10 @@ export function resolveLinkedPerson(
  */
 export function checkUserLink(role: LoginRole, personId: string, people: Person[]): string | undefined {
   const need = NEEDS[role];
+  const may = MAY_LINK[role];
   if (!personId) return need ? undefined : "";
   const person = people.find((p) => p.person_id === personId && p.active !== "false");
   if (!person) return undefined;
-  return need && person.role !== need ? undefined : personId;
+  const required = need ?? may;
+  return required && person.role !== required ? undefined : personId;
 }

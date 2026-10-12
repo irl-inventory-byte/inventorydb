@@ -5,7 +5,7 @@ import { computeDashboard } from "@/lib/dashboard";
 import { buildHubTree, findNode, pathTo, subtreeIds } from "@/lib/hub-tree";
 import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
 import type { Action, Status } from "@/lib/schema";
-import { getStore } from "@/lib/store";
+import { storeFor, typeParam } from "@/lib/access";
 import { formatIst } from "@/lib/time";
 import { n } from "../../charts";
 import { Collapsible } from "../../collapsible";
@@ -30,10 +30,10 @@ const MOVES_SHOWN = 15;
 const days = (d: number | null) => (d === null ? "—" : d === 0 ? "today" : `${d}d`);
 
 export default async function HubDetailPage({ params, searchParams }: PageProps<"/dashboard/hub/[id]">) {
-  await requireRole();
+  const user = await requireRole();
   const { id } = await params;
   const sp = await searchParams;
-  const store = getStore();
+  const store = storeFor(user.role, typeParam(one(sp.type), user.role));
   const [items, events, people, hubs] = await Promise.all([
     store.list("items"),
     store.list("events"),
@@ -121,7 +121,7 @@ export default async function HubDetailPage({ params, searchParams }: PageProps<
           </div>
         )}
 
-        <SummaryKpis d={d} hubParam={hubParam} />
+        <SummaryKpis d={d} hubParam={hubParam} items={items} />
 
         <section className={styles.tiles} aria-label="Stock at this hub">
           {tiles.map((t) => (

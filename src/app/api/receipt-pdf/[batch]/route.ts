@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { requireRole } from "@/lib/authz";
 import { summarizeBatch } from "@/lib/receipt";
 import { buildReceiptPdf } from "@/lib/receipt-archive";
-import { getStore } from "@/lib/store";
+import { VIEW_ROLES, storeFor } from "@/lib/access";
 
 /**
  * Download a receipt as a PDF.
@@ -14,12 +14,12 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ batch: string }> }
 ) {
-  await requireRole("admin", "im", "rig");
+  const me = await requireRole(...VIEW_ROLES);
 
   const { batch } = await params;
   const batchId = decodeURIComponent(batch);
 
-  const store = getStore();
+  const store = storeFor(me.role);
   const [events, items, hubs] = await Promise.all([
     store.list("events"),
     store.list("items"),

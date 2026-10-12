@@ -3,7 +3,7 @@ import { actorOptions, allowedActors, defaultActor } from "@/lib/actors";
 import { requireRole } from "@/lib/authz";
 import { STATUS_LABELS, one } from "@/lib/labels";
 import type { Role, Status } from "@/lib/schema";
-import { getStore } from "@/lib/store";
+import { HANDLER_ROLES, storeFor } from "@/lib/access";
 import styles from "../form.module.css";
 import { sendCards } from "../actions";
 import SendScanFields from "./SendScanFields";
@@ -18,9 +18,9 @@ const GROUPS: { role: Role; label: string }[] = [
 ];
 
 export default async function SendPage({ searchParams }: PageProps<"/handover/send">) {
-  const user = await requireRole("admin", "im", "rig");
+  const user = await requireRole(...HANDLER_ROLES);
   const sp = await searchParams;
-  const store = getStore();
+  const store = storeFor(user.role);
   const [people, hubs, users, items] = await Promise.all([
     store.list("people"),
     store.list("hubs"),

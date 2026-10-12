@@ -15,6 +15,10 @@ const ROLE_ALIASES: Record<string, Role> = {
   "field officer": "fo",
   rig: "rig",
   "rig team": "rig",
+  hardware: "hardware",
+  "hardware team": "hardware",
+  qc: "qc",
+  "qc team": "qc",
 };
 
 // "Bangalore - IRL" and "Bangalore" both match the hub named "Bangalore".
@@ -67,7 +71,7 @@ export function planPeopleImport(
     const problems: string[] = [];
     if (!name) problems.push("name is empty");
     const role = ROLE_ALIASES[roleText];
-    if (!role) problems.push(`role "${cells[iRole] ?? ""}" is not IM, IFO, FO or Rig`);
+    if (!role) problems.push(`role "${cells[iRole] ?? ""}" is not IM, IFO, FO, Rig, Hardware or QC`);
     const hub = hubByKey.get(normalizeHub(hubText));
     if (!hub) problems.push(`hub "${hubText}" not found`);
     else if (hub.active === "false") problems.push(`hub "${hub.name}" is inactive`);

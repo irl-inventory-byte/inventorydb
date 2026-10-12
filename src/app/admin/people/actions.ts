@@ -10,7 +10,7 @@ import { getStore } from "@/lib/store";
 // Email is required for both adding and editing.
 const PersonInput = z.object({
   name: z.string().trim().min(1).max(80),
-  role: z.enum(["im", "ifo", "fo", "rig"]),
+  role: z.enum(["im", "ifo", "fo", "rig", "hardware", "qc"]),
   hub: z.string().trim().min(1),
   email: z.email("Enter a valid email address"),
 });

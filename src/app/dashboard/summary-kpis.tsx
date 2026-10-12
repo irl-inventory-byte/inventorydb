@@ -25,6 +25,8 @@ interface FleetCounts {
   black: number;
   green: number;
   colourUnknown: number;
+  sdCards: number;
+  rigs: number;
 }
 
 interface SummaryKpisProps {
@@ -103,9 +105,18 @@ function countFleet(items: readonly Item[]): FleetCounts {
     black: 0,
     green: 0,
     colourUnknown: 0,
+    sdCards: 0,
+    rigs: 0,
   };
 
   for (const item of items) {
+    // Storage and colour only apply to SD cards; rigs are counted separately.
+    if (item.item_type === "rig") {
+      counts.rigs++;
+      continue;
+    }
+    counts.sdCards++;
+
     const attributes = readAttributes(item.attributes);
 
     const capacity = attributeText(attributes.capacity)
@@ -188,7 +199,7 @@ export async function SummaryKpis({
 
   // Each tile has its own colour so the four are easy to tell apart:
   // storage in blues, card colour in the card's real colour.
-  const fleetDetails = [
+  const sdDetails = [
     {
       label: "512 GB",
       count: fleet.storage512,
@@ -219,11 +230,27 @@ export async function SummaryKpis({
     },
   ];
 
+  // SD card tiles only when there are SD cards; a Rigs tile when there are rigs.
+  const fleetDetails = [
+    ...(fleet.sdCards > 0 ? sdDetails : []),
+    ...(fleet.rigs > 0
+      ? [
+          {
+            label: "Rigs",
+            count: fleet.rigs,
+            bg: "#fef3c7",
+            border: "#d97706",
+            text: "#78350f",
+          },
+        ]
+      : []),
+  ];
+
   const cards: SummaryCard[] = [
     {
       key: "fleet",
       icon: "layers",
-      label: "Fleet — storage update",
+      label: fleet.sdCards > 0 ? "Fleet — storage update" : "Fleet",
       value: n(d.total),
       note:
         unusable > 0
@@ -354,7 +381,7 @@ export async function SummaryKpis({
           </span>
 
           {/* NEW: storage and colour details inside Fleet. */}
-          {card.key === "fleet" && (
+          {card.key === "fleet" && fleetDetails.length > 0 && (
             <span
               style={{
                 display: "block",

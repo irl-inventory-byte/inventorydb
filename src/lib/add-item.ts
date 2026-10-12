@@ -7,6 +7,8 @@ export interface AddItemInput {
   brand: string;
   model: string;
   price: string;
+  itemType?: string; // "sd_card" (default) or "rig"
+  attributes?: string; // JSON of extra details
 }
 
 export interface AddItemContext {
@@ -58,14 +60,14 @@ export function planAddItem(input: AddItemInput, existing: Item[], ctx: AddItemC
   };
   const item: Item = {
     item_id: itemId,
-    item_type: "sd_card",
+    item_type: input.itemType || "sd_card",
     home_hub: input.homeHub,
     current_hub: input.homeHub,
     status: "in_stock",
     current_holder: "",
     last_event_id: event.event_id,
     updated_at: ctx.now,
-    attributes: "",
+    attributes: input.attributes ?? "",
     prism_no: input.prismNo.trim(),
     brand: input.brand.trim(),
     model: input.model.trim(),

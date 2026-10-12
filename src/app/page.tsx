@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HANDLER_ROLES, VIEW_ROLES } from "@/lib/access";
 import { signOut } from "@/auth";
 import { requireRole } from "@/lib/authz";
 import { ROLE_LABELS, one } from "@/lib/labels";
@@ -15,7 +16,7 @@ interface Tile {
   roles: Role[];
 }
 
-const HANDLERS: Role[] = ["admin", "im", "rig"];
+const HANDLERS: Role[] = HANDLER_ROLES;
 
 // A tile only shows for the configured roles.
 const WORK: Tile[] = [
@@ -31,21 +32,28 @@ const WORK: Tile[] = [
     title: "Dashboard",
     desc: "Live stock by hub, status and person, with the hub tree.",
     icon: "chart",
-    roles: ["admin", "im", "rig"],
+    roles: VIEW_ROLES,
   },
   {
     href: "/inventory",
     title: "Inventory",
     desc: "Search, filter and open any item and its history.",
     icon: "list",
-    roles: ["admin", "im", "rig"],
+    roles: VIEW_ROLES,
   },
   {
     href: "/handover/receipts",
     title: "Receipts",
     desc: "View and download every receipt. Admins can edit or delete.",
     icon: "database",
-    roles: ["admin", "im", "rig"],
+    roles: VIEW_ROLES,
+  },
+  {
+    href: "/rigs",
+    title: "Rig checks",
+    desc: "Every rig with its QC result and latest hardware update.",
+    icon: "check",
+    roles: ["admin", "im", "hardware", "qc"],
   },
   {
     href: "/handover/send",

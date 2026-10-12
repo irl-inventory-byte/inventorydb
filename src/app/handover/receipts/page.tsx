@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireRole } from "@/lib/authz";
 import { one } from "@/lib/labels";
 import type { ItemEvent } from "@/lib/schema";
-import { getStore } from "@/lib/store";
+import { VIEW_ROLES, storeFor } from "@/lib/access";
 import { formatIst } from "@/lib/time";
 import styles from "../../admin/admin.module.css";
 import { deleteReceipt, restoreReceipt, updateReceiptNote } from "./actions";
@@ -44,7 +44,7 @@ export default async function ReceiptsPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined>;
 }) {
-  const user = await requireRole("admin", "im", "rig");
+  const user = await requireRole(...VIEW_ROLES);
   const isAdmin = user.role === "admin";
 
   const sp = (await searchParams) ?? {};
@@ -53,7 +53,7 @@ export default async function ReceiptsPage({
   const showDeleted = isAdmin && one(sp.deletedView) === "1";
   const requestedPage = Number(one(sp.page)) || 1;
 
-  const store = getStore();
+  const store = storeFor(user.role);
   const [events, hubs, edits] = await Promise.all([
     store.list("events"),
     store.list("hubs"),

@@ -21,6 +21,9 @@ export default function UserRow({ user, linkable, isMe }: { user: AppUser; linka
       <select name="role" defaultValue={user.role} onChange={submit} disabled={isMe}>
         <option value="im">IM</option>
         <option value="rig">Rig</option>
+        <option value="fo">FO</option>
+        <option value="hardware">Hardware team</option>
+        <option value="qc">QC team</option>
         <option value="admin">Admin</option>
       </select>
       <select name="person" defaultValue={user.person_id} onChange={submit} disabled={isMe}>

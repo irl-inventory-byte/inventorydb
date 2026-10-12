@@ -5,7 +5,8 @@ import { LATE_AFTER_HOURS, computeDashboard } from "@/lib/dashboard";
 import { buildHubTree } from "@/lib/hub-tree";
 import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
 import type { Status } from "@/lib/schema";
-import { getStore } from "@/lib/store";
+import { HANDLER_ROLES, storeFor, typeParam } from "@/lib/access";
+import TypeSwitch from "../TypeSwitch";
 import { ActivityChart, BarList, n } from "./charts";
 import styles from "./dashboard.module.css";
 import { HubOrgChart, countHidden } from "./hub-tree-view";
@@ -45,7 +46,9 @@ const TFOOT_STYLE: CSSProperties = {
 export default async function DashboardPage({ searchParams }: PageProps<"/dashboard">) {
   const user = await requireRole();
   const sp = await searchParams;
-  const store = getStore();
+  // Each login sees only its item types; IM/Admin/FO can switch SD cards / Rigs.
+  const type = typeParam(one(sp.type), user.role);
+  const store = storeFor(user.role, type);
   const [items, events, people, hubs] = await Promise.all([
     store.list("items"),
     store.list("events"),
@@ -57,7 +60,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const tree = buildHubTree(hubs, items);
   const showEmpty = one(sp.empty) === "1";
   const hiddenEmpty = countHidden(tree, false);
-  const canHandle = user.role === "admin" || user.role === "im" || user.role === "rig";
+  const canHandle = HANDLER_ROLES.includes(user.role);
   const activeHubs = hubs.filter((h) => h.active !== "false").length;
 
   const s = d.byStatus;
@@ -236,7 +239,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           <input name="q" placeholder="Find an item by serial, prism no., brand or model" aria-label="Find an item" />
         </form>
 
-        <SummaryKpis d={d} />
+        <TypeSwitch role={user.role} current={type} path="/dashboard" />
+
+        <SummaryKpis d={d} items={items} />
 
         <section className={styles.kpiGrid} aria-label="Overview">
           {kpis.map((k) => (

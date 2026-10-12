@@ -5,11 +5,11 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireRole } from "@/lib/authz";
 import { getStore } from "@/lib/store";
-import { checkUserLink } from "@/lib/user-link";
+import { checkUserLink, type LoginRole } from "@/lib/user-link";
 
 const UserInput = z.object({
   email: z.email().transform((e) => e.toLowerCase()),
-  role: z.enum(["admin", "im", "rig"]),
+  role: z.enum(["admin", "im", "rig", "fo", "hardware", "qc"]),
   person: z.string(),
 });
 
@@ -25,7 +25,7 @@ function parse(formData: FormData) {
 }
 
 // An IM login links to an IM in the People tab, a Rig login to a rig team member.
-async function linkedPerson(role: "admin" | "im" | "rig", personId: string) {
+async function linkedPerson(role: LoginRole, personId: string) {
   const linked = checkUserLink(role, personId, await getStore().list("people"));
   return linked === undefined ? fail("person") : linked;
 }

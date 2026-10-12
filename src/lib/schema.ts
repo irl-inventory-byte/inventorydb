@@ -58,6 +58,26 @@ export const TABS = {
     "reason",
     "history_json",
   ],
+  // Rig items only: work done by the hardware team, one row per update.
+  hardware_updates: [
+    "update_id",
+    "item_id",
+    "recorded_at",
+    "recorded_by", // login email
+    "recorded_by_name",
+    "update_type", // e.g. Repair, Part replaced, Inspection
+    "comment",
+  ],
+  // Rig items only: QC results, one row per check. The latest row is the rig's QC status.
+  qc_checks: [
+    "check_id",
+    "item_id",
+    "recorded_at",
+    "recorded_by", // login email
+    "recorded_by_name",
+    "qc_status", // qc_pending | pass | fail
+    "comment",
+  ],
   // Audit log of admin edits to past receipts: who changed what, and when.
   receipt_edits: [
     "edit_id",
@@ -102,7 +122,7 @@ export const ACTIONS = [
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 
-export const ROLES = ["admin", "im", "ifo", "fo", "rig"] as const;
+export const ROLES = ["admin", "im", "ifo", "fo", "rig", "hardware", "qc"] as const;
 export type Role = (typeof ROLES)[number];
 
 export type Row = Record<string, string>;
@@ -197,6 +217,29 @@ export interface ReceiptEdit extends Row {
   new_value: string;
 }
 
+export interface HardwareUpdate extends Row {
+  update_id: string;
+  item_id: string;
+  recorded_at: string;
+  recorded_by: string;
+  recorded_by_name: string;
+  update_type: string;
+  comment: string;
+}
+
+export const QC_STATUSES = ["qc_pending", "pass", "fail"] as const;
+export type QcStatus = (typeof QC_STATUSES)[number];
+
+export interface QcCheck extends Row {
+  check_id: string;
+  item_id: string;
+  recorded_at: string;
+  recorded_by: string;
+  recorded_by_name: string;
+  qc_status: QcStatus;
+  comment: string;
+}
+
 export interface TabRows {
   items: Item;
   events: ItemEvent;
@@ -207,4 +250,6 @@ export interface TabRows {
   status_limits: Row;
   deletions: Deletion;
   receipt_edits: ReceiptEdit;
+  hardware_updates: HardwareUpdate;
+  qc_checks: QcCheck;
 }
