@@ -3,13 +3,14 @@ import { formatAttributes } from "@/lib/attributes";
 import { requireRole } from "@/lib/authz";
 import { LATE_AFTER_HOURS } from "@/lib/dashboard";
 import { QC_LABELS, STATUS_LABELS, one } from "@/lib/labels";
-import { STATUSES, type QcCheck, type Status } from "@/lib/schema";
+import { STATUSES, type QcCheck } from "@/lib/schema";
 import { ADD_ROLES, canSeeType, storeFor, typeParam } from "@/lib/access";
 import { formatIst } from "@/lib/time";
 import styles from "../admin/admin.module.css";
 import { TypeBadge, rowTint } from "../ItemTypeBadge";
 import TypeSwitch from "../TypeSwitch";
 import AddCardForm from "./AddCardForm";
+import MultiSelect from "./MultiSelect";
 import RigAddForm from "./RigAddForm";
 import BulkAddForm from "./BulkAddForm";
 import { applyCorrection } from "./actions";
@@ -127,11 +128,19 @@ export default async function InventoryPage({
 
   const q = one(sp.q).trim().toLowerCase();
 
-  const status = one(sp.status);
-  const statuses = status.split(",").filter(Boolean);
+  // Filters can hold several values: ?status=a&status=b or ?status=a,b
+  const many = (v: string | string[] | undefined) =>
+    [...new Set((Array.isArray(v) ? v : [v ?? ""]).flatMap((x) => x.split(",")).map((x) => x.trim()).filter(Boolean))];
 
-  const hub = one(sp.hub);
-  const hubIds = hub.split(",").filter(Boolean);
+  const statuses = many(sp.status);
+  const status = statuses.join(",");
+
+  const hubIds = many(sp.hub);
+  const hub = hubIds.join(",");
+
+  // Cities are compared trimmed and lower case.
+  const cities = many(sp.city).map((c) => c.toLowerCase());
+  const city = cities.join(",");
 
   const holder = one(sp.holder);
   const lateOnly = one(sp.late) === "1";
@@ -167,6 +176,16 @@ export default async function InventoryPage({
     hubs.map((h) => [h.hub_id, h.name])
   );
 
+  // A hub's city: its city, or its name when the city is blank.
+  const cityLabelOf = (h: (typeof hubs)[number]) => (h.city ?? "").trim() || h.name.trim();
+  const hubCity = new Map(hubs.map((h) => [h.hub_id, cityLabelOf(h).toLowerCase()]));
+  const cityOptions = [
+    ...new Map(hubs.map((h) => [cityLabelOf(h).toLowerCase(), cityLabelOf(h)])).entries(),
+  ]
+    .filter(([key]) => key)
+    .sort((a, b) => a[1].localeCompare(b[1]))
+    .map(([value, label]) => ({ value, label }));
+
   const personName = new Map(
     people.map((p) => [p.person_id, p.name])
   );
@@ -190,6 +209,7 @@ export default async function InventoryPage({
       (!lateOnly || isLate(item)) &&
       (!statuses.length || statuses.includes(item.status)) &&
       (!hubIds.length || hubIds.includes(item.current_hub)) &&
+      (!cities.length || cities.includes(hubCity.get(item.current_hub) ?? "")) &&
       (!holder || item.current_holder === holder) &&
       (!q ||
         (item.item_id ?? "").toLowerCase().includes(q) ||
@@ -224,6 +244,7 @@ export default async function InventoryPage({
       ...(q && { q }),
       ...(status && { status }),
       ...(hub && { hub }),
+      ...(city && { city }),
       ...(holder && { holder }),
       ...(lateOnly && { late: "1" }),
       ...(type && { type }),
@@ -235,7 +256,7 @@ export default async function InventoryPage({
 
   // Includes optional Admin checkbox and holder-specific Since column.
   const columnCount =
-    15 + (isAdmin ? 1 : 0) + (holder ? 1 : 0) + (showQc ? 1 : 0);
+    16 + (isAdmin ? 1 : 0) + (holder ? 1 : 0) + (showQc ? 1 : 0);
 
   const table = (
     <div
@@ -268,6 +289,7 @@ export default async function InventoryPage({
             {showQc && <th scope="col">QC</th>}
             <th scope="col">From</th>
             <th scope="col">To</th>
+            <th scope="col">Last event</th>
             <th scope="col">Current hub</th>
             <th scope="col">Holder</th>
             {holder && <th scope="col">Since</th>}
@@ -406,6 +428,13 @@ export default async function InventoryPage({
                     )}
                   </td>
 
+                  {/* When this item last moved (send, receive, correction or add). */}
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    {last?.occurred_at || item.updated_at
+                      ? `${formatIst(last?.occurred_at || item.updated_at)} IST`
+                      : "—"}
+                  </td>
+
                   <td>
                     {hubName.get(item.current_hub) ??
                       item.current_hub}
@@ -447,7 +476,7 @@ export default async function InventoryPage({
         role={user.role}
         current={type}
         path="/inventory"
-        params={{ q: one(sp.q), status, hub, holder, late: lateOnly ? "1" : "" }}
+        params={{ q: one(sp.q), status, hub, city, holder, late: lateOnly ? "1" : "" }}
       />
 
       {one(sp.done) && (
@@ -564,57 +593,29 @@ export default async function InventoryPage({
           aria-label="Search inventory"
         />
 
-        {statuses.length > 1 ? (
-          <>
-            <input type="hidden" name="status" value={status} />
-            <span className={styles.muted}>
-              Status:{" "}
-              {statuses
-                .map((s) => STATUS_LABELS[s as Status] ?? s)
-                .join(" or ")}{" "}
-              · <Link href="/inventory">clear</Link>
-            </span>
-          </>
-        ) : (
-          <select
-            name="status"
-            defaultValue={status}
-            aria-label="Status"
-          >
-            <option value="">All statuses</option>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {STATUS_LABELS[s]}
-              </option>
-            ))}
-          </select>
-        )}
+        <MultiSelect
+          name="status"
+          label="Status"
+          allLabel="All statuses"
+          options={STATUSES.map((st) => ({ value: st, label: STATUS_LABELS[st] }))}
+          selected={statuses}
+        />
 
-        {hubIds.length > 1 ? (
-          <>
-            <input type="hidden" name="hub" value={hub} />
-            <span className={styles.muted}>
-              Hubs:{" "}
-              {hubIds
-                .map((id) => hubName.get(id) ?? id)
-                .join(", ")}{" "}
-              · <Link href="/inventory">clear</Link>
-            </span>
-          </>
-        ) : (
-          <select
-            name="hub"
-            defaultValue={hub}
-            aria-label="Hub"
-          >
-            <option value="">All hubs</option>
-            {sortedHubs.map((h) => (
-              <option key={h.hub_id} value={h.hub_id}>
-                {h.name}
-              </option>
-            ))}
-          </select>
-        )}
+        <MultiSelect
+          name="city"
+          label="City"
+          allLabel="All cities"
+          options={cityOptions}
+          selected={cities}
+        />
+
+        <MultiSelect
+          name="hub"
+          label="Hub"
+          allLabel="All hubs"
+          options={sortedHubs.map((h) => ({ value: h.hub_id, label: h.name }))}
+          selected={hubIds}
+        />
 
         {holder && (
           <input type="hidden" name="holder" value={holder} />
@@ -631,6 +632,10 @@ export default async function InventoryPage({
         )}
 
         <button type="submit">Filter</button>
+
+        {(statuses.length > 0 || cities.length > 0 || hubIds.length > 0 || q) && (
+          <Link href={type ? `/inventory?type=${type}` : "/inventory"}>Clear filters</Link>
+        )}
 
         {holder && (
           <span className={styles.muted}>
