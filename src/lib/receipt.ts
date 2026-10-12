@@ -1,4 +1,4 @@
-import type { Action, AppUser, Hub, Item, ItemEvent, Person, Status } from "./schema";
+import type { Action, Hub, Item, ItemEvent, Status } from "./schema";
 
 export interface ReceiptLine {
   itemId: string;
@@ -22,8 +22,9 @@ export interface ReceiptLine {
 
 export interface BatchSummary {
   returnInfo: any;
-  toId(toId: any, people: Person[], users: AppUser[]): string;
-  fromId(fromId: any, people: Person[], users: AppUser[]): string;
+  // person_id (or an admin's email) behind fromName / toName.
+  fromId: string;
+  toId: string;
   batchId: string;
   action: Action;
   occurredAt: string;
@@ -291,11 +292,7 @@ export function summarizeBatch(
       : null,
     totalPenalty: totalPenaltyPaise / 100,
     returnInfo: undefined,
-    toId: function (toId: any, people: Person[], users: AppUser[]): string {
-      throw new Error("Function not implemented.");
-    },
-    fromId: function (fromId: any, people: Person[], users: AppUser[]): string {
-      throw new Error("Function not implemented.");
-    },
+    fromId: first.from_id ?? "",
+    toId: first.to_id ?? "",
   };
 }

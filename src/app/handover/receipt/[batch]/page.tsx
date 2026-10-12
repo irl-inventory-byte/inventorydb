@@ -31,29 +31,52 @@ function field(record: unknown, name: string): string {
   return "";
 }
 
+const looksLikeEmail = (value: string) =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+
+const sameName = (a: string, b: string) =>
+  a.trim().replace(/\s+/g, " ").toLowerCase() ===
+  b.trim().replace(/\s+/g, " ").toLowerCase();
+
 /**
- * Email for a person on the receipt.
- * Order: the person's own email, then the linked user's email, then "".
- * Accepts any record shape, so it works with your Person and AppUser types.
+ * Email for a person on the receipt, from the people database.
+ * Order:
+ *   1. the id itself, when an admin's email was recorded as the id
+ *   2. the person's linked_user (the email saved on the People page)
+ *   3. the email of the user account linked to that person_id
+ * The person is found by person_id, or by name for older handovers
+ * that were saved without an id.
  */
 function lookupEmail(
   personId: unknown,
+  personName: unknown,
   people: readonly unknown[],
   users: readonly unknown[]
 ): string {
-  const id = personId == null ? "" : String(personId);
-  if (!id) return "";
+  const id = personId == null ? "" : String(personId).trim();
+  const name = personName == null ? "" : String(personName).trim();
 
-  const person = people.find((p) => field(p, "id") === id);
-  const ownEmail = field(person, "email");
-  if (ownEmail) return ownEmail;
+  if (looksLikeEmail(id)) return id;
 
-  const userId = field(person, "userId");
-  const user =
-    (userId && users.find((u) => field(u, "id") === userId)) ||
-    users.find((u) => field(u, "personId") === id);
+  const person =
+    (id && people.find((p) => field(p, "person_id") === id)) ||
+    (name && people.find((p) => sameName(field(p, "name"), name))) ||
+    undefined;
 
-  return field(user, "email");
+  const linked = field(person, "linked_user").trim();
+  if (looksLikeEmail(linked)) return linked;
+
+  const pid = field(person, "person_id") || id;
+  const user = pid
+    ? users.find(
+        (u) =>
+          field(u, "person_id") === pid &&
+          field(u, "active") !== "false"
+      )
+    : undefined;
+  const userEmail = field(user, "email").trim();
+
+  return looksLikeEmail(userEmail) ? userEmail : "";
 }
 
 /**
@@ -151,8 +174,8 @@ export default async function ReceiptPage({
   // Email IDs of the people on the receipt (blank if not linked).
   const peopleList = people as readonly unknown[];
   const userList = users as readonly unknown[];
-  const fromEmail = lookupEmail(summary.fromId, peopleList, userList);
-  const toEmail = lookupEmail(summary.toId, peopleList, userList);
+  const fromEmail = lookupEmail(summary.fromId, summary.fromName, peopleList, userList);
+  const toEmail = lookupEmail(summary.toId, summary.toName, peopleList, userList);
 
   return (
     <main className={styles.page}>
