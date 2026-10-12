@@ -158,7 +158,6 @@ export default async function MyDashboardPage({
       ? matchingPersonRecords[0]
       : undefined;
 
-  const holdingsAvailable = linkedPerson !== undefined;
 
   // Holdings are current-state records, not historical activity.
   const myItems = linkedPerson
@@ -180,6 +179,32 @@ export default async function MyDashboardPage({
   const receivedCount = myEvents.filter(
     (event) => event.action === "receive"
   ).length;
+
+  // Items currently with me = received − sent (never below zero).
+  const withMeCount = Math.max(0, receivedCount - sentCount);
+
+  /*
+   * Cards still with me: their latest event is a receive I recorded
+   * (I haven't sent them on since), plus any cards assigned to my
+   * person record in an out status.
+   */
+  const eventById = new Map(
+    events.map((event) => [event.event_id, event])
+  );
+
+  const withMeIds = new Set(myItems.map((item) => item.item_id));
+
+  const withMeItems = [
+    ...myItems,
+    ...items.filter((item) => {
+      if (withMeIds.has(item.item_id)) return false;
+      const last = eventById.get(item.last_event_id);
+      return (
+        last?.action === "receive" &&
+        normalizeEmail(last.recorded_by ?? "") === email
+      );
+    }),
+  ];
 
   const correctionCount = myEvents.filter(
     (event) =>
@@ -226,9 +251,7 @@ export default async function MyDashboardPage({
     },
     {
       label: "Items currently with me",
-      value: holdingsAvailable
-        ? numberText(myItems.length)
-        : "—",
+      value: numberText(withMeCount),
     },
   ];
 
@@ -322,15 +345,8 @@ export default async function MyDashboardPage({
         >
           <h2>Items currently with me</h2>
 
-          {!holdingsAvailable ? (
-            <p className={styles.warn}>
-              {candidatePersonIds.size > 1 ||
-              matchingPersonRecords.length > 1
-                ? "Your login has conflicting or duplicate person links. Ask an administrator to correct the records in Manage users and Manage people."
-                : "Your login is not linked to a valid person record. Ask an administrator to link your person ID in Manage users or your email in Manage people."}
-              {" "}Your recorded activity can still appear below.
-            </p>
-          ) : (
+          {/* Received − sent; the cards below are the ones not sent on yet. */}
+          {(
             <div
               className={styles.tableScroll}
               role="region"
@@ -353,18 +369,17 @@ export default async function MyDashboardPage({
                 </thead>
 
                 <tbody>
-                  {myItems.length === 0 ? (
+                  {withMeItems.length === 0 ? (
                     <tr>
                       <td
                         colSpan={5}
                         className={styles.muted}
                       >
-                        No out-status items are currently assigned
-                        to you.
+                        No items are currently with you.
                       </td>
                     </tr>
                   ) : (
-                    myItems.map((item) => (
+                    withMeItems.map((item) => (
                       <tr key={item.item_id}>
                         <td>
                           <Link
@@ -397,7 +412,7 @@ export default async function MyDashboardPage({
                     <th scope="row">Grand total</th>
                     <td colSpan={4}>
                       <strong>
-                        {numberText(myItems.length)}
+                        {numberText(withMeCount)}
                       </strong>
                     </td>
                   </tr>
