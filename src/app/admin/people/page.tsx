@@ -54,8 +54,6 @@ export default async function PeoplePage({
 
   const sp = await searchParams;
   const error = one(sp.error);
-  // Active people still missing the (now required) mobile number.
-  const missingMobile = people.filter((p) => p.active !== "false" && !(p.mobile ?? "").trim()).length;
   const done = one(sp.done);
 
   const store = getStore();
@@ -64,6 +62,11 @@ export default async function PeoplePage({
     store.list("people"),
     store.list("hubs"),
   ]);
+
+  // Active people still missing the (now required) mobile number.
+  const missingMobile = people.filter(
+    (p) => p.active !== "false" && !(p.mobile ?? "").trim()
+  ).length;
 
   const sortedPeople = [...people].sort(
     (a, b) =>
