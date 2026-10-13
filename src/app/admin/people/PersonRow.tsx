@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import { formatMobile } from "@/lib/mobile";
 import type { Hub, Person } from "@/lib/schema";
 import styles from "../admin.module.css";
 import { savePerson } from "./actions";
@@ -39,6 +40,17 @@ export default function PersonRow({ person, hubs, keep = "" }: { person: Person;
         aria-label={`${person.name} email`}
         defaultValue={person.linked_user}
         onBlur={(e) => e.target.value !== person.linked_user && submit()}
+      />
+      <input
+        name="mobile"
+        type="tel"
+        inputMode="numeric"
+        required
+        placeholder="Mobile (required)"
+        aria-label={`${person.name} mobile number`}
+        defaultValue={person.mobile ? formatMobile(person.mobile) : ""}
+        style={person.mobile ? undefined : { borderColor: "#B42318" }}
+        onBlur={(e) => e.target.value.replace(/\D/g, "") !== (person.mobile ?? "") && submit()}
       />
       <label>
         <input type="checkbox" name="active" defaultChecked={person.active !== "false"} onChange={submit} /> Active

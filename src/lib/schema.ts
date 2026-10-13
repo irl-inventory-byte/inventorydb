@@ -34,7 +34,7 @@ export const TABS = {
     "to_id",
     "from_hub", // the hub the card was at before this step (`hub` is where it is after)
   ],
-  people: ["person_id", "name", "role", "hub", "linked_user", "active"],
+  people: ["person_id", "name", "role", "hub", "linked_user", "active", "mobile"], // mobile: 10 digits, required for new/edited people
   hubs: ["hub_id", "name", "city", "is_central", "active", "parent_hub"], // parent_hub: the hub this one sits under, blank for a top-level hub
   item_types: ["type", "fields"],
   users: ["email", "role", "person_id", "active"],

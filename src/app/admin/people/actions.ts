@@ -5,14 +5,16 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireRole } from "@/lib/authz";
+import { normalizeMobile } from "@/lib/mobile";
 import { getStore } from "@/lib/store";
 
-// Email is required for both adding and editing.
+// Email and mobile number are required for both adding and editing.
 const PersonInput = z.object({
   name: z.string().trim().min(1).max(80),
   role: z.enum(["im", "ifo", "fo", "rig", "hardware", "qc"]),
   hub: z.string().trim().min(1),
   email: z.email("Enter a valid email address"),
+  mobile: z.string().regex(/^[6-9][0-9]{9}$/, "Enter a valid 10-digit mobile number"),
 });
 
 function normalizeEmail(value: string): string {
@@ -27,11 +29,17 @@ function parsePerson(formData: FormData) {
     email: normalizeEmail(
       String(formData.get("email") ?? "")
     ),
+    mobile: normalizeMobile(String(formData.get("mobile") ?? "")),
   });
 }
 
+/** "mobile" when the only problem is the mobile number, else "invalid". */
+function problem(formData: FormData): "mobile" | "invalid" {
+  return normalizeMobile(String(formData.get("mobile") ?? "")) ? "invalid" : "mobile";
+}
+
 function fail(
-  error: "invalid" | "email_exists" | "person_not_found"
+  error: "invalid" | "mobile" | "mobile_exists" | "email_exists" | "person_not_found"
 ): never {
   redirect(
     `/admin/people?${new URLSearchParams({ error })}`
@@ -59,7 +67,7 @@ export async function addPerson(formData: FormData) {
   const parsed = parsePerson(formData);
 
   if (!parsed.success) {
-    fail("invalid");
+    fail(problem(formData));
   }
 
   const input = parsed.data;
@@ -69,6 +77,11 @@ export async function addPerson(formData: FormData) {
     store.list("people"),
     store.list("hubs"),
   ]);
+
+  // One mobile number per person.
+  if (people.some((person) => (person.mobile ?? "") === input.mobile)) {
+    fail("mobile_exists");
+  }
 
   const validHub = hubs.some(
     (hub) =>
@@ -99,6 +112,7 @@ export async function addPerson(formData: FormData) {
       hub: input.hub,
       linked_user: input.email,
       active: "true",
+      mobile: input.mobile,
     },
   ]);
 
@@ -121,7 +135,7 @@ export async function savePerson(formData: FormData) {
   const parsed = parsePerson(formData);
 
   if (!personId || !parsed.success) {
-    fail("invalid");
+    fail(personId ? problem(formData) : "invalid");
   }
 
   const input = parsed.data;
@@ -166,6 +180,16 @@ export async function savePerson(formData: FormData) {
     fail("email_exists");
   }
 
+  if (
+    people.some(
+      (person) =>
+        person.person_id !== personId &&
+        (person.mobile ?? "") === input.mobile
+    )
+  ) {
+    fail("mobile_exists");
+  }
+
   await store.upsert("people", [
     {
       person_id: personId,
@@ -177,6 +201,7 @@ export async function savePerson(formData: FormData) {
         formData.get("active") === "on"
           ? "true"
           : "false",
+      mobile: input.mobile,
     },
   ]);
 

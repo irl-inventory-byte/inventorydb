@@ -23,7 +23,7 @@ export default function ImportForm() {
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={10}
-        placeholder={"Name\tRole\tHub\tEmail\nRahul Kumar\tIM\tBangalore\t"}
+        placeholder={"Name\tRole\tHub\tEmail\tMobile\nRahul Kumar\tIM\tBangalore\trahul@example.com\t9876543210"}
         className={styles.textarea}
       />
 

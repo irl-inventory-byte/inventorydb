@@ -1,4 +1,5 @@
 import { parseTable } from "./csv";
+import { normalizeMobile } from "./mobile";
 import type { Hub, Person, Role } from "./schema";
 
 export interface PeopleImportPlan {
@@ -41,18 +42,22 @@ export function planPeopleImport(
   const plan: PeopleImportPlan = { adds: [], skipped: [], errors: [] };
   const table = parseTable(text);
   if (table.length < 2) {
-    plan.errors.push("Add a header row (Name, Role, Hub, Email) and at least one person.");
+    plan.errors.push("Add a header row (Name, Role, Hub, Email, Mobile) and at least one person.");
     return plan;
   }
 
   const header = table[0].map((h) => h.toLowerCase());
   const col = (name: string) => header.indexOf(name);
   const [iName, iRole, iHub, iEmail] = ["name", "role", "hub", "email"].map(col);
+  // "Mobile", "Mobile number", "Phone" or "Phone number".
+  const iMobile = header.findIndex((h) => ["mobile", "mobile number", "mobile no", "phone", "phone number"].includes(h.trim()));
   const missing = ["name", "role", "hub"].filter((n) => col(n) === -1);
+  if (iMobile === -1) missing.push("mobile");
   if (missing.length) {
-    plan.errors.push(`Missing column(s): ${missing.join(", ")}. Expected: Name, Role, Hub, Email.`);
+    plan.errors.push(`Missing column(s): ${missing.join(", ")}. Expected: Name, Role, Hub, Email, Mobile.`);
     return plan;
   }
+  const seenMobiles = new Set(existing.map((p) => p.mobile ?? "").filter(Boolean));
 
   const hubByKey = new Map<string, Hub>();
   for (const h of hubs) {
@@ -76,6 +81,9 @@ export function planPeopleImport(
     if (!hub) problems.push(`hub "${hubText}" not found`);
     else if (hub.active === "false") problems.push(`hub "${hub.name}" is inactive`);
     if (email && !EMAIL.test(email)) problems.push(`email "${email}" is not valid`);
+    const mobileText = cells[iMobile] ?? "";
+    const mobile = normalizeMobile(mobileText);
+    if (!mobile) problems.push(mobileText ? `mobile "${mobileText}" is not a valid 10-digit number` : "mobile is empty");
     if (problems.length) {
       plan.errors.push(`Row ${line}: ${problems.join("; ")}`);
       return;
@@ -86,7 +94,12 @@ export function planPeopleImport(
       plan.skipped.push(`Row ${line}: ${name} (${hub!.name}) already exists`);
       return;
     }
+    if (seenMobiles.has(mobile)) {
+      plan.errors.push(`Row ${line}: mobile ${mobile} is already used by another person`);
+      return;
+    }
     seen.add(key);
+    seenMobiles.add(mobile);
     plan.adds.push({
       person_id: newId(),
       name,
@@ -94,6 +107,7 @@ export function planPeopleImport(
       hub: hub!.hub_id,
       linked_user: email,
       active: "true",
+      mobile,
     });
   });
   return plan;
