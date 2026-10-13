@@ -180,8 +180,6 @@ export default async function MyDashboardPage({
     (event) => event.action === "receive"
   ).length;
 
-  // Items currently with me = received − sent (never below zero).
-  const withMeCount = Math.max(0, receivedCount - sentCount);
 
   /*
    * Cards still with me: their latest event is a receive I recorded
@@ -251,7 +249,7 @@ export default async function MyDashboardPage({
     },
     {
       label: "Items currently with me",
-      value: numberText(withMeCount),
+      value: numberText(withMeItems.length),
     },
   ];
 
@@ -345,29 +343,7 @@ export default async function MyDashboardPage({
         >
           <h2>Items currently with me</h2>
 
-          {/* Check: the box (received − sent) against the items actually listed below. */}
-          <p
-            className={withMeItems.length === withMeCount ? styles.muted : styles.warn}
-            style={{ margin: "0 0 12px" }}
-          >
-            Received {numberText(receivedCount)} − Sent {numberText(sentCount)} ={" "}
-            <strong>{numberText(withMeCount)}</strong> · Items listed below:{" "}
-            <strong>{numberText(withMeItems.length)}</strong>
-            {withMeItems.length === withMeCount ? (
-              " ✓ They match."
-            ) : (
-              <>
-                {" "}
-                · Difference: {numberText(Math.abs(withMeCount - withMeItems.length))}. The list shows
-                items whose latest movement is a receive you recorded. It can differ from Received − Sent
-                when an item you received was later moved by someone else (send or correction), when the
-                same item was received more than once, or when items were sent without being received by
-                you first.
-              </>
-            )}
-          </p>
-
-          {/* Received − sent; the cards below are the ones not sent on yet. */}
+          {/* The items still with me; the box above shows the same count. */}
           {(
             <div
               className={styles.tableScroll}
@@ -431,7 +407,7 @@ export default async function MyDashboardPage({
                 {/* Total appears after the full list. */}
                 <tfoot>
                   <tr>
-                    <th scope="row">Grand total (items listed)</th>
+                    <th scope="row">Grand total</th>
                     <td colSpan={4}>
                       <strong>
                         {numberText(withMeItems.length)}
