@@ -54,6 +54,8 @@ export default async function PeoplePage({
 
   const sp = await searchParams;
   const error = one(sp.error);
+  // Active people still missing the (now required) mobile number.
+  const missingMobile = people.filter((p) => p.active !== "false" && !(p.mobile ?? "").trim()).length;
   const done = one(sp.done);
 
   const store = getStore();
@@ -155,8 +157,8 @@ export default async function PeoplePage({
       <h1>People</h1>
 
       <p className={styles.muted}>
-        {people.length} people. Email is required when adding
-        or editing a person. Use their Google login email to
+        {people.length} people. Email and mobile number are required
+        when adding or editing a person. Use their Google login email to
         link their account. Deactivate instead of deleting
         so history stays intact.
       </p>
@@ -166,9 +168,13 @@ export default async function PeoplePage({
         <p className={styles.error} role="alert">
           {error === "email_exists"
             ? "This email address is already there. Edit the existing person or use a different email."
-            : error === "person_not_found"
-              ? "This person could not be found. Refresh the page and try again."
-              : "Please check the name, role, hub and email. A valid email address is required."}
+            : error === "mobile_exists"
+              ? "This mobile number is already used by another person."
+              : error === "mobile"
+                ? "Enter a valid 10-digit mobile number (it can start with +91 or 0)."
+                : error === "person_not_found"
+                  ? "This person could not be found. Refresh the page and try again."
+                  : "Please check the name, role, hub, email and mobile number."}
         </p>
       )}
 
@@ -191,7 +197,7 @@ export default async function PeoplePage({
         <p className={styles.muted}>
           Paste cells copied from Excel or Google Sheets,
           or upload a CSV. Columns: Name, Role (IM, IFO,
-          FO, Rig), Hub, Email, with the header in the first row.
+          FO, Rig, Hardware, QC), Hub, Email, Mobile, with the header in the first row.
         </p>
 
         <ImportForm />
@@ -357,6 +363,16 @@ export default async function PeoplePage({
           required
         />
 
+        <input
+          name="mobile"
+          type="tel"
+          inputMode="numeric"
+          placeholder="Mobile (required)"
+          aria-label="Mobile number (required)"
+          autoComplete="tel"
+          required
+        />
+
         <button
           type="submit"
           disabled={activeHubs.length === 0}
@@ -366,6 +382,13 @@ export default async function PeoplePage({
       </form>
 
       <h2 style={{ marginTop: 24 }}>People list</h2>
+
+      {missingMobile > 0 && (
+        <p className={styles.error} role="status">
+          {missingMobile} {missingMobile === 1 ? "person has" : "people have"} no
+          mobile number yet (red box). Type it in and click outside the box to save.
+        </p>
+      )}
 
       <div className={styles.list}>
         {filteredPeople.length === 0 ? (
@@ -398,6 +421,7 @@ export default async function PeoplePage({
                   person.hub,
                   person.linked_user,
                   person.active,
+                  person.mobile ?? "",
                 ])}
               >
                 <PersonRow
