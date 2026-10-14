@@ -7,6 +7,7 @@ import { SEND_ROLES, canSeeType, storeFor } from "@/lib/access";
 import styles from "../form.module.css";
 import { sendCards } from "../actions";
 import SendScanFields from "./SendScanFields";
+import QcSendFields from "./QcSendFields";
 import SendToFields from "./SendToFields";
 
 // The Send to list, grouped so it is easy to scan. What each group means is in the hint under the field.
@@ -136,19 +137,21 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
           held={held}
         />
 
-        <SendToFields
-          groups={personGroups}
-          hubs={activeHubs.map((h) => ({ id: h.hub_id, name: h.name }))}
-          allowInternal={!held}
-        />
+        {user.role === "qc" ? (
+          <QcSendFields groups={personGroups} hubs={activeHubs.map((h) => ({ id: h.hub_id, name: h.name }))} />
+        ) : (
+          <SendToFields
+            groups={personGroups}
+            hubs={activeHubs.map((h) => ({ id: h.hub_id, name: h.name }))}
+            allowInternal={!held}
+          />
+        )}
 
-        {seesRigs && (
+        {seesRigs && user.role !== "qc" && (
           <p className={styles.hint}>
-            {user.role === "qc"
-              ? "Rigs: QC pass → send to an IM. QC fail → send to the hardware team."
-              : user.role === "hardware"
-                ? "Rigs: after repair, send the rig to an IM. It then goes back to the QC team."
-                : "Rigs: QC pass → FO or IFO. QC pending or fail → QC team only."}
+            {user.role === "hardware"
+              ? "Rigs: after repair, send the rig to an IM. It then goes back to the QC team."
+              : "Rigs: QC pass → FO or IFO. QC pending or fail → QC team only."}
           </p>
         )}
 

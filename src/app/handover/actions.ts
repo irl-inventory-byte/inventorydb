@@ -4,10 +4,10 @@ import { randomUUID } from "node:crypto";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
-import { actorOptions, allowedActors, defaultActor, resolveActor } from "@/lib/actors";
+import { actorOptions, allowedActors, defaultActor, displayName, resolveActor } from "@/lib/actors";
 import { requireRole } from "@/lib/authz";
 import { planReceive, planSend, type HandoverContext, type HandoverPlan } from "@/lib/handover";
-import type { Item, Role } from "@/lib/schema";
+import type { Item, Role, TabRows } from "@/lib/schema";
 import { collectIds } from "@/lib/scan";
 import { archiveReceipt } from "@/lib/receipt-archive";
 import { HANDLER_ROLES, SEND_ROLES, storeFor } from "@/lib/access";
@@ -106,6 +106,11 @@ export async function sendCards(formData: FormData) {
     toHub: String(formData.get("hub") ?? ""),
     note: String(formData.get("note") ?? ""),
   };
+  // QC team: the QC result chosen on the Send page, saved for every rig in the send.
+  const qcResult = String(formData.get("qcResult") ?? "");
+  const qcComment = String(formData.get("qcComment") ?? "").trim().slice(0, 1000);
+  let qcRows: TabRows["qc_checks"][] = [];
+
   await run(
     formData,
     "/handover/send",
@@ -115,6 +120,27 @@ export async function sendCards(formData: FormData) {
       if (targets.some((t) => t.item_type === "rig")) {
         for (const c of await getStore().list("qc_checks")) qcStatus.set(c.item_id, c.qc_status);
       }
+
+      if (ctx.senderRole === "qc") {
+        if (qcResult !== "pass" && qcResult !== "fail") {
+          return { events: [], items: [], errors: ["Choose the QC result: Pass or Fail."] };
+        }
+        if (qcResult === "fail" && !qcComment) {
+          return { events: [], items: [], errors: ["Write what failed."] };
+        }
+        // The result applies to every rig in this send (Pass → IM, Fail → hardware team).
+        for (const t of targets) qcStatus.set(t.item_id, qcResult);
+        qcRows = targets.map((t) => ({
+          check_id: ctx.newId("qc"),
+          item_id: t.item_id,
+          recorded_at: ctx.now,
+          recorded_by: ctx.by,
+          recorded_by_name: displayName(ctx.people, ctx.actorPersonId),
+          qc_status: qcResult,
+          comment: qcComment,
+        }));
+      }
+
       return planSend(targets, input, { ...ctx, qcStatus });
     },
     (plan): Record<string, string> => ({
@@ -124,6 +150,9 @@ export async function sendCards(formData: FormData) {
       batch: plan.events[0]?.batch_id ?? "",
     }),
     async (plan) => {
+      // QC team: save the QC result with the handover.
+      if (qcRows.length) await getStore().appendRows("qc_checks", qcRows);
+
       // Save the receipt PDF to Drive and log it in the "Receipts" tab.
       // This runs after the page has redirected, so the user never waits for it,
       // and a Drive/Sheets problem cannot undo the handover that was just saved.
