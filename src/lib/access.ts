@@ -10,8 +10,11 @@ import { getStore } from "./store";
  *   FO           yes      yes         -             -          -        -
  *   Rig team     yes       -         yes           yes         -        -
  *   IFO          yes       -          -             -          -        -
- *   Hardware      -       yes         -             -         yes       -
- *   QC            -       yes         -             -          -       yes
+ *   Hardware      -       yes      send only       -         yes       -
+ *   QC            -       yes      send only       -          -       yes
+ *
+ * Rig route: IM → QC team. QC pass → IM; QC fail → hardware team → IM → QC again.
+ * An IM can send a rig to an FO or IFO only when its latest QC result is Pass.
  */
 
 export const ITEM_TYPES = ["sd_card", "rig"] as const;
@@ -31,6 +34,10 @@ const TYPES_FOR: Record<Role, readonly ItemType[]> = {
 export const VIEW_ROLES: Role[] = ["admin", "im", "fo", "rig", "hardware", "qc"];
 /** Can send and receive items, and see My dashboard. */
 export const HANDLER_ROLES: Role[] = ["admin", "im", "rig"];
+/** Can open My dashboard. */
+export const MY_DASHBOARD_ROLES: Role[] = ["admin", "im", "rig", "qc", "hardware"];
+/** Can open Send items. QC and hardware teams send only rigs they hold (rules in lib/handover.ts). */
+export const SEND_ROLES: Role[] = ["admin", "im", "rig", "qc", "hardware"];
 /** Can add new items to the inventory. */
 export const ADD_ROLES: Role[] = ["admin", "im", "rig"];
 /** Can record hardware updates on a rig. */

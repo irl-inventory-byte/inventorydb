@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { HANDLER_ROLES, VIEW_ROLES } from "@/lib/access";
+import { HANDLER_ROLES, MY_DASHBOARD_ROLES, SEND_ROLES, VIEW_ROLES } from "@/lib/access";
 import { signOut } from "@/auth";
 import { requireRole } from "@/lib/authz";
 import { ROLE_LABELS, one } from "@/lib/labels";
@@ -25,7 +25,7 @@ const WORK: Tile[] = [
     title: "My dashboard",
     desc: "View my sent items, received items, corrections and activity history.",
     icon: "chart",
-    roles: HANDLERS,
+    roles: MY_DASHBOARD_ROLES,
   },
   {
     href: "/dashboard",
@@ -58,9 +58,9 @@ const WORK: Tile[] = [
   {
     href: "/handover/send",
     title: "Send items",
-    desc: "Hand items to an IM, IFO, FO, the rig team or a hub.",
+    desc: "Hand items to an IM, IFO, FO, the rig team, QC or hardware team.",
     icon: "send",
-    roles: HANDLERS,
+    roles: SEND_ROLES,
   },
   {
     href: "/handover/receive",

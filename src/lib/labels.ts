@@ -7,6 +7,8 @@ export const STATUS_LABELS: Record<Status, string> = {
   with_fo: "With FO",
   with_rig: "With rig team",
   with_internal: "With internal",
+  with_qc: "With QC team",
+  with_hardware: "With hardware team",
   lost: "Lost",
   damaged: "Damaged",
   retired: "Retired",

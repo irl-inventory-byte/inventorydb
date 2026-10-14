@@ -38,6 +38,8 @@ const HOLDER_ROLE: Partial<Record<Status, Role>> = {
   traveling: "ifo",
   with_fo: "fo",
   with_rig: "rig",
+  with_qc: "qc",
+  with_hardware: "hardware",
 };
 // A card that is pending is at the receiving IM's hub. For any other holder it stays where it was unless a hub is chosen.
 const HUB_FROM_HOLDER = new Set<Status>(["pending"]);

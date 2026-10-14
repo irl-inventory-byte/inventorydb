@@ -2,35 +2,64 @@ import Link from "next/link";
 import { actorOptions, allowedActors, defaultActor } from "@/lib/actors";
 import { requireRole } from "@/lib/authz";
 import { STATUS_LABELS, one } from "@/lib/labels";
-import type { Role, Status } from "@/lib/schema";
-import { HANDLER_ROLES, storeFor } from "@/lib/access";
+import type { QcCheck, Role, Status } from "@/lib/schema";
+import { SEND_ROLES, canSeeType, storeFor } from "@/lib/access";
 import styles from "../form.module.css";
 import { sendCards } from "../actions";
 import SendScanFields from "./SendScanFields";
 import SendToFields from "./SendToFields";
 
 // The Send to list, grouped so it is easy to scan. What each group means is in the hint under the field.
-const GROUPS: { role: Role; label: string }[] = [
-  { role: "im", label: "Inventory managers (IM)" },
-  { role: "ifo", label: "Couriers (IFO)" },
-  { role: "fo", label: "Field officers (FO)" },
-  { role: "rig", label: "Rig team" },
-];
+const GROUP_LABELS: Record<string, string> = {
+  im: "Inventory managers (IM)",
+  ifo: "Couriers (IFO)",
+  fo: "Field officers (FO)",
+  rig: "Rig team",
+  qc: "QC team",
+  hardware: "Hardware team",
+};
+
+// Who each sender can send to. The full rig rules are checked on save (lib/handover.ts).
+const SEND_TO: Record<string, Role[]> = {
+  admin: ["im", "ifo", "fo", "rig", "qc", "hardware"],
+  im: ["im", "ifo", "fo", "rig", "qc"],
+  rig: ["im", "ifo", "fo", "rig"],
+  qc: ["im", "hardware"], // QC pass → IM, QC fail → hardware team
+  hardware: ["im"], // repaired rig → IM
+};
+
+// QC and hardware teams send the rigs they are holding.
+const HELD: Partial<Record<Role, Status>> = { qc: "with_qc", hardware: "with_hardware" };
 
 export default async function SendPage({ searchParams }: PageProps<"/handover/send">) {
-  const user = await requireRole(...HANDLER_ROLES);
+  const user = await requireRole(...SEND_ROLES);
   const sp = await searchParams;
   const store = storeFor(user.role);
-  const [people, hubs, users, items] = await Promise.all([
+  const seesRigs = canSeeType(user.role, "rig");
+  const [people, hubs, users, items, qcChecks] = await Promise.all([
     store.list("people"),
     store.list("hubs"),
     store.list("users"),
     store.list("items"),
+    seesRigs ? store.list("qc_checks") : Promise.resolve([] as QcCheck[]),
   ]);
-  const scanItems = items.map((i) => ({ id: i.item_id, status: i.status, hub: i.current_hub, type: i.item_type === "rig" ? "rig" : "sd_card" }));
+  // Latest QC result per rig (rows are oldest first, so the last one wins).
+  const latestQc = new Map<string, string>();
+  for (const c of qcChecks) latestQc.set(c.item_id, c.qc_status);
+  const held = HELD[user.role as Role];
+  const scanItems = items.map((i) => ({
+    id: i.item_id,
+    status: i.status,
+    hub: i.current_hub,
+    type: i.item_type === "rig" ? "rig" : "sd_card",
+    ...(i.item_type === "rig" && { qc: latestQc.get(i.item_id) || "qc_pending" }),
+  }));
   const hubName = new Map(hubs.map((h) => [h.hub_id, h.name]));
   const recipients = people.filter((p) => p.active !== "false").sort((a, b) => a.name.localeCompare(b.name));
-  const byOptions = allowedActors(user, actorOptions(people, users, (id) => hubName.get(id) ?? id));
+  const byOptions = allowedActors(
+    user,
+    actorOptions(people, users, (id) => hubName.get(id) ?? id, ["im", "rig", "qc", "hardware"]),
+  );
   const activeHubs = hubs.filter((h) => h.active !== "false").sort((a, b) => a.name.localeCompare(b.name));
 
   // Start at the IM's own hub. Someone with no hub (an admin) starts where most cards are in stock.
@@ -46,11 +75,11 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
       : (activeHubs.find((h) => h.is_central === "true")?.hub_id ?? activeHubs[0]?.hub_id ?? "");
 
   // Categories with the people in each, for the two-step picker. Empty categories are left out.
-  const personGroups = GROUPS.map((g) => ({
-    role: g.role,
-    label: g.label,
+  const personGroups = (SEND_TO[user.role] ?? []).map((role) => ({
+    role,
+    label: GROUP_LABELS[role] ?? role,
     people: recipients
-      .filter((p) => p.role === g.role)
+      .filter((p) => p.role === role)
       .map((p) => ({
         id: p.person_id,
         label: `${p.name} (${hubName.get(p.hub) ?? p.hub})${p.linked_user ? ` — ${p.linked_user}` : ""}`,
@@ -94,7 +123,7 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
               </>
             ) : (
               <p className={styles.error}>
-                Your login is not linked to an active IM or rig team member, so you can&apos;t send yet. Ask an admin to link you on the Users screen.
+                Your login is not linked to an active person in People, so you can&apos;t send yet. Ask an admin to link you on the Users screen.
               </p>
             )}
           </div>
@@ -104,9 +133,24 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
           hubs={activeHubs.map((h) => ({ id: h.hub_id, name: h.name }))}
           defaultHub={defaultFromHub}
           items={scanItems}
+          held={held}
         />
 
-        <SendToFields groups={personGroups} hubs={activeHubs.map((h) => ({ id: h.hub_id, name: h.name }))} />
+        <SendToFields
+          groups={personGroups}
+          hubs={activeHubs.map((h) => ({ id: h.hub_id, name: h.name }))}
+          allowInternal={!held}
+        />
+
+        {seesRigs && (
+          <p className={styles.hint}>
+            {user.role === "qc"
+              ? "Rigs: QC pass → send to an IM. QC fail → send to the hardware team."
+              : user.role === "hardware"
+                ? "Rigs: after repair, send the rig to an IM. It then goes back to the QC team."
+                : "Rigs: QC pass → FO or IFO. QC pending or fail → QC team only."}
+          </p>
+        )}
 
         <div className={styles.field}>
           <label className={styles.label} htmlFor="note">

@@ -10,11 +10,18 @@ export interface ActorOption {
  * active admin who is not already covered by a linked entry. The signed-in account is always recorded
  * separately as `recorded_by`, so naming someone else here never hides who really did it.
  */
-export function actorOptions(people: Person[], users: AppUser[], hubName: (hubId: string) => string): ActorOption[] {
+const ACTOR_LABEL: Partial<Record<Role, string>> = { im: "IM", rig: "Rig", qc: "QC", hardware: "Hardware" };
+
+export function actorOptions(
+  people: Person[],
+  users: AppUser[],
+  hubName: (hubId: string) => string,
+  roles: readonly Role[] = ["im", "rig"], // Send items also allows "qc" and "hardware"
+): ActorOption[] {
   const handlers = people
-    .filter((p) => (p.role === "im" || p.role === "rig") && p.active !== "false")
+    .filter((p) => roles.includes(p.role) && p.active !== "false")
     .sort((a, b) => a.name.localeCompare(b.name))
-    .map((p) => ({ value: p.person_id, label: `${p.name} (${p.role === "im" ? "IM" : "Rig"}, ${hubName(p.hub)})` }));
+    .map((p) => ({ value: p.person_id, label: `${p.name} (${ACTOR_LABEL[p.role] ?? p.role}, ${hubName(p.hub)})` }));
 
   const linked = new Set(people.map((p) => p.person_id));
   const admins = users

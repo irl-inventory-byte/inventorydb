@@ -22,9 +22,11 @@ const INTERNAL = "internal";
 export default function SendToFields({
   groups,
   hubs,
+  allowInternal = true,
 }: {
   groups: PersonGroup[];
   hubs: { id: string; name: string }[];
+  allowInternal?: boolean;
 }) {
   const [role, setRole] = useState("");
   const [person, setPerson] = useState("");
@@ -57,7 +59,7 @@ export default function SendToFields({
                   {g.label} ({g.people.length})
                 </option>
               ))}
-              <option value={INTERNAL}>Internal</option>
+              {allowInternal && <option value={INTERNAL}>Internal</option>}
             </select>
             {isInternal ? (
               <input
@@ -93,7 +95,10 @@ export default function SendToFields({
             {isInternal ? (
               <>Recorded as &quot;With internal&quot;, under the name you type. Receive it back the same way as any other item.</>
             ) : (
-              <>IM: waits to be received. IFO: traveling. FO: with the field officer. Rig: with the rig team.</>
+              <>
+                IM: waits to be received. IFO: traveling. FO: with the field officer. Rig: with the rig team. QC /
+                Hardware: with that team.
+              </>
             )}
           </p>
         </div>

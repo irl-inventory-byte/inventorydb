@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { STATUS_LABELS } from "@/lib/labels";
+import { QC_LABELS, STATUS_LABELS } from "@/lib/labels";
 import { classifyScans, type ScanState } from "@/lib/scan";
 import { OUT_STATUSES, type Status } from "@/lib/schema";
 import { TypeBadge, TypeCounts } from "../ItemTypeBadge";
@@ -28,12 +28,14 @@ export default function ScanBox({
   rows = 8,
   hub,
   hubNames = {},
+  allowed,
   autoFocus = true,
   injected,
 }: {
   id: string;
-  items: { id: string; status: Status; hub: string; type?: string }[];
+  items: { id: string; status: Status; hub: string; type?: string; qc?: string }[];
   mode: "send" | "receive";
+  allowed?: readonly string[]; // send only: statuses that can be sent, instead of "in stock" (QC / hardware teams)
   rows?: number;
   hub?: string; // receive only: the hub chosen in "Receiving at"
   hubNames?: Record<string, string>;
@@ -71,7 +73,8 @@ export default function ScanBox({
   const statuses = useMemo(() => new Map<string, string>(items.map((i) => [i.id, i.status])), [items]);
   const results = useMemo(() => {
     const placeOf = new Map(items.map((i) => [i.id, i.hub]));
-    return classifyScans(text, statuses, ALLOWED[mode]).map((r) => {
+    const accepts = allowed ? new Set<string>(allowed) : ALLOWED[mode];
+    return classifyScans(text, statuses, accepts).map((r) => {
       // Say so before submitting when a card is at a different hub than the one chosen: a card sent to a
       // hub must be received there, and cards must be in stock at the hub they are sent from.
       const sentTo = r.id ? placeOf.get(r.id) : undefined;
@@ -81,7 +84,9 @@ export default function ScanBox({
       }
       return { ...r, sentTo: undefined };
     });
-  }, [text, statuses, items, mode, hub]);
+  }, [text, statuses, items, mode, hub, allowed]);
+  // A rig's latest QC result, shown next to it so the rig route is clear while scanning.
+  const qcOf = useMemo(() => new Map(items.filter((i) => i.qc).map((i) => [i.id, i.qc!])), [items]);
   const ok = results.filter((r) => r.state === "ok").length;
   // SD card or Rig for each matched item, so mixed batches are easy to check.
   const typeOf = useMemo(() => new Map(items.map((i) => [i.id, i.type ?? "sd_card"])), [items]);
@@ -143,6 +148,7 @@ export default function ScanBox({
               <code>{r.id ?? r.code}</code>
               <span className={styles.msg}>
                 {r.state === "ok" && (STATUS_LABELS[r.status as Status] ?? r.status)}
+                {r.id && qcOf.has(r.id) && ` · QC: ${QC_LABELS[qcOf.get(r.id)!] ?? qcOf.get(r.id)}`}
                 {r.state === "wrong" &&
                   (r.sentTo
                     ? mode === "send"

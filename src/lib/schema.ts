@@ -100,6 +100,8 @@ export const STATUSES = [
   "with_fo",
   "with_rig",
   "with_internal",
+  "with_qc", // rigs only: with the QC team
+  "with_hardware", // rigs only: with the hardware team for repair
   "lost",
   "damaged",
   "retired",

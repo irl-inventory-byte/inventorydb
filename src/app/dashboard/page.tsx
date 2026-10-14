@@ -30,7 +30,7 @@ interface Attention {
 const GLYPH = { critical: "✕", warning: "▲", info: "●" } as const;
 const TONE = { critical: styles.iconCritical, warning: styles.iconWarning, info: styles.iconMuted };
 
-const STATUS_ORDER: Status[] = ["in_stock", "with_fo", "traveling", "with_rig", "with_internal", "pending", "lost", "damaged", "retired"];
+const STATUS_ORDER: Status[] = ["in_stock", "with_fo", "traveling", "with_rig", "with_internal", "with_qc", "with_hardware", "pending", "lost", "damaged", "retired"];
 const HUB_BARS = 8;
 
 // Shared styles for dark sticky table headers / footers.

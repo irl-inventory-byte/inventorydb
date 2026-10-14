@@ -13,13 +13,30 @@ export default function SendScanFields({
   hubs,
   defaultHub,
   items,
+  held,
 }: {
   hubs: { id: string; name: string }[];
   defaultHub: string;
-  items: { id: string; status: Status; hub: string; type?: string }[];
+  items: { id: string; status: Status; hub: string; type?: string; qc?: string }[];
+  held?: Status; // QC / hardware team: they send the rigs they hold, so there is no "Sending from" hub
 }) {
   const [hub, setHub] = useState(defaultHub);
   const hubNames = Object.fromEntries(hubs.map((h) => [h.id, h.name]));
+
+  if (held) {
+    return (
+      <div className={styles.field}>
+        <label className={styles.label} htmlFor="scanned">
+          Rigs
+        </label>
+        <div className={styles.control}>
+          <input type="hidden" name="fromHub" value="" />
+          <ScanBox id="scanned" mode="send" allowed={[held]} hubNames={hubNames} items={items} />
+          <p className={styles.hint}>Scan the rigs that are with you.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

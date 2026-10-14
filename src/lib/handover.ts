@@ -8,6 +8,10 @@ export interface HandoverContext {
   by: string; // signed-in email, always saved as recorded_by
   now: string; // IST timestamp taken when the form is saved, used for every event in the batch
   newId: (prefix: string) => string;
+  /** Role of the person sending (an admin's email counts as "admin"). Sends only. */
+  senderRole?: Role | "admin";
+  /** Latest QC result per rig: "qc_pending" | "pass" | "fail". Sends only. */
+  qcStatus?: ReadonlyMap<string, string>;
 }
 
 export interface HandoverPlan {
@@ -31,13 +35,74 @@ const SEND_STATUS: Partial<Record<Role, Status>> = {
   ifo: "traveling",
   fo: "with_fo",
   rig: "with_rig",
+  qc: "with_qc",
+  hardware: "with_hardware",
 };
+
+// QC and hardware teams send the rigs they are holding, not stock from a hub.
+const HELD_BY: Partial<Record<Role, Status>> = { qc: "with_qc", hardware: "with_hardware" };
+
+const QC_WORD: Record<string, string> = { qc_pending: "QC pending", pass: "Pass", fail: "Fail" };
+
+/**
+ * RIG ROUTE (SD cards are not affected):
+ *   IM → QC team                    always
+ *   IM → FO or IFO                  only when the rig's latest QC result is Pass
+ *   QC team → IM                    only when QC is Pass
+ *   QC team → hardware team         only when QC is Fail
+ *   hardware team → IM              after repair (the rig must then go back to QC)
+ * Nothing else is allowed for a rig. Returns the error messages, if any.
+ */
+function rigRouteErrors(
+  targets: Item[],
+  senderRole: Role | "admin",
+  to: Role | "internal",
+  qcStatus: ReadonlyMap<string, string>,
+): string[] {
+  const errors: string[] = [];
+  const rigs = targets.filter((t) => t.item_type === "rig");
+  const cards = targets.filter((t) => t.item_type !== "rig");
+  const qc = (t: Item) => qcStatus.get(t.item_id) || "qc_pending";
+  const named = (list: Item[]) => list.map((t) => `${t.item_id} (${QC_WORD[qc(t)] ?? qc(t)})`);
+
+  if (cards.length && (to === "qc" || to === "hardware")) {
+    errors.push(`Only rigs can be sent to the QC or hardware team. SD cards: ${listOf(cards.map((t) => t.item_id))}.`);
+  }
+  if (!rigs.length) return errors;
+
+  if (senderRole === "qc") {
+    if (to === "im") {
+      const notPass = rigs.filter((t) => qc(t) !== "pass");
+      if (notPass.length) errors.push(`Only QC-passed rigs can go to an IM: ${listOf(named(notPass))}. Record Pass first, or send a failed rig to the hardware team.`);
+    } else if (to === "hardware") {
+      const notFail = rigs.filter((t) => qc(t) !== "fail");
+      if (notFail.length) errors.push(`Only QC-failed rigs go to the hardware team: ${listOf(named(notFail))}. Record Fail first.`);
+    } else {
+      errors.push("The QC team can send a rig only to an IM (QC pass) or to the hardware team (QC fail).");
+    }
+    return errors;
+  }
+
+  if (senderRole === "hardware") {
+    if (to !== "im") errors.push("The hardware team can send a repaired rig only to an IM.");
+    return errors;
+  }
+
+  // IM (or an admin)
+  if (to === "fo" || to === "ifo") {
+    const notPass = rigs.filter((t) => qc(t) !== "pass");
+    if (notPass.length) errors.push(`These rigs have not passed QC: ${listOf(named(notPass))}. Send them to the QC team first.`);
+  } else if (to !== "qc") {
+    errors.push(`Rigs can only be sent to the QC team, or to an FO / IFO after QC pass: ${listOf(rigs.map((t) => t.item_id))}.`);
+  }
+  return errors;
+}
 // Cards an IM can take back into stock.
 const RECEIVABLE = new Set<Status>(["pending", "traveling", "with_fo", "with_rig", "with_internal"]);
 
 const hubName = (ctx: HandoverContext, id: string) => ctx.hubs.find((h) => h.hub_id === id)?.name ?? id;
 
-const list = (ids: string[]) => (ids.length > 5 ? `${ids.slice(0, 5).join(", ")} and ${ids.length - 5} more` : ids.join(", "));
+const listOf = (ids: string[]) => (ids.length > 5 ? `${ids.slice(0, 5).join(", ")} and ${ids.length - 5} more` : ids.join(", "));
 
 // Every event is stamped with the moment it is saved. There is no way to enter a different time.
 function eventBase(ctx: HandoverContext, note: string) {
@@ -65,28 +130,51 @@ export function planSend(targets: Item[], input: SendInput, ctx: HandoverContext
   const internalName = (input.internalName ?? "").trim();
   let status: Status | undefined;
   let holder = "";
+  let toRole: Role | "internal" | undefined;
   if (internalName) {
     status = "with_internal";
     holder = internalName;
+    toRole = "internal";
   } else {
     const recipient = ctx.people.find((p) => p.person_id === input.recipient && p.active !== "false");
     status = recipient && SEND_STATUS[recipient.role];
     holder = recipient?.person_id ?? "";
+    toRole = recipient?.role;
     if (!recipient || !status) plan.errors.push("Choose the person the items are going to.");
   }
   if (!activeHub(input.toHub)) plan.errors.push("Choose the location the items are going to.");
 
-  if (!activeHub(input.fromHub)) {
-    plan.errors.push("Choose the hub you are sending from.");
+  const sender = ctx.senderRole ?? "im";
+  const heldStatus = sender === "admin" ? undefined : HELD_BY[sender];
+
+  if (heldStatus) {
+    // QC / hardware team: only rigs they are holding right now.
+    if (internalName) plan.errors.push("Choose a person from the list.");
+    const notHeld = targets.filter(
+      (t) => t.item_type !== "rig" || t.status !== heldStatus || t.current_holder !== ctx.actorPersonId,
+    );
+    if (notHeld.length) {
+      plan.errors.push(`You can only send rigs that are with you. Not with you: ${listOf(notHeld.map((t) => t.item_id))}.`);
+    }
+  } else {
+    if (!activeHub(input.fromHub)) {
+      plan.errors.push("Choose the hub you are sending from.");
+    }
+    const notInStock = targets.filter((t) => t.status !== "in_stock").map((t) => `${t.item_id} (${t.status})`);
+    if (notInStock.length) plan.errors.push(`Only in-stock items can be sent. Not in stock: ${listOf(notInStock)}.`);
   }
-  const notInStock = targets.filter((t) => t.status !== "in_stock").map((t) => `${t.item_id} (${t.status})`);
-  if (notInStock.length) plan.errors.push(`Only in-stock items can be sent. Not in stock: ${list(notInStock)}.`);
+
+  if (toRole && status) {
+    plan.errors.push(...rigRouteErrors(targets, sender, toRole, ctx.qcStatus ?? new Map()));
+  }
 
   // Sending from a hub means the cards are in stock there. Choosing the right hub is the fix if they are not.
-  const elsewhere = targets.filter((t) => t.status === "in_stock" && t.current_hub !== input.fromHub);
+  const elsewhere = heldStatus
+    ? []
+    : targets.filter((t) => t.status === "in_stock" && t.current_hub !== input.fromHub);
   if (elsewhere.length && plan.errors.length === 0) {
     plan.errors.push(
-      `Not at ${hubName(ctx, input.fromHub)}: ${list(elsewhere.map((t) => `${t.item_id} (at ${hubName(ctx, t.current_hub)})`))}. Choose that hub in "Sending from".`,
+      `Not at ${hubName(ctx, input.fromHub)}: ${listOf(elsewhere.map((t) => `${t.item_id} (at ${hubName(ctx, t.current_hub)})`))}. Choose that hub in "Sending from".`,
     );
   }
   if (plan.errors.length || !status) return plan;
@@ -103,7 +191,7 @@ export function planSend(targets: Item[], input: SendInput, ctx: HandoverContext
       to_person: displayName(ctx.people, holder),
       from_id: ctx.actorPersonId,
       to_id: holder,
-      from_hub: input.fromHub,
+      from_hub: heldStatus ? item.current_hub : input.fromHub,
       hub,
       status_after: status,
     };
@@ -129,7 +217,7 @@ export function planReceive(
   const plan: HandoverPlan = { events: [], items: [], errors: [] };
   if (!ctx.hubs.some((h) => h.hub_id === input.hub && h.active !== "false")) plan.errors.push("Choose the receiving hub.");
   const wrong = targets.filter((t) => !RECEIVABLE.has(t.status)).map((t) => `${t.item_id} (${t.status})`);
-  if (wrong.length) plan.errors.push(`These items are not waiting to be received: ${list(wrong)}.`);
+  if (wrong.length) plan.errors.push(`These items are not waiting to be received: ${listOf(wrong)}.`);
 
   // A card sent to a hub must be received at that hub, otherwise it could silently land in the wrong stock
   // (e.g. 50 sent, only 40 ever show up received, with the other 10 unnoticed in the wrong place). This
@@ -140,7 +228,7 @@ export function planReceive(
   const elsewhere = targets.filter((t) => HUB_LOCKED.has(t.status) && t.current_hub !== input.hub);
   if (elsewhere.length) {
     plan.errors.push(
-      `Sent to a different hub: ${list(elsewhere.map((t) => `${t.item_id} (to ${hubName(ctx, t.current_hub)})`))}. Receive them at that hub, not ${hubName(ctx, input.hub)}.`,
+      `Sent to a different hub: ${listOf(elsewhere.map((t) => `${t.item_id} (to ${hubName(ctx, t.current_hub)})`))}. Receive them at that hub, not ${hubName(ctx, input.hub)}.`,
     );
   }
   if (plan.errors.length) return plan;

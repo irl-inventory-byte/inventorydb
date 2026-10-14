@@ -1,10 +1,15 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/authz";
-import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
-import { OUT_STATUSES } from "@/lib/schema";
-import { HANDLER_ROLES, storeFor } from "@/lib/access";
+import { QC_LABELS, ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
+import { OUT_STATUSES, type HardwareUpdate, type QcCheck, type Status } from "@/lib/schema";
+import { HANDLER_ROLES, MY_DASHBOARD_ROLES, storeFor } from "@/lib/access";
 import { formatIst } from "@/lib/time";
 import styles from "../dashboard.module.css";
+
+// Statuses in which an item is in someone's hands (QC and hardware hold rigs too).
+const HELD_STATUSES: readonly Status[] = [...OUT_STATUSES, "with_qc", "with_hardware"];
+
+const QC_COLOR: Record<string, string> = { pass: "#15803D", fail: "#B42318", qc_pending: "#8A4B00" };
 
 // Activity records displayed per page.
 const PAGE_SIZE = 50;
@@ -57,7 +62,10 @@ export default async function MyDashboardPage({
   }>;
 }) {
   // Authenticate and authorize on the server.
-  const user = await requireRole(...HANDLER_ROLES);
+  const user = await requireRole(...MY_DASHBOARD_ROLES);
+  const isQc = user.role === "qc";
+  const isHardware = user.role === "hardware";
+  const canReceive = HANDLER_ROLES.includes(user.role);
   const email = normalizeEmail(user.email ?? "");
 
   // Never match an empty login email to blank event records.
@@ -83,13 +91,29 @@ export default async function MyDashboardPage({
   const sp = await searchParams;
   const store = storeFor(user.role);
 
-  const [events, items, people, hubs, users] = await Promise.all([
+  const [events, items, people, hubs, users, qcChecks, hardwareUpdates] = await Promise.all([
     store.list("events"),
     store.list("items"),
     store.list("people"),
     store.list("hubs"),
     store.list("users"),
+    isQc || isHardware ? store.list("qc_checks") : Promise.resolve([] as QcCheck[]),
+    isHardware ? store.list("hardware_updates") : Promise.resolve([] as HardwareUpdate[]),
   ]);
+
+  // Latest QC result per rig (rows are oldest first, so the last one wins).
+  const latestQc = new Map<string, string>();
+  const latestQcAt = new Map<string, number>();
+  for (const c of qcChecks) {
+    latestQc.set(c.item_id, c.qc_status);
+    const t = Date.parse(c.recorded_at);
+    if (Number.isFinite(t)) latestQcAt.set(c.item_id, t);
+  }
+
+  // QC results and hardware updates this login recorded, newest first.
+  const byMe = (v: string) => normalizeEmail(v ?? "") === email;
+  const myQc = qcChecks.filter((c) => byMe(c.recorded_by)).reverse();
+  const myHardware = hardwareUpdates.filter((h) => byMe(h.recorded_by)).reverse();
 
   const hubNames = new Map(
     hubs.map((hub) => [hub.hub_id, hub.name])
@@ -164,7 +188,7 @@ export default async function MyDashboardPage({
     ? items.filter(
         (item) =>
           item.current_holder === linkedPerson.person_id &&
-          OUT_STATUSES.includes(item.status)
+          HELD_STATUSES.includes(item.status)
       )
     : [];
 
@@ -230,7 +254,33 @@ export default async function MyDashboardPage({
     page * PAGE_SIZE
   );
 
-  const metrics = [
+  // Where this login sent rigs: to an IM (QC pass / repaired) or to the hardware team (QC fail).
+  const sentToIm = myEvents.filter((e) => e.action === "check_out" && e.status_after === "pending").length;
+  const sentToHardware = myEvents.filter((e) => e.action === "check_out" && e.status_after === "with_hardware").length;
+
+  // A rig with me is waiting for QC when no result was recorded since it reached me.
+  const waitingForQc = (item: (typeof items)[number]) => {
+    const arrived = Date.parse(eventById.get(item.last_event_id)?.occurred_at ?? item.updated_at ?? "");
+    const checked = latestQcAt.get(item.item_id);
+    return checked === undefined || (Number.isFinite(arrived) && checked < arrived);
+  };
+
+  const qcMetrics = [
+    { label: "Rigs with me", value: numberText(withMeItems.length) },
+    { label: "Waiting for my QC result", value: numberText(withMeItems.filter(waitingForQc).length) },
+    { label: "QC pass recorded", value: numberText(myQc.filter((c) => c.qc_status === "pass").length) },
+    { label: "QC fail recorded", value: numberText(myQc.filter((c) => c.qc_status === "fail").length) },
+    { label: "Sent to IM", value: numberText(sentToIm) },
+    { label: "Sent to hardware team", value: numberText(sentToHardware) },
+  ];
+
+  const hardwareMetrics = [
+    { label: "Rigs with me", value: numberText(withMeItems.length) },
+    { label: "Hardware updates logged", value: numberText(myHardware.length) },
+    { label: "Repaired and sent to IM", value: numberText(sentToIm) },
+  ];
+
+  const handlerMetrics = [
     {
       label: "My recorded events",
       value: numberText(myEvents.length),
@@ -252,6 +302,9 @@ export default async function MyDashboardPage({
       value: numberText(withMeItems.length),
     },
   ];
+
+  const metrics = isQc ? qcMetrics : isHardware ? hardwareMetrics : handlerMetrics;
+  const withMeTitle = isQc || isHardware ? "Rigs currently with me" : "Items currently with me";
 
   return (
     <div className={styles.root}>
@@ -294,20 +347,30 @@ export default async function MyDashboardPage({
               Send items
             </Link>
 
-            <Link
-              href="/handover/receive"
-              className={styles.btn}
-            >
-              Receive items
-            </Link>
+            {canReceive && (
+              <Link
+                href="/handover/receive"
+                className={styles.btn}
+              >
+                Receive items
+              </Link>
+            )}
+
+            {(isQc || isHardware) && (
+              <Link href="/rigs" className={styles.btn}>
+                Rig checks
+              </Link>
+            )}
           </div>
         </div>
 
-        <p className={styles.muted}>
-          All available history recorded by your login. Counts
-          represent item-event records, not unique cards or
-          handover batches. Current holdings are shown separately.
-        </p>
+        {!isQc && !isHardware && (
+          <p className={styles.muted}>
+            All available history recorded by your login. Counts
+            represent item-event records, not unique cards or
+            handover batches. Current holdings are shown separately.
+          </p>
+        )}
 
         {/* Personal summary cards. */}
         <section
@@ -339,9 +402,9 @@ export default async function MyDashboardPage({
         {/* Items assigned to the person linked to this login. */}
         <section
           className={styles.card}
-          aria-label="Items currently with me"
+          aria-label={withMeTitle}
         >
-          <h2>Items currently with me</h2>
+          <h2>{withMeTitle}</h2>
 
           {/* The items still with me; the box above shows the same count. */}
           {(
@@ -362,6 +425,7 @@ export default async function MyDashboardPage({
                     <th scope="col">Brand</th>
                     <th scope="col">Model</th>
                     <th scope="col">Status</th>
+                    {(isQc || isHardware) && <th scope="col">QC</th>}
                     <th scope="col">Current hub</th>
                   </tr>
                 </thead>
@@ -370,7 +434,7 @@ export default async function MyDashboardPage({
                   {withMeItems.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={5}
+                        colSpan={isQc || isHardware ? 6 : 5}
                         className={styles.muted}
                       >
                         No items are currently with you.
@@ -395,6 +459,17 @@ export default async function MyDashboardPage({
                             item.status}
                         </td>
 
+                        {(isQc || isHardware) && (
+                          <td
+                            style={{
+                              fontWeight: 600,
+                              color: QC_COLOR[latestQc.get(item.item_id) || "qc_pending"],
+                            }}
+                          >
+                            {QC_LABELS[latestQc.get(item.item_id) || "qc_pending"]}
+                          </td>
+                        )}
+
                         <td>
                           {hubNames.get(item.current_hub) ??
                             (item.current_hub || "—")}
@@ -408,7 +483,7 @@ export default async function MyDashboardPage({
                 <tfoot>
                   <tr>
                     <th scope="row">Grand total</th>
-                    <td colSpan={4}>
+                    <td colSpan={isQc || isHardware ? 5 : 4}>
                       <strong>
                         {numberText(withMeItems.length)}
                       </strong>
@@ -419,6 +494,76 @@ export default async function MyDashboardPage({
             </div>
           )}
         </section>
+
+        {/* QC team: every QC result this login recorded. */}
+        {isQc && (
+          <section className={styles.card} aria-label="My QC results" style={{ marginTop: 24 }}>
+            <h2>My QC results</h2>
+            {myQc.length === 0 ? (
+              <p className={styles.muted}>No QC results recorded yet. Open a rig from Rig checks to record Pass or Fail.</p>
+            ) : (
+              <div className={styles.tableScroll} role="region" aria-label="My QC results" tabIndex={0} style={{ maxHeight: "400px", overflow: "auto" }}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th scope="col">Recorded at (IST)</th>
+                      <th scope="col">Rig</th>
+                      <th scope="col">Result</th>
+                      <th scope="col">Comment</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {myQc.map((c) => (
+                      <tr key={c.check_id}>
+                        <td>{displayTime(c.recorded_at)}</td>
+                        <td>
+                          <Link href={`/inventory/${encodeURIComponent(c.item_id)}`}>{c.item_id}</Link>
+                        </td>
+                        <td style={{ fontWeight: 600, color: QC_COLOR[c.qc_status] }}>{QC_LABELS[c.qc_status] ?? c.qc_status}</td>
+                        <td style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>{c.comment || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Hardware team: every repair update this login recorded. */}
+        {isHardware && (
+          <section className={styles.card} aria-label="My hardware updates" style={{ marginTop: 24 }}>
+            <h2>My hardware updates</h2>
+            {myHardware.length === 0 ? (
+              <p className={styles.muted}>No hardware updates recorded yet. Open a rig from Rig checks to add one.</p>
+            ) : (
+              <div className={styles.tableScroll} role="region" aria-label="My hardware updates" tabIndex={0} style={{ maxHeight: "400px", overflow: "auto" }}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th scope="col">Recorded at (IST)</th>
+                      <th scope="col">Rig</th>
+                      <th scope="col">Update</th>
+                      <th scope="col">Comment</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {myHardware.map((h) => (
+                      <tr key={h.update_id}>
+                        <td>{displayTime(h.recorded_at)}</td>
+                        <td>
+                          <Link href={`/inventory/${encodeURIComponent(h.item_id)}`}>{h.item_id}</Link>
+                        </td>
+                        <td>{h.update_type || "—"}</td>
+                        <td style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>{h.comment || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
 
         {/* History recorded by the authenticated login email. */}
         <section
