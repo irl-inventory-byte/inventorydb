@@ -106,14 +106,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       icon: "alert",
       color: "var(--critical)",
     },
-    {
-      label: "Retired",
-      value: s.retired,
-      hint: share(s.retired),
-      href: rigList({ status: "retired" }),
-      icon: "archive",
-      color: "var(--text-muted)",
-    },
   ];
 
   // SD CARDS (and the "All" view): unchanged.
