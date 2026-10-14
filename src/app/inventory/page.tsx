@@ -271,9 +271,14 @@ export default async function InventoryPage({
     return `/inventory?${params}`;
   };
 
+  // Rigs view (Rigs switch on, or a login that only sees rigs): a short table with only
+  // Date, Rig ID / Asset Tag, Home hub, Brand, Model and Penalty amount. SD cards keep every column.
+  const rigView = type === "rig" || !canSeeType(user.role, "sd_card");
+
   // Includes optional Admin checkbox and holder-specific Since column.
-  const columnCount =
-    16 + (isAdmin ? 1 : 0) + (holder ? 1 : 0) + (showQc ? 1 : 0);
+  const columnCount = rigView
+    ? 6 + (isAdmin ? 1 : 0)
+    : 16 + (isAdmin ? 1 : 0) + (holder ? 1 : 0) + (showQc ? 1 : 0);
 
   const table = (
     <div
@@ -288,6 +293,17 @@ export default async function InventoryPage({
     >
       <table className={styles.table}>
         <thead>
+          {rigView ? (
+            <tr>
+              {isAdmin && <th scope="col" aria-label="Select items" />}
+              <th scope="col">Date</th>
+              <th scope="col">Rig ID / Asset Tag</th>
+              <th scope="col">Home hub</th>
+              <th scope="col">Brand</th>
+              <th scope="col">Model</th>
+              <th scope="col">Penalty amount</th>
+            </tr>
+          ) : (
           <tr>
             {isAdmin && (
               <th scope="col" aria-label="Select items" />
@@ -312,6 +328,7 @@ export default async function InventoryPage({
             {holder && <th scope="col">Since</th>}
             <th scope="col">Home hub</th>
           </tr>
+          )}
         </thead>
 
         <tbody>
@@ -340,6 +357,47 @@ export default async function InventoryPage({
               const toHub = last?.hub
                 ? (hubName.get(last.hub) ?? last.hub)
                 : "";
+
+              if (rigView) {
+                const when = last?.occurred_at || item.updated_at;
+                return (
+                  <tr key={item.item_id} style={rowTint(item.item_type)}>
+                    {isAdmin && (
+                      <td>
+                        <input type="checkbox" name="ids" value={item.item_id} aria-label={`Select ${item.item_id}`} />
+                      </td>
+                    )}
+                    <td style={{ whiteSpace: "nowrap" }}>{when ? `${formatIst(when)} IST` : "—"}</td>
+                    <td>
+                      <Link href={itemUrl}>{item.item_id}</Link>
+                      {isAdmin && (
+                        <div style={{ marginTop: 8 }}>
+                          <Link
+                            href={`${itemUrl}/delete`}
+                            aria-label={`Delete item ${item.item_id}`}
+                            style={{
+                              display: "inline-block",
+                              padding: "5px 10px",
+                              border: "1px solid #b91c1c",
+                              borderRadius: 6,
+                              color: "#b91c1c",
+                              backgroundColor: "#fff7f7",
+                              fontWeight: 600,
+                              textDecoration: "none",
+                            }}
+                          >
+                            Delete
+                          </Link>
+                        </div>
+                      )}
+                    </td>
+                    <td>{hubName.get(item.home_hub) ?? item.home_hub}</td>
+                    <td>{item.brand || "—"}</td>
+                    <td>{item.model || "—"}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>{displayAmount(item.price)}</td>
+                  </tr>
+                );
+              }
 
               return (
                 <tr key={item.item_id} style={rowTint(item.item_type)}>
@@ -680,11 +738,13 @@ export default async function InventoryPage({
         {(page - 1) * PAGE_SIZE + shown.length}.
       </p>
 
-      <p className={styles.muted}>
-        Storage and card type come from saved item attributes.
-        Price / Penalty shows the saved amount, not an automatic
-        charge. Missing values show “Not set”.
-      </p>
+      {!rigView && (
+        <p className={styles.muted}>
+          Storage and card type come from saved item attributes.
+          Price / Penalty shows the saved amount, not an automatic
+          charge. Missing values show “Not set”.
+        </p>
+      )}
 
       {/* Corrections and selection checkboxes remain Admin-only. */}
       {isAdmin ? (
