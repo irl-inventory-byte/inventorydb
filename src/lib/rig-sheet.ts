@@ -10,9 +10,9 @@ import { google } from "googleapis";
  * Share the sheet with GOOGLE_SERVICE_ACCOUNT_EMAIL as Viewer.
  *
  * Columns are matched by the header text in row 1, ignoring case and spaces:
- *   ID      → "Asset Tag", "Asset ID", "Rig ID", "Rig No", "Rig", "Serial", "Serial No", "ID"
+ *   ID      → "Rig ID / Asset Tag", "Asset Tag", "Asset ID", "Rig ID", "Rig No", "Rig", "Serial", "Serial No", "ID"
  *   Brand   → "Brand", "Make", "Manufacturer"
- *   Model   → "Model", "Rig Model", "Model Name", "Model No"
+ *   Model   → "Model", "Rig Model", "Model Name", "Model No", "SD Card Model Name"
  *   Prism   → "Prism", "Prism No", "Prism Number"
  *   Penalty → "Penalty", "Penalty Amount", "Price", "Cost", "Value", "Amount"
  * Every other column is kept and shown as a detail of the rig.
@@ -22,11 +22,11 @@ const DEFAULT_RIG_SHEET_ID = "18AtMF3kPGccxoBMKBzgSoyBalX-x9E_EYPFrtm7ttZU";
 const TTL_MS = 5 * 60 * 1000;
 
 const ID_HEADERS = [
-  "assettag", "assettagno", "assetid", "assetno", "rigid", "rigno", "rignumber", "rig",
+  "rigidassettag", "assettagrigid", "assettag", "assettagno", "assetid", "assetno", "rigid", "rigno", "rignumber", "rig",
   "serial", "serialno", "serialnumber", "id",
 ];
 const BRAND_HEADERS = ["brand", "make", "manufacturer"];
-const MODEL_HEADERS = ["model", "rigmodel", "modelname", "modelno"];
+const MODEL_HEADERS = ["model", "rigmodel", "modelname", "modelno", "sdcardmodelname", "rigmodelname"];
 const PRISM_HEADERS = ["prism", "prismno", "prismnumber"];
 const PENALTY_HEADERS = ["penalty", "penaltyamount", "penaltyamountrs", "price", "cost", "value", "amount"];
 
@@ -64,7 +64,7 @@ export function parseRigRows(rows: string[][]): RigRecord[] {
   const idCol = find(ID_HEADERS);
   if (idCol === -1) {
     throw new Error(
-      `The rig sheet needs an ID column in row 1, named one of: Asset Tag, Rig ID, Serial, ID. Found: ${headers.join(", ") || "(empty)"}`
+      `The rig sheet needs an ID column in row 1, named one of: Rig ID / Asset Tag, Asset Tag, Rig ID, Serial, ID. Found: ${headers.join(", ") || "(empty)"}`
     );
   }
   const brandCol = find(BRAND_HEADERS);
