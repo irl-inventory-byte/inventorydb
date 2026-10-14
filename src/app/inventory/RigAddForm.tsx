@@ -5,7 +5,7 @@ import { useFormStatus } from "react-dom";
 import styles from "../admin/admin.module.css";
 import { addRig, lookupRig } from "./rig-actions";
 
-type Hubs = { hub_id: string; name: string }[];
+type Hub = { hub_id: string; name: string };
 
 const fieldStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 6, minWidth: 0 };
 const inputStyle: CSSProperties = { width: "100%", minWidth: 0, boxSizing: "border-box", padding: "10px 12px" };
@@ -19,9 +19,9 @@ function SaveButton({ busy }: { busy: boolean }) {
   );
 }
 
-export default function RigAddForm({ hubs = [] }: { hubs?: Hubs }) {
+/** Rigs: home hub is always Bangalore, and there is no prism number. */
+export default function RigAddForm({ homeHub }: { homeHub?: Hub }) {
   const [rigId, setRigId] = useState("");
-  const [prismNo, setPrismNo] = useState("");
   const [brand, setBrand] = useState("");
   const [model, setModel] = useState("");
   const [price, setPrice] = useState("");
@@ -41,7 +41,6 @@ export default function RigAddForm({ hubs = [] }: { hubs?: Hubs }) {
   );
 
   function clear() {
-    setPrismNo("");
     setBrand("");
     setModel("");
     setPrice("");
@@ -70,14 +69,13 @@ export default function RigAddForm({ hubs = [] }: { hubs?: Hubs }) {
         return;
       }
 
-      setPrismNo(found.prismNo);
       setBrand(found.brand);
       setModel(found.model);
       setPrice(found.penalty);
       setDetails(found.details);
       setNote(
         found.penalty
-          ? "Rig details loaded. Choose the home hub and review before saving."
+          ? "Rig details loaded. Review before saving."
           : "Rig found, but the sheet has no penalty for it. Enter the penalty amount."
       );
     } catch {
@@ -140,24 +138,19 @@ export default function RigAddForm({ hubs = [] }: { hubs?: Hubs }) {
           />
         </label>
 
-        <label style={fieldStyle}>
-          <span>Home hub *</span>
-          <select name="homeHub" defaultValue="" required style={inputStyle}>
-            <option value="" disabled>
-              Select home hub
-            </option>
-            {hubs.map((h) => (
-              <option key={h.hub_id} value={h.hub_id}>
-                {h.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label style={fieldStyle}>
-          <span>Prism number</span>
-          <input name="prismNo" value={prismNo} onChange={(e) => setPrismNo(e.target.value)} placeholder="Prism number" style={inputStyle} />
-        </label>
+        <div style={fieldStyle}>
+          <span>Home hub</span>
+          {homeHub ? (
+            <>
+              <input type="hidden" name="homeHub" value={homeHub.hub_id} />
+              <strong style={{ ...inputStyle, paddingLeft: 0 }}>{homeHub.name}</strong>
+            </>
+          ) : (
+            <span className={styles.error} style={{ margin: 0 }}>
+              No active hub named Bangalore. Add it on the Hubs page.
+            </span>
+          )}
+        </div>
 
         <label style={fieldStyle}>
           <span>Brand</span>
@@ -200,7 +193,7 @@ export default function RigAddForm({ hubs = [] }: { hubs?: Hubs }) {
         <button type="button" disabled={busy || !rigId.trim()} onClick={() => void lookup(rigId)}>
           {busy ? "Fetching…" : "Fetch details"}
         </button>
-        <SaveButton busy={busy} />
+        <SaveButton busy={busy || !homeHub} />
       </div>
 
       <p className={styles.muted} role="status" aria-live="polite" style={{ margin: 0 }}>

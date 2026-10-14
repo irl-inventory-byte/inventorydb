@@ -12,6 +12,7 @@ import TypeSwitch from "../TypeSwitch";
 import AddCardForm from "./AddCardForm";
 import MultiSelect from "./MultiSelect";
 import RigAddForm from "./RigAddForm";
+import { rigHomeHub } from "@/lib/rig-hub";
 import BulkAddForm from "./BulkAddForm";
 import { applyCorrection } from "./actions";
 import CorrectionPanel from "./CorrectionPanel";
@@ -581,7 +582,7 @@ export default async function InventoryPage({
 
           <p className={styles.muted}>
             For a rig that isn&apos;t in the inventory yet. It starts in stock
-            at the hub you choose, with QC pending.
+            at Bangalore, with QC pending.
           </p>
 
           {type === "rig" && one(sp.added) && (
@@ -596,7 +597,7 @@ export default async function InventoryPage({
             <p className={styles.error}>{one(sp.addError)}</p>
           )}
 
-          <RigAddForm hubs={activeHubs} />
+          <RigAddForm homeHub={rigHomeHub(hubs)} />
         </details>
       )}
 

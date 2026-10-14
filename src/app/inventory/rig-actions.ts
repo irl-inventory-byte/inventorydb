@@ -11,6 +11,7 @@ import {
 } from "@/lib/access";
 import { planAddItem } from "@/lib/add-item";
 import { requireRole } from "@/lib/authz";
+import { rigHomeHub } from "@/lib/rig-hub";
 import { findRig, loadRigRecords } from "@/lib/rig-sheet";
 import { QC_STATUSES, type QcStatus } from "@/lib/schema";
 import { getStore } from "@/lib/store";
@@ -73,11 +74,9 @@ export async function addRig(formData: FormData) {
     redirect(`/inventory?${new URLSearchParams({ type: "rig", addError: message })}`);
 
   const rigId = String(formData.get("itemId") ?? "").trim();
-  const homeHub = String(formData.get("homeHub") ?? "").trim();
   const penalty = String(formData.get("price") ?? "").replace(/[^0-9]/g, "");
 
   if (!rigId) reject("Scan or type the rig ID.");
-  if (!homeHub) reject("Select the home hub.");
   if (!penalty || Number(penalty) <= 0) reject("Enter the penalty amount for this rig.");
 
   // Details from the rig sheet are saved with the rig (looked up again on the server).
@@ -91,11 +90,15 @@ export async function addRig(formData: FormData) {
   const store = getStore();
   const [items, hubs] = await Promise.all([store.list("items"), store.list("hubs")]);
 
+  // Rigs always belong to the Bangalore hub, whatever the form sends.
+  const homeHub = rigHomeHub(hubs)?.hub_id ?? "";
+  if (!homeHub) reject("No active hub named Bangalore. Add it on the Hubs page first.");
+
   const plan = planAddItem(
     {
       itemId: rigId,
       homeHub,
-      prismNo: String(formData.get("prismNo") ?? "").trim(),
+      prismNo: "", // rigs have no prism number
       brand: String(formData.get("brand") ?? "").trim(),
       model: String(formData.get("model") ?? "").trim(),
       price: penalty,
