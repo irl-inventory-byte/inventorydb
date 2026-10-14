@@ -24,6 +24,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   rig: "Rig team",
   hardware: "Hardware team",
   qc: "QC team",
+  internal: "Internal",
 };
 
 export const ITEM_TYPE_LABELS: Record<string, string> = {

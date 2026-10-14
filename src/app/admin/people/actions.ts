@@ -11,7 +11,7 @@ import { getStore } from "@/lib/store";
 // Email and mobile number are required for both adding and editing.
 const PersonInput = z.object({
   name: z.string().trim().min(1).max(80),
-  role: z.enum(["im", "ifo", "fo", "rig", "hardware", "qc"]),
+  role: z.enum(["im", "ifo", "fo", "rig", "hardware", "qc", "internal"]),
   hub: z.string().trim().min(1),
   email: z.email("Enter a valid email address"),
   mobile: z.string().regex(/^[6-9][0-9]{9}$/, "Enter a valid 10-digit mobile number"),

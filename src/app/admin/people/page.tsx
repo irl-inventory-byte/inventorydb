@@ -15,6 +15,7 @@ const ROLE_LABELS = {
   rig: "Rig team",
   hardware: "Hardware team",
   qc: "QC team",
+  internal: "Internal",
 } as const;
 
 type PersonRole = keyof typeof ROLE_LABELS;
@@ -250,6 +251,7 @@ export default async function PeoplePage({
               <option value="rig">Rig</option>
               <option value="hardware">Hardware team</option>
               <option value="qc">QC team</option>
+              <option value="internal">Internal</option>
             </select>
           </label>
 

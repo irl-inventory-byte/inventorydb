@@ -35,6 +35,7 @@ const SEND_STATUS: Partial<Record<Role, Status>> = {
   ifo: "traveling",
   fo: "with_fo",
   rig: "with_rig",
+  internal: "with_internal", // a listed internal person (People page)
   qc: "pending_qc", // the QC team member must receive it (then: with QC team)
   hardware: "pending_hardware", // the hardware team member must receive it (then: with hardware team)
 };

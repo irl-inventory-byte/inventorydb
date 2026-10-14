@@ -28,6 +28,7 @@ const TYPES_FOR: Record<Role, readonly ItemType[]> = {
   ifo: ["sd_card"],
   hardware: ["rig"],
   qc: ["rig"],
+  internal: [], // no login
 };
 
 /** Every role that can sign in and look around (dashboard, inventory, receipts). */

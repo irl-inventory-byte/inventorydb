@@ -9,7 +9,8 @@ export interface PersonGroup {
   people: { id: string; label: string }[];
 }
 
-const INTERNAL = "internal";
+// A name typed by hand (not in People). Listed internal people are the "internal" group.
+const INTERNAL = "typed_internal";
 
 /**
  * "Send to": the person AND the location, both required. The person is picked in two steps (category,
@@ -59,7 +60,7 @@ export default function SendToFields({
                   {g.label} ({g.people.length})
                 </option>
               ))}
-              {allowInternal && <option value={INTERNAL}>Internal</option>}
+              {allowInternal && <option value={INTERNAL}>Other internal person (type a name)</option>}
             </select>
             {isInternal ? (
               <input

@@ -20,6 +20,7 @@ const ROLE_ALIASES: Record<string, Role> = {
   "hardware team": "hardware",
   qc: "qc",
   "qc team": "qc",
+  internal: "internal",
 };
 
 // "Bangalore - IRL" and "Bangalore" both match the hub named "Bangalore".

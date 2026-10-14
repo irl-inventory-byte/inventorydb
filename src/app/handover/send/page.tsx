@@ -19,13 +19,14 @@ const GROUP_LABELS: Record<string, string> = {
   rig: "Rig team",
   qc: "QC team",
   hardware: "Hardware team",
+  internal: "Internal",
 };
 
 // Who each sender can send to. The full rig rules are checked on save (lib/handover.ts).
 const SEND_TO: Record<string, Role[]> = {
-  admin: ["im", "ifo", "fo", "rig", "qc", "hardware"],
-  im: ["im", "ifo", "fo", "rig", "qc"],
-  rig: ["im", "ifo", "fo", "rig"],
+  admin: ["im", "ifo", "fo", "rig", "qc", "hardware", "internal"],
+  im: ["im", "ifo", "fo", "rig", "qc", "internal"],
+  rig: ["im", "ifo", "fo", "rig", "internal"],
   qc: ["im", "hardware"], // QC pass → IM, QC fail → hardware team
   hardware: ["im"], // repaired rig → IM
 };
