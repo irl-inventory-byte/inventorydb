@@ -5,7 +5,7 @@ import { LATE_AFTER_HOURS } from "@/lib/dashboard";
 import { QC_LABELS, STATUS_LABELS, one } from "@/lib/labels";
 import { STATUSES, type QcCheck } from "@/lib/schema";
 import { ADD_ROLES, canSeeType, storeFor, typeParam } from "@/lib/access";
-import { formatIst } from "@/lib/time";
+import { formatIst, istDate } from "@/lib/time";
 import styles from "../admin/admin.module.css";
 import { TypeBadge, rowTint } from "../ItemTypeBadge";
 import TypeSwitch from "../TypeSwitch";
@@ -142,6 +142,11 @@ export default async function InventoryPage({
   const cities = many(sp.city).map((c) => c.toLowerCase());
   const city = cities.join(",");
 
+  // Date range (YYYY-MM-DD, IST) on each item's last movement.
+  const isDay = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
+  const from = isDay(one(sp.from)) ? one(sp.from) : "";
+  const to = isDay(one(sp.to)) ? one(sp.to) : "";
+
   const holder = one(sp.holder);
   const lateOnly = one(sp.late) === "1";
   const requestedPage = Number(one(sp.page));
@@ -204,8 +209,17 @@ export default async function InventoryPage({
     return !Number.isNaN(t) && (nowMs - t) / 3_600_000 > LATE_AFTER_HOURS;
   };
 
+  // The IST day an item last moved (send, receive, correction or add).
+  const lastDay = (item: (typeof items)[number]) => {
+    const when = eventById.get(item.last_event_id)?.occurred_at || item.updated_at;
+    const t = Date.parse(when ?? "");
+    return Number.isNaN(t) ? "" : istDate(new Date(t));
+  };
+
   const matches = items.filter(
     (item) =>
+      (!from || (lastDay(item) !== "" && lastDay(item) >= from)) &&
+      (!to || (lastDay(item) !== "" && lastDay(item) <= to)) &&
       (!lateOnly || isLate(item)) &&
       (!statuses.length || statuses.includes(item.status)) &&
       (!hubIds.length || hubIds.includes(item.current_hub)) &&
@@ -245,6 +259,8 @@ export default async function InventoryPage({
       ...(status && { status }),
       ...(hub && { hub }),
       ...(city && { city }),
+      ...(from && { from }),
+      ...(to && { to }),
       ...(holder && { holder }),
       ...(lateOnly && { late: "1" }),
       ...(type && { type }),
@@ -276,7 +292,8 @@ export default async function InventoryPage({
               <th scope="col" aria-label="Select items" />
             )}
 
-            <th scope="col">Type</th>
+            <th scope="col">Date</th>
+            <th scope="col">Items</th>
             <th scope="col">Serial</th>
             <th scope="col">Prism no.</th>
             <th scope="col">Brand</th>
@@ -289,7 +306,6 @@ export default async function InventoryPage({
             {showQc && <th scope="col">QC</th>}
             <th scope="col">From</th>
             <th scope="col">To</th>
-            <th scope="col">Last event</th>
             <th scope="col">Current hub</th>
             <th scope="col">Holder</th>
             {holder && <th scope="col">Since</th>}
@@ -336,6 +352,13 @@ export default async function InventoryPage({
                       />
                     </td>
                   )}
+
+                  {/* Date: when this item last moved (send, receive, correction or add). */}
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    {last?.occurred_at || item.updated_at
+                      ? `${formatIst(last?.occurred_at || item.updated_at)} IST`
+                      : "—"}
+                  </td>
 
                   <td>
                     <TypeBadge type={item.item_type} />
@@ -428,13 +451,6 @@ export default async function InventoryPage({
                     )}
                   </td>
 
-                  {/* When this item last moved (send, receive, correction or add). */}
-                  <td style={{ whiteSpace: "nowrap" }}>
-                    {last?.occurred_at || item.updated_at
-                      ? `${formatIst(last?.occurred_at || item.updated_at)} IST`
-                      : "—"}
-                  </td>
-
                   <td>
                     {hubName.get(item.current_hub) ??
                       item.current_hub}
@@ -476,7 +492,7 @@ export default async function InventoryPage({
         role={user.role}
         current={type}
         path="/inventory"
-        params={{ q: one(sp.q), status, hub, city, holder, late: lateOnly ? "1" : "" }}
+        params={{ q: one(sp.q), status, hub, city, from, to, holder, late: lateOnly ? "1" : "" }}
       />
 
       {one(sp.done) && (
@@ -617,6 +633,16 @@ export default async function InventoryPage({
           selected={hubIds}
         />
 
+        {/* Date range on each item's last movement (IST). */}
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <strong style={{ fontWeight: 600 }}>From</strong>
+          <input type="date" name="from" defaultValue={from} max={to || undefined} aria-label="From date" />
+        </label>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <strong style={{ fontWeight: 600 }}>To</strong>
+          <input type="date" name="to" defaultValue={to} min={from || undefined} aria-label="To date" />
+        </label>
+
         {holder && (
           <input type="hidden" name="holder" value={holder} />
         )}
@@ -633,7 +659,7 @@ export default async function InventoryPage({
 
         <button type="submit">Filter</button>
 
-        {(statuses.length > 0 || cities.length > 0 || hubIds.length > 0 || q) && (
+        {(statuses.length > 0 || cities.length > 0 || hubIds.length > 0 || from || to || q) && (
           <Link href={type ? `/inventory?type=${type}` : "/inventory"}>Clear filters</Link>
         )}
 
