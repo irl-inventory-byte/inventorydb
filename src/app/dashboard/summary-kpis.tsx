@@ -39,6 +39,8 @@ interface SummaryKpisProps {
   // Existing callers may pass items directly.
   // If omitted, this component loads the items itself.
   items?: readonly Item[];
+  /** Rigs view: the first card is "Rigs" and its links show rigs only. */
+  rigView?: boolean;
 }
 
 interface SummaryCard {
@@ -156,10 +158,12 @@ export async function SummaryKpis({
   d,
   hubParam,
   items,
+  rigView = false,
 }: SummaryKpisProps) {
   const list = (params: Record<string, string> = {}) =>
     `/inventory?${new URLSearchParams({
       ...(hubParam ? { hub: hubParam } : {}),
+      ...(rigView ? { type: "rig" } : {}),
       ...params,
     })}`;
 
@@ -250,7 +254,8 @@ export async function SummaryKpis({
     {
       key: "fleet",
       icon: "layers",
-      label: fleet.sdCards > 0 ? "Fleet — storage update" : "Fleet",
+      // Rig view says "Rigs"; SD cards keep "Fleet".
+      label: rigView ? "Rigs" : fleet.sdCards > 0 ? "Fleet — storage update" : "Fleet",
       value: n(d.total),
       note:
         unusable > 0
@@ -269,8 +274,9 @@ export async function SummaryKpis({
         d.usable
       )} usable items`,
       href: list({
-        status:
-          "pending,traveling,with_fo,with_rig,with_internal",
+        status: rigView
+          ? "pending,traveling,with_fo,with_qc,with_hardware,with_internal"
+          : "pending,traveling,with_fo,with_rig,with_internal",
       }),
       meter: pct ?? 0,
     },

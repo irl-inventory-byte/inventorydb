@@ -4,8 +4,8 @@ import { requireRole } from "@/lib/authz";
 import { LATE_AFTER_HOURS, computeDashboard } from "@/lib/dashboard";
 import { buildHubTree } from "@/lib/hub-tree";
 import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
-import type { Status } from "@/lib/schema";
-import { HANDLER_ROLES, storeFor, typeParam } from "@/lib/access";
+import type { QcCheck, Status } from "@/lib/schema";
+import { HANDLER_ROLES, canSeeType, storeFor, typeParam } from "@/lib/access";
 import TypeSwitch from "../TypeSwitch";
 import { ActivityChart, BarList, n } from "./charts";
 import styles from "./dashboard.module.css";
@@ -49,11 +49,14 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // Each login sees only its item types; IM/Admin/FO can switch SD cards / Rigs.
   const type = typeParam(one(sp.type), user.role);
   const store = storeFor(user.role, type);
-  const [items, events, people, hubs] = await Promise.all([
+  // Rig view: the Rigs switch is on, or this login only sees rigs (QC, hardware).
+  const rigView = type === "rig" || !canSeeType(user.role, "sd_card");
+  const [items, events, people, hubs, qcChecks] = await Promise.all([
     store.list("items"),
     store.list("events"),
     store.list("people"),
     store.list("hubs"),
+    rigView ? store.list("qc_checks") : Promise.resolve([] as QcCheck[]),
   ]);
 
   const d = computeDashboard(items, events, people, hubs, { hub: "", days: 14, now: new Date() });
@@ -65,7 +68,56 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
   const s = d.byStatus;
   const share = (v: number) => (d.total ? `${Math.round((v / d.total) * 100)}% of all items` : "");
-  const kpis: { label: string; value: number; hint: string; href: string; icon: IconName; color: string }[] = [
+  // Rigs whose latest QC result is Fail (rows are oldest first, so the last one wins).
+  const latestQc = new Map<string, string>();
+  for (const c of qcChecks) latestQc.set(c.item_id, c.qc_status);
+  const hardwareIssues = items.filter((i) => i.item_type === "rig" && latestQc.get(i.item_id) === "fail").length;
+  const rigList = (params: Record<string, string>) => inventory({ ...params, type: "rig" });
+
+  type Kpi = { label: string; value: number; hint: string; href: string; icon: IconName; color: string };
+
+  // RIGS: With QC team, With hardware team and Hardware issue instead of With rig team.
+  const rigKpis: Kpi[] = [
+    { label: "In stock", value: s.in_stock, hint: share(s.in_stock), href: rigList({ status: "in_stock" }), icon: "check", color: "var(--series-3)" },
+    { label: "With field officers", value: s.with_fo, hint: share(s.with_fo), href: rigList({ status: "with_fo" }), icon: "user", color: "var(--series-2)" },
+    { label: "With QC team", value: s.with_qc, hint: share(s.with_qc), href: rigList({ status: "with_qc" }), icon: "shield", color: "var(--series-7)" },
+    { label: "With hardware team", value: s.with_hardware, hint: share(s.with_hardware), href: rigList({ status: "with_hardware" }), icon: "wrench", color: "var(--series-1)" },
+    {
+      label: "In transit",
+      value: s.traveling + s.pending,
+      hint: share(s.traveling + s.pending),
+      href: rigList({ status: "traveling,pending" }),
+      icon: "truck",
+      color: "var(--series-4)",
+    },
+    {
+      label: "Hardware issue",
+      value: hardwareIssues,
+      hint: hardwareIssues ? "Latest QC result is Fail" : "No failed rigs",
+      href: "/rigs?qc=fail",
+      icon: "alert",
+      color: "var(--warning)",
+    },
+    {
+      label: "Lost or damaged",
+      value: s.lost + s.damaged,
+      hint: share(s.lost + s.damaged),
+      href: rigList({ status: "lost,damaged" }),
+      icon: "alert",
+      color: "var(--critical)",
+    },
+    {
+      label: "Retired",
+      value: s.retired,
+      hint: share(s.retired),
+      href: rigList({ status: "retired" }),
+      icon: "archive",
+      color: "var(--text-muted)",
+    },
+  ];
+
+  // SD CARDS (and the "All" view): unchanged.
+  const sdKpis: Kpi[] = [
     { label: "In stock", value: s.in_stock, hint: share(s.in_stock), href: inventory({ status: "in_stock" }), icon: "check", color: "var(--series-3)" },
     { label: "With field officers", value: s.with_fo, hint: share(s.with_fo), href: inventory({ status: "with_fo" }), icon: "user", color: "var(--series-2)" },
     { label: "With rig team", value: s.with_rig, hint: share(s.with_rig), href: inventory({ status: "with_rig" }), icon: "database", color: "var(--series-7)" },
@@ -95,6 +147,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       color: "var(--text-muted)",
     },
   ];
+
+  const kpis = rigView ? rigKpis : sdKpis;
 
   // Bars: one series, one colour. Every bar opens the matching list or hub.
   const statusRows = STATUS_ORDER.filter((st) => s[st] > 0)
@@ -241,7 +295,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
         <TypeSwitch role={user.role} current={type} path="/dashboard" />
 
-        <SummaryKpis d={d} items={items} />
+        <SummaryKpis d={d} items={items} rigView={rigView} />
 
         <section className={styles.kpiGrid} aria-label="Overview">
           {kpis.map((k) => (
