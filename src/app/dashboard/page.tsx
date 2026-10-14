@@ -289,7 +289,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
         <SummaryKpis d={d} items={items} rigView={rigView} />
 
-        <section className={styles.kpiGrid} aria-label="Overview">
+        <section className={rigView ? `${styles.kpiGrid} ${styles.kpiGridRig}` : styles.kpiGrid} aria-label="Overview">
           {kpis.map((k) => (
             <Link key={k.label} href={k.href} className={styles.kpi} style={{ "--kpi": k.color } as CSSProperties}>
               <span className={styles.kpiIcon}>
