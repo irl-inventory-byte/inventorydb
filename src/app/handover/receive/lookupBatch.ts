@@ -2,7 +2,7 @@
 
 import { requireRole } from "@/lib/authz";
 import { extractBatchId, summarizeBatch } from "@/lib/receipt";
-import { HANDLER_ROLES, storeFor } from "@/lib/access";
+import { RECEIVE_ROLES, storeFor } from "@/lib/access";
 import { formatIst } from "@/lib/time";
 
 export interface BatchLookupResult {
@@ -17,7 +17,7 @@ export interface BatchLookupResult {
  * directly rather than redirecting, so it can be called from a client component without a page reload.
  */
 export async function lookupBatch(raw: string): Promise<BatchLookupResult> {
-  const me = await requireRole(...HANDLER_ROLES);
+  const me = await requireRole(...RECEIVE_ROLES);
   const batchId = extractBatchId(raw);
   if (!batchId) return { ok: false, message: "Scan or paste a batch receipt first.", ids: [] };
 

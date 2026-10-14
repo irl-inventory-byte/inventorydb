@@ -36,6 +36,8 @@ export const VIEW_ROLES: Role[] = ["admin", "im", "fo", "rig", "hardware", "qc"]
 export const HANDLER_ROLES: Role[] = ["admin", "im", "rig"];
 /** Can open My dashboard. */
 export const MY_DASHBOARD_ROLES: Role[] = ["admin", "im", "rig", "qc", "hardware"];
+/** Can open Receive items. QC and hardware teams receive only rigs sent to them (lib/handover.ts). */
+export const RECEIVE_ROLES: Role[] = ["admin", "im", "rig", "qc", "hardware"];
 /** Can open Send items. QC and hardware teams send only rigs they hold (rules in lib/handover.ts). */
 export const SEND_ROLES: Role[] = ["admin", "im", "rig", "qc", "hardware"];
 /** Can add new items to the inventory. */

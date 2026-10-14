@@ -35,8 +35,8 @@ const SEND_STATUS: Partial<Record<Role, Status>> = {
   ifo: "traveling",
   fo: "with_fo",
   rig: "with_rig",
-  qc: "with_qc",
-  hardware: "with_hardware",
+  qc: "pending_qc", // the QC team member must receive it (then: with QC team)
+  hardware: "pending_hardware", // the hardware team member must receive it (then: with hardware team)
 };
 
 // QC and hardware teams send the rigs they are holding, not stock from a hub.
@@ -154,7 +154,7 @@ export function planSend(targets: Item[], input: SendInput, ctx: HandoverContext
       (t) => t.item_type !== "rig" || t.status !== heldStatus || t.current_holder !== ctx.actorPersonId,
     );
     if (notHeld.length) {
-      plan.errors.push(`You can only send rigs that are with you. Not with you: ${listOf(notHeld.map((t) => t.item_id))}.`);
+      plan.errors.push(`You can only send rigs that are with you (receive them first on Receive items). Not with you: ${listOf(notHeld.map((t) => t.item_id))}.`);
     }
   } else {
     if (!activeHub(input.fromHub)) {
@@ -204,6 +204,55 @@ export function planSend(targets: Item[], input: SendInput, ctx: HandoverContext
       last_event_id: event.event_id,
       updated_at: ctx.now,
     });
+  }
+  return plan;
+}
+
+// QC / hardware team: what they can receive, and what it becomes once received.
+const RECEIVE_HELD: Partial<Record<Role, { from: Status; to: Status }>> = {
+  qc: { from: "pending_qc", to: "with_qc" },
+  hardware: { from: "pending_hardware", to: "with_hardware" },
+};
+
+/** True when this role receives rigs sent to them (QC, hardware) instead of taking items into stock. */
+export const receivesHeld = (role: Role | "admin" | undefined) => !!role && role !== "admin" && !!RECEIVE_HELD[role];
+
+/**
+ * QC or hardware team member receives the rigs sent to THEM. The rig stays at the hub it was sent to and
+ * becomes "With QC team" / "With hardware team" under their name.
+ */
+export function planReceiveHeld(targets: Item[], input: { note: string }, ctx: HandoverContext): HandoverPlan {
+  const plan: HandoverPlan = { events: [], items: [], errors: [] };
+  const rule = ctx.senderRole && ctx.senderRole !== "admin" ? RECEIVE_HELD[ctx.senderRole] : undefined;
+  if (!rule) {
+    plan.errors.push("Only the QC or hardware team can receive rigs this way.");
+    return plan;
+  }
+  const wrong = targets.filter(
+    (t) => t.item_type !== "rig" || t.status !== rule.from || t.current_holder !== ctx.actorPersonId,
+  );
+  if (wrong.length) {
+    plan.errors.push(`These rigs were not sent to you, or are already received: ${listOf(wrong.map((t) => t.item_id))}.`);
+    return plan;
+  }
+
+  const base = eventBase(ctx, input.note.trim());
+  for (const item of targets) {
+    const event: ItemEvent = {
+      ...base,
+      event_id: ctx.newId("e"),
+      item_id: item.item_id,
+      action: "receive",
+      from_person: displayName(ctx.people, item.current_holder),
+      to_person: displayName(ctx.people, ctx.actorPersonId),
+      from_id: item.current_holder,
+      to_id: ctx.actorPersonId,
+      from_hub: item.current_hub,
+      hub: item.current_hub,
+      status_after: rule.to,
+    };
+    plan.events.push(event);
+    plan.items.push({ ...item, status: rule.to, last_event_id: event.event_id, updated_at: ctx.now });
   }
   return plan;
 }

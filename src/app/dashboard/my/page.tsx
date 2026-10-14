@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireRole } from "@/lib/authz";
 import { QC_LABELS, ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
 import { OUT_STATUSES, type HardwareUpdate, type QcCheck, type Status } from "@/lib/schema";
-import { HANDLER_ROLES, MY_DASHBOARD_ROLES, storeFor } from "@/lib/access";
+import { MY_DASHBOARD_ROLES, RECEIVE_ROLES, storeFor } from "@/lib/access";
 import { formatIst } from "@/lib/time";
 import styles from "../dashboard.module.css";
 
@@ -65,7 +65,7 @@ export default async function MyDashboardPage({
   const user = await requireRole(...MY_DASHBOARD_ROLES);
   const isQc = user.role === "qc";
   const isHardware = user.role === "hardware";
-  const canReceive = HANDLER_ROLES.includes(user.role);
+  const canReceive = RECEIVE_ROLES.includes(user.role);
   const email = normalizeEmail(user.email ?? "");
 
   // Never match an empty login email to blank event records.
@@ -265,7 +265,17 @@ export default async function MyDashboardPage({
     return checked === undefined || (Number.isFinite(arrived) && checked < arrived);
   };
 
+  // Rigs sent to me that I have not received yet (Receive items).
+  const toReceive = linkedPerson
+    ? items.filter(
+        (i) =>
+          i.current_holder === linkedPerson.person_id &&
+          i.status === (isQc ? "pending_qc" : "pending_hardware")
+      ).length
+    : 0;
+
   const qcMetrics = [
+    { label: "Waiting for me to receive", value: numberText(toReceive) },
     { label: "Rigs with me", value: numberText(withMeItems.length) },
     { label: "Waiting for my QC result", value: numberText(withMeItems.filter(waitingForQc).length) },
     { label: "QC pass recorded", value: numberText(myQc.filter((c) => c.qc_status === "pass").length) },
@@ -275,6 +285,7 @@ export default async function MyDashboardPage({
   ];
 
   const hardwareMetrics = [
+    { label: "Waiting for me to receive", value: numberText(toReceive) },
     { label: "Rigs with me", value: numberText(withMeItems.length) },
     { label: "Hardware updates logged", value: numberText(myHardware.length) },
     { label: "Repaired and sent to IM", value: numberText(sentToIm) },

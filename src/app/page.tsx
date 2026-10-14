@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { HANDLER_ROLES, MY_DASHBOARD_ROLES, SEND_ROLES, VIEW_ROLES } from "@/lib/access";
+import { MY_DASHBOARD_ROLES, RECEIVE_ROLES, SEND_ROLES, VIEW_ROLES } from "@/lib/access";
 import { signOut } from "@/auth";
 import { requireRole } from "@/lib/authz";
 import { ROLE_LABELS, one } from "@/lib/labels";
@@ -16,7 +16,6 @@ interface Tile {
   roles: Role[];
 }
 
-const HANDLERS: Role[] = HANDLER_ROLES;
 
 // A tile only shows for the configured roles.
 const WORK: Tile[] = [
@@ -65,9 +64,9 @@ const WORK: Tile[] = [
   {
     href: "/handover/receive",
     title: "Receive items",
-    desc: "Take items back into stock at a hub.",
+    desc: "Take items back into stock, or (QC / hardware) receive rigs sent to you.",
     icon: "inbox",
-    roles: HANDLERS,
+    roles: RECEIVE_ROLES,
   },
   {
     href: "/admin/people",

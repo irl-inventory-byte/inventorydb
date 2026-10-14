@@ -16,10 +16,12 @@ export default function ReceiveScanArea({
   hub,
   hubNames,
   items,
+  allowed,
 }: {
   hub: string;
   hubNames: Record<string, string>;
   items: { id: string; status: Status; hub: string; type?: string }[];
+  allowed?: readonly string[]; // QC / hardware team: only rigs sent to them
 }) {
   const [code, setCode] = useState("");
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -86,6 +88,7 @@ export default function ReceiveScanArea({
         hub={hub}
         hubNames={hubNames}
         items={items}
+        allowed={allowed}
         autoFocus={false}
         injected={injected}
       />

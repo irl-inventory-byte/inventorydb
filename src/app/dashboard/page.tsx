@@ -30,7 +30,7 @@ interface Attention {
 const GLYPH = { critical: "✕", warning: "▲", info: "●" } as const;
 const TONE = { critical: styles.iconCritical, warning: styles.iconWarning, info: styles.iconMuted };
 
-const STATUS_ORDER: Status[] = ["in_stock", "with_fo", "traveling", "with_rig", "with_internal", "with_qc", "with_hardware", "pending", "lost", "damaged", "retired"];
+const STATUS_ORDER: Status[] = ["in_stock", "with_fo", "traveling", "with_rig", "with_internal", "pending_qc", "with_qc", "pending_hardware", "with_hardware", "pending", "lost", "damaged", "retired"];
 const HUB_BARS = 8;
 
 // Shared styles for dark sticky table headers / footers.
@@ -80,8 +80,22 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const rigKpis: Kpi[] = [
     { label: "In stock", value: s.in_stock, hint: share(s.in_stock), href: rigList({ status: "in_stock" }), icon: "check", color: "var(--series-3)" },
     { label: "With field officers", value: s.with_fo, hint: share(s.with_fo), href: rigList({ status: "with_fo" }), icon: "user", color: "var(--series-2)" },
-    { label: "With QC team", value: s.with_qc, hint: share(s.with_qc), href: rigList({ status: "with_qc" }), icon: "shield", color: "var(--series-7)" },
-    { label: "With hardware team", value: s.with_hardware, hint: share(s.with_hardware), href: rigList({ status: "with_hardware" }), icon: "wrench", color: "var(--series-1)" },
+    {
+      label: "With QC team",
+      value: s.with_qc + s.pending_qc,
+      hint: s.pending_qc ? `${n(s.pending_qc)} not received yet` : share(s.with_qc),
+      href: rigList({ status: "pending_qc,with_qc" }),
+      icon: "shield",
+      color: "var(--series-7)",
+    },
+    {
+      label: "With hardware team",
+      value: s.with_hardware + s.pending_hardware,
+      hint: s.pending_hardware ? `${n(s.pending_hardware)} not received yet` : share(s.with_hardware),
+      href: rigList({ status: "pending_hardware,with_hardware" }),
+      icon: "wrench",
+      color: "var(--series-1)",
+    },
     {
       label: "In transit",
       value: s.traveling + s.pending,

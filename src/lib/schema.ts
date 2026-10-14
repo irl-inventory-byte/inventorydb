@@ -100,7 +100,9 @@ export const STATUSES = [
   "with_fo",
   "with_rig",
   "with_internal",
+  "pending_qc", // rigs only: sent to a QC team member, waiting for them to receive it
   "with_qc", // rigs only: with the QC team
+  "pending_hardware", // rigs only: sent to the hardware team, waiting for them to receive it
   "with_hardware", // rigs only: with the hardware team for repair
   "lost",
   "damaged",

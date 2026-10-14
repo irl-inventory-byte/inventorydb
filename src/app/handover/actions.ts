@@ -6,11 +6,11 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { actorOptions, allowedActors, defaultActor, displayName, resolveActor } from "@/lib/actors";
 import { requireRole } from "@/lib/authz";
-import { planReceive, planSend, type HandoverContext, type HandoverPlan } from "@/lib/handover";
+import { planReceive, planReceiveHeld, planSend, receivesHeld, type HandoverContext, type HandoverPlan } from "@/lib/handover";
 import type { Item, Role, TabRows } from "@/lib/schema";
 import { collectIds } from "@/lib/scan";
 import { archiveReceipt } from "@/lib/receipt-archive";
-import { HANDLER_ROLES, SEND_ROLES, storeFor } from "@/lib/access";
+import { HANDLER_ROLES, RECEIVE_ROLES, SEND_ROLES, storeFor } from "@/lib/access";
 import { getStore } from "@/lib/store";
 import { istTimestamp } from "@/lib/time";
 
@@ -176,7 +176,13 @@ export async function receiveCards(formData: FormData) {
   await run(
     formData,
     "/handover/receive",
-    (targets, ctx) => planReceive(targets, { hub, note, expected }, ctx),
+    // QC / hardware team: receive the rigs sent to them. Everyone else: take items into stock at a hub.
+    (targets, ctx) =>
+      receivesHeld(ctx.senderRole)
+        ? planReceiveHeld(targets, { note }, ctx)
+        : planReceive(targets, { hub, note, expected }, ctx),
     (plan): Record<string, string> => (plan.mismatch ? { mismatch: plan.mismatch } : {}),
+    undefined,
+    { roles: RECEIVE_ROLES, actorRoles: ["im", "rig", "qc", "hardware"] },
   );
 }
