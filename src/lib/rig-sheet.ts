@@ -10,22 +10,25 @@ import { google } from "googleapis";
  * Share the sheet with GOOGLE_SERVICE_ACCOUNT_EMAIL as Viewer.
  *
  * Columns are matched by the header text in row 1, ignoring case and spaces:
- *   ID      → "Asset Tag", "Rig ID", "Rig", "Serial", "Serial No", "Serial Number", "ID"
- *   Brand   → "Brand", "Make"
- *   Model   → "Model", "Rig Model"
+ *   ID      → "Asset Tag", "Asset ID", "Rig ID", "Rig No", "Rig", "Serial", "Serial No", "ID"
+ *   Brand   → "Brand", "Make", "Manufacturer"
+ *   Model   → "Model", "Rig Model", "Model Name", "Model No"
  *   Prism   → "Prism", "Prism No", "Prism Number"
- *   Penalty → "Penalty", "Penalty Amount", "Price", "Cost", "Value"
+ *   Penalty → "Penalty", "Penalty Amount", "Price", "Cost", "Value", "Amount"
  * Every other column is kept and shown as a detail of the rig.
  */
 
-const DEFAULT_RIG_SHEET_ID = "1xvBwDEu-JGOMYyjba9ttgHkLar8uxdMNor5-J9ql9r8";
+const DEFAULT_RIG_SHEET_ID = "18AtMF3kPGccxoBMKBzgSoyBalX-x9E_EYPFrtm7ttZU";
 const TTL_MS = 5 * 60 * 1000;
 
-const ID_HEADERS = ["assettag", "rigid", "rig", "serial", "serialno", "serialnumber", "id"];
-const BRAND_HEADERS = ["brand", "make"];
-const MODEL_HEADERS = ["model", "rigmodel"];
+const ID_HEADERS = [
+  "assettag", "assettagno", "assetid", "assetno", "rigid", "rigno", "rignumber", "rig",
+  "serial", "serialno", "serialnumber", "id",
+];
+const BRAND_HEADERS = ["brand", "make", "manufacturer"];
+const MODEL_HEADERS = ["model", "rigmodel", "modelname", "modelno"];
 const PRISM_HEADERS = ["prism", "prismno", "prismnumber"];
-const PENALTY_HEADERS = ["penalty", "penaltyamount", "price", "cost", "value"];
+const PENALTY_HEADERS = ["penalty", "penaltyamount", "penaltyamountrs", "price", "cost", "value", "amount"];
 
 export interface RigRecord {
   rigId: string;
