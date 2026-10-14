@@ -12,7 +12,7 @@ import {
 import { planAddItem } from "@/lib/add-item";
 import { requireRole } from "@/lib/authz";
 import { rigHomeHub } from "@/lib/rig-hub";
-import { findRig, loadRigRecords } from "@/lib/rig-sheet";
+import { findRig, loadRigRecords, rigSheetError } from "@/lib/rig-sheet";
 import { QC_STATUSES, type QcStatus } from "@/lib/schema";
 import { getStore } from "@/lib/store";
 import { istTimestamp } from "@/lib/time";
@@ -50,12 +50,23 @@ export type RigLookup = {
   details: [string, string][];
 };
 
-/** Look a rig up in the rig reference sheet. null = not found. */
-export async function lookupRig(rigId: string): Promise<RigLookup | null> {
+/**
+ * Look a rig up in the rig reference sheet. null = not found.
+ * { error } = the sheet could not be read, with the reason in plain words.
+ */
+export async function lookupRig(rigId: string): Promise<RigLookup | { error: string } | null> {
   const user = await requireRole("admin", "im");
   if (!canSeeType(user.role, "rig")) return null;
 
-  const found = findRig(await loadRigRecords(), rigId);
+  let records;
+  try {
+    records = await loadRigRecords();
+  } catch (error) {
+    console.error("Rig sheet lookup failed:", error);
+    return { error: rigSheetError(error) };
+  }
+
+  const found = findRig(records, rigId);
   if (!found) return null;
 
   return {

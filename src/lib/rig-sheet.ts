@@ -95,8 +95,38 @@ export function parseRigRows(rows: string[][]): RigRecord[] {
 
 let cache: { records: RigRecord[]; at: number; id: string } | null = null;
 
+/** The rig sheet ID in use (the RIG_SHEET_ID setting, or the default). */
+export const rigSheetId = () => process.env.RIG_SHEET_ID || DEFAULT_RIG_SHEET_ID;
+
+/** A plain-words reason why the rig sheet could not be read, for the Add a rig form. */
+export function rigSheetError(error: unknown): string {
+  const e = error as { code?: number; status?: number; message?: string; response?: { status?: number } };
+  const status = e?.response?.status ?? e?.status ?? e?.code;
+  const message = String(e?.message ?? error ?? "");
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || "(GOOGLE_SERVICE_ACCOUNT_EMAIL is not set in Vercel)";
+  const id = rigSheetId();
+
+  if (status === 403 || /permission|forbidden/i.test(message)) {
+    return `No access to the rig sheet. Share it with ${email} as Viewer.`;
+  }
+  if (status === 404 || /not found|Requested entity was not found/i.test(message)) {
+    return `Rig sheet not found (ID ${id}). Check RIG_SHEET_ID in Vercel, or delete it to use the default.`;
+  }
+  if (/Unable to parse range/i.test(message)) {
+    return "The tab named in RIG_SHEET_TAB does not exist in the rig sheet. Fix or delete RIG_SHEET_TAB in Vercel.";
+  }
+  if (/has not been used|is disabled|SERVICE_DISABLED/i.test(message)) {
+    return "The Google Sheets API is turned off for the service account's Google Cloud project. Turn it on, then try again.";
+  }
+  if (/private key|DECODER|invalid_grant|No key or keyFile/i.test(message)) {
+    return "The app's Google login is not working. Check GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY in Vercel.";
+  }
+  // Row 1 heading problems already have a clear message (see parseRigRows).
+  return `Could not read the rig sheet: ${message.slice(0, 200)}`;
+}
+
 export async function loadRigRecords(): Promise<RigRecord[]> {
-  const spreadsheetId = process.env.RIG_SHEET_ID || DEFAULT_RIG_SHEET_ID;
+  const spreadsheetId = rigSheetId();
 
   if (cache && cache.id === spreadsheetId && Date.now() - cache.at < TTL_MS) {
     return cache.records;

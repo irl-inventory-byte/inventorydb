@@ -68,6 +68,11 @@ export default function RigAddForm({ homeHub }: { homeHub?: Hub }) {
         setNote("Rig not found in the rig sheet. Enter the details and penalty by hand.");
         return;
       }
+      if ("error" in found) {
+        clear();
+        setNote(found.error);
+        return;
+      }
 
       setBrand(found.brand);
       setModel(found.model);
