@@ -139,6 +139,29 @@ export async function sendCards(formData: FormData) {
           qc_status: qcResult,
           comment: qcComment,
         }));
+      } else {
+        // IM → QC team: the rig's QC goes back to "QC pending" until QC records Pass or Fail.
+        // Hardware team → IM: the rig is "Repaired · Ready for field".
+        const toRole = ctx.people.find((p) => p.person_id === input.recipient)?.role;
+        const mark =
+          toRole === "qc" && ctx.senderRole !== "hardware"
+            ? { status: "qc_pending" as const, comment: "Sent to QC for checking" }
+            : ctx.senderRole === "hardware" && toRole === "im"
+              ? { status: "repaired" as const, comment: "Repaired by hardware team" }
+              : undefined;
+        if (mark) {
+          qcRows = targets
+            .filter((t) => t.item_type === "rig")
+            .map((t) => ({
+              check_id: ctx.newId("qc"),
+              item_id: t.item_id,
+              recorded_at: ctx.now,
+              recorded_by: ctx.by,
+              recorded_by_name: displayName(ctx.people, ctx.actorPersonId),
+              qc_status: mark.status,
+              comment: mark.comment,
+            }));
+        }
       }
 
       return planSend(targets, input, { ...ctx, qcStatus });
@@ -150,7 +173,7 @@ export async function sendCards(formData: FormData) {
       batch: plan.events[0]?.batch_id ?? "",
     }),
     async (plan) => {
-      // QC team: save the QC result with the handover.
+      // Save the rig QC change (QC result, back to QC pending, or repaired) with the handover.
       if (qcRows.length) await getStore().appendRows("qc_checks", qcRows);
 
       // Save the receipt PDF to Drive and log it in the "Receipts" tab.

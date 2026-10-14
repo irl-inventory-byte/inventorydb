@@ -9,7 +9,7 @@ import styles from "../dashboard.module.css";
 // Statuses in which an item is in someone's hands (QC and hardware hold rigs too).
 const HELD_STATUSES: readonly Status[] = [...OUT_STATUSES, "with_qc", "with_hardware"];
 
-const QC_COLOR: Record<string, string> = { pass: "#15803D", fail: "#B42318", qc_pending: "#8A4B00" };
+const QC_COLOR: Record<string, string> = { pass: "#15803D", repaired: "#15803D", fail: "#B42318", qc_pending: "#8A4B00" };
 
 // Activity records displayed per page.
 const PAGE_SIZE = 50;

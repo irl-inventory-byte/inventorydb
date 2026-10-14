@@ -171,7 +171,7 @@ export default async function InventoryPage({
   const latestQc = new Map<string, string>();
   for (const c of qcChecks) latestQc.set(c.item_id, c.qc_status);
   const showQc = canSeeType(user.role, "rig") && type !== "sd_card";
-  const QC_COLOR: Record<string, string> = { pass: "#15803D", fail: "#B42318", qc_pending: "#8A4B00" };
+  const QC_COLOR: Record<string, string> = { pass: "#15803D", repaired: "#15803D", fail: "#B42318", qc_pending: "#8A4B00" };
 
   // Each item's latest movement, used for the From / To columns.
   const eventById = new Map(

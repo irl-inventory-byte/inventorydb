@@ -75,7 +75,7 @@ export const TABS = {
     "recorded_at",
     "recorded_by", // login email
     "recorded_by_name",
-    "qc_status", // qc_pending | pass | fail
+    "qc_status", // qc_pending | pass | fail | repaired
     "comment",
   ],
   // Audit log of admin edits to past receipts: who changed what, and when.
@@ -231,7 +231,8 @@ export interface HardwareUpdate extends Row {
   comment: string;
 }
 
-export const QC_STATUSES = ["qc_pending", "pass", "fail"] as const;
+// "repaired" = the hardware team fixed it and sent it to an IM: ready for the field like a pass.
+export const QC_STATUSES = ["qc_pending", "pass", "fail", "repaired"] as const;
 export type QcStatus = (typeof QC_STATUSES)[number];
 
 export interface QcCheck extends Row {

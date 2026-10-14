@@ -33,7 +33,7 @@ export default function ScanBox({
   injected,
 }: {
   id: string;
-  items: { id: string; status: Status; hub: string; type?: string; qc?: string }[];
+  items: { id: string; status: Status; hub: string; type?: string; qc?: string; note?: string }[];
   mode: "send" | "receive";
   allowed?: readonly string[]; // send only: statuses that can be sent, instead of "in stock" (QC / hardware teams)
   rows?: number;
@@ -86,7 +86,15 @@ export default function ScanBox({
     });
   }, [text, statuses, items, mode, hub, allowed]);
   // A rig's latest QC result, shown next to it so the rig route is clear while scanning.
-  const qcOf = useMemo(() => new Map(items.filter((i) => i.qc).map((i) => [i.id, i.qc!])), [items]);
+  const qcOf = useMemo(
+    () =>
+      new Map(
+        items
+          .filter((i) => i.note || i.qc)
+          .map((i) => [i.id, i.note ?? `QC: ${QC_LABELS[i.qc!] ?? i.qc}`])
+      ),
+    [items]
+  );
   const ok = results.filter((r) => r.state === "ok").length;
   // SD card or Rig for each matched item, so mixed batches are easy to check.
   const typeOf = useMemo(() => new Map(items.map((i) => [i.id, i.type ?? "sd_card"])), [items]);
@@ -148,7 +156,7 @@ export default function ScanBox({
               <code>{r.id ?? r.code}</code>
               <span className={styles.msg}>
                 {r.state === "ok" && (STATUS_LABELS[r.status as Status] ?? r.status)}
-                {r.id && qcOf.has(r.id) && ` · QC: ${QC_LABELS[qcOf.get(r.id)!] ?? qcOf.get(r.id)}`}
+                {r.id && qcOf.has(r.id) && ` · ${qcOf.get(r.id)}`}
                 {r.state === "wrong" &&
                   (r.sentTo
                     ? mode === "send"

@@ -12,6 +12,7 @@ import styles from "./dashboard.module.css";
 import { HubOrgChart, countHidden } from "./hub-tree-view";
 import { Icon, type IconName } from "./icons";
 import { SummaryKpis } from "./summary-kpis";
+import { qcPerformance, rigCondition } from "@/lib/rig-state";
 
 const inventory = (params: Record<string, string>) => `/inventory?${new URLSearchParams(params)}`;
 const days = (d: number | null) => (d === null ? "—" : d === 0 ? "today" : `${d}d`);
@@ -51,12 +52,14 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const store = storeFor(user.role, type);
   // Rig view: the Rigs switch is on, or this login only sees rigs (QC, hardware).
   const rigView = type === "rig" || !canSeeType(user.role, "sd_card");
+  // QC team performance shows whenever rigs are in view (All or Rigs).
+  const showQc = canSeeType(user.role, "rig") && type !== "sd_card";
   const [items, events, people, hubs, qcChecks] = await Promise.all([
     store.list("items"),
     store.list("events"),
     store.list("people"),
     store.list("hubs"),
-    rigView ? store.list("qc_checks") : Promise.resolve([] as QcCheck[]),
+    showQc ? store.list("qc_checks") : Promise.resolve([] as QcCheck[]),
   ]);
 
   const d = computeDashboard(items, events, people, hubs, { hub: "", days: 14, now: new Date() });
@@ -72,6 +75,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const latestQc = new Map<string, string>();
   for (const c of qcChecks) latestQc.set(c.item_id, c.qc_status);
   const hardwareIssues = items.filter((i) => i.item_type === "rig" && latestQc.get(i.item_id) === "fail").length;
+  // In stock and QC passed or repaired: can go to the field now.
+  const readyForField = items.filter(
+    (i) => i.item_type === "rig" && i.status === "in_stock" && rigCondition(i.status, latestQc.get(i.item_id)).ready
+  ).length;
+  const qcTeam = qcPerformance(qcChecks, 2);
   const rigList = (params: Record<string, string>) => inventory({ ...params, type: "rig" });
 
   type Kpi = { label: string; value: number; hint: string; href: string; icon: IconName; color: string };
@@ -79,6 +87,14 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // RIGS: With QC team, With hardware team and Hardware issue instead of With rig team.
   const rigKpis: Kpi[] = [
     { label: "In stock", value: s.in_stock, hint: share(s.in_stock), href: rigList({ status: "in_stock" }), icon: "check", color: "var(--series-3)" },
+    {
+      label: "Ready for field",
+      value: readyForField,
+      hint: readyForField ? "In stock, QC passed or repaired" : "None ready",
+      href: "/rigs?ready=1",
+      icon: "send",
+      color: "var(--series-3)",
+    },
     { label: "With field officers", value: s.with_fo, hint: share(s.with_fo), href: rigList({ status: "with_fo" }), icon: "user", color: "var(--series-2)" },
     {
       label: "With QC team",
@@ -317,6 +333,50 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             </Link>
           ))}
         </section>
+
+        {showQc && (
+          <section className={styles.card} aria-label="QC team performance">
+            <div className={styles.sectionHead}>
+              <h2>QC team performance</h2>
+              <span className={styles.muted}>Pass and Fail recorded by each QC person</span>
+            </div>
+            {qcTeam.length === 0 ? (
+              <p className={styles.muted}>No QC results recorded yet.</p>
+            ) : (
+              <div className={styles.tableScroll} role="region" aria-label="QC team performance table" tabIndex={0} style={{ overflowX: "auto" }}>
+                <table className={styles.table} style={{ width: "100%", minWidth: "560px" }}>
+                  <thead>
+                    <tr>
+                      <th scope="col">QC person</th>
+                      <th scope="col" style={{ textAlign: "right" }}>Checked</th>
+                      <th scope="col" style={{ textAlign: "right" }}>Pass</th>
+                      <th scope="col" style={{ textAlign: "right" }}>Fail</th>
+                      <th scope="col" style={{ textAlign: "right" }}>Passed, then failed within 2 days</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {qcTeam.map((q) => (
+                      <tr key={q.key}>
+                        <td>{q.name}</td>
+                        <td style={{ textAlign: "right" }}>{n(q.checked)}</td>
+                        <td style={{ textAlign: "right", color: "#15803D", fontWeight: 600 }}>{n(q.pass)}</td>
+                        <td style={{ textAlign: "right", color: "#B42318", fontWeight: 600 }}>{n(q.fail)}</td>
+                        <td style={{ textAlign: "right", fontWeight: q.passFailedSoon ? 700 : 400, color: q.passFailedSoon ? "#B42318" : undefined }}>
+                          {n(q.passFailedSoon)}
+                          {q.pass > 0 && ` (${Math.round((q.passFailedSoon / q.pass) * 100)}% of passes)`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p className={styles.muted}>
+              &quot;Passed, then failed within 2 days&quot; = a rig this person passed that got a Fail result within 48
+              hours of that pass.
+            </p>
+          </section>
+        )}
 
         <section className={styles.card} aria-label="Hub hierarchy">
           <div className={styles.sectionHead}>

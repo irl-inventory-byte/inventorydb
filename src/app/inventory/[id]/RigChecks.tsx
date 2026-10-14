@@ -17,6 +17,7 @@ const QC_COLOR: Record<string, string> = {
   pass: "#15803D",
   fail: "#B42318",
   qc_pending: "#8A4B00",
+  repaired: "#15803D",
 };
 
 const fieldStyle = { display: "flex", flexDirection: "column", gap: 6, minWidth: 0 } as const;

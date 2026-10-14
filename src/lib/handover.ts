@@ -42,15 +42,18 @@ const SEND_STATUS: Partial<Record<Role, Status>> = {
 // QC and hardware teams send the rigs they are holding, not stock from a hub.
 const HELD_BY: Partial<Record<Role, Status>> = { qc: "with_qc", hardware: "with_hardware" };
 
-const QC_WORD: Record<string, string> = { qc_pending: "QC pending", pass: "Pass", fail: "Fail" };
+const QC_WORD: Record<string, string> = { qc_pending: "QC pending", pass: "Pass", fail: "Fail", repaired: "Repaired" };
+
+// Ready for the field: QC passed, or repaired by the hardware team.
+const READY_FOR_FIELD = new Set(["pass", "repaired"]);
 
 /**
  * RIG ROUTE (SD cards are not affected):
  *   IM → QC team                    always
- *   IM → FO or IFO                  only when the rig's latest QC result is Pass
+ *   IM → FO or IFO                  only when the rig is QC passed or repaired by hardware
  *   QC team → IM                    only when QC is Pass
  *   QC team → hardware team         only when QC is Fail
- *   hardware team → IM              after repair (the rig must then go back to QC)
+ *   hardware team → IM              after repair (the rig is then "Repaired · Ready for field")
  * Nothing else is allowed for a rig. Returns the error messages, if any.
  */
 function rigRouteErrors(
@@ -90,10 +93,10 @@ function rigRouteErrors(
 
   // IM (or an admin)
   if (to === "fo" || to === "ifo") {
-    const notPass = rigs.filter((t) => qc(t) !== "pass");
-    if (notPass.length) errors.push(`These rigs have not passed QC: ${listOf(named(notPass))}. Send them to the QC team first.`);
+    const notReady = rigs.filter((t) => !READY_FOR_FIELD.has(qc(t)));
+    if (notReady.length) errors.push(`These rigs are not ready for the field: ${listOf(named(notReady))}. Send them to the QC team first.`);
   } else if (to !== "qc") {
-    errors.push(`Rigs can only be sent to the QC team, or to an FO / IFO after QC pass: ${listOf(rigs.map((t) => t.item_id))}.`);
+    errors.push(`Rigs can only be sent to the QC team, or to an FO / IFO when QC passed or repaired: ${listOf(rigs.map((t) => t.item_id))}.`);
   }
   return errors;
 }

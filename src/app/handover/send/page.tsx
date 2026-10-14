@@ -7,6 +7,7 @@ import { SEND_ROLES, canSeeType, storeFor } from "@/lib/access";
 import styles from "../form.module.css";
 import { sendCards } from "../actions";
 import SendScanFields from "./SendScanFields";
+import { rigCondition } from "@/lib/rig-state";
 import QcSendFields from "./QcSendFields";
 import SendToFields from "./SendToFields";
 
@@ -53,7 +54,8 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
     status: i.status,
     hub: i.current_hub,
     type: i.item_type === "rig" ? "rig" : "sd_card",
-    ...(i.item_type === "rig" && { qc: latestQc.get(i.item_id) || "qc_pending" }),
+    // Rigs show their condition while scanning, e.g. "QC passed · Idle" or "Repaired · Ready for field".
+    ...(i.item_type === "rig" && { note: rigCondition(i.status, latestQc.get(i.item_id)).label }),
   }));
   const hubName = new Map(hubs.map((h) => [h.hub_id, h.name]));
   const recipients = people.filter((p) => p.active !== "false").sort((a, b) => a.name.localeCompare(b.name));
@@ -150,8 +152,8 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
         {seesRigs && user.role !== "qc" && (
           <p className={styles.hint}>
             {user.role === "hardware"
-              ? "Rigs: after repair, send the rig to an IM. It then goes back to the QC team."
-              : "Rigs: QC pass → FO or IFO. QC pending or fail → QC team only."}
+              ? "Rigs: after repair, send the rig to an IM. It is then Ready for field."
+              : "Rigs: QC passed or repaired → FO or IFO. QC pending or failed → QC team only."}
           </p>
         )}
 

@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { storeFor } from "@/lib/access";
 import { requireRole } from "@/lib/authz";
-import { QC_LABELS, STATUS_LABELS, one } from "@/lib/labels";
+import { STATUS_LABELS, one } from "@/lib/labels";
 import type { HardwareUpdate, QcCheck } from "@/lib/schema";
+import { rigCondition } from "@/lib/rig-state";
 import { formatIst } from "@/lib/time";
 import styles from "../admin/admin.module.css";
 
@@ -10,6 +11,7 @@ const QC_COLOR: Record<string, string> = {
   pass: "#15803D",
   fail: "#B42318",
   qc_pending: "#8A4B00",
+  repaired: "#15803D",
 };
 
 const FILTERS: [string, string][] = [
@@ -17,16 +19,19 @@ const FILTERS: [string, string][] = [
   ["qc_pending", "QC pending"],
   ["pass", "Pass"],
   ["fail", "Fail"],
+  ["repaired", "Repaired"],
 ];
 
 /**
  * RIG CHECKS: every rig with its latest QC result and hardware update.
  * Admin, IM, Hardware team and QC team. Open a rig to add an update or QC result.
  */
-export default async function RigsPage({ searchParams }: PageProps<"/rigs">) {
+export default async function RigsPage({ searchParams }: PageProps<"/">) {
   const user = await requireRole("admin", "im", "hardware", "qc");
   const sp = await searchParams;
   const qcFilter = one(sp.qc);
+  // ?ready=1: in stock and QC passed or repaired (the dashboard's "Ready for field" tile).
+  const readyOnly = one(sp.ready) === "1";
   const q = one(sp.q).trim().toLowerCase();
 
   const store = storeFor(user.role, "rig");
@@ -47,7 +52,7 @@ export default async function RigsPage({ searchParams }: PageProps<"/rigs">) {
   const latestHw = new Map<string, HardwareUpdate>();
   for (const h of hardware) latestHw.set(h.item_id, h);
 
-  const counts = { qc_pending: 0, pass: 0, fail: 0 } as Record<string, number>;
+  const counts = { qc_pending: 0, pass: 0, fail: 0, repaired: 0 } as Record<string, number>;
   for (const r of rigs) {
     const st = latestQc.get(r.item_id)?.qc_status ?? "qc_pending";
     counts[st] = (counts[st] ?? 0) + 1;
@@ -55,6 +60,7 @@ export default async function RigsPage({ searchParams }: PageProps<"/rigs">) {
 
   const shown = rigs
     .filter((r) => !qcFilter || (latestQc.get(r.item_id)?.qc_status ?? "qc_pending") === qcFilter)
+    .filter((r) => !readyOnly || (r.status === "in_stock" && rigCondition(r.status, latestQc.get(r.item_id)?.qc_status).ready))
     .filter(
       (r) =>
         !q ||
@@ -75,8 +81,14 @@ export default async function RigsPage({ searchParams }: PageProps<"/rigs">) {
       </p>
       <h1>Rig checks</h1>
       <p className={styles.muted}>
-        {rigs.length} rigs · {counts.qc_pending ?? 0} QC pending · {counts.pass ?? 0} pass · {counts.fail ?? 0} fail.
+        {rigs.length} rigs · {counts.qc_pending ?? 0} QC pending · {counts.pass ?? 0} pass · {counts.fail ?? 0} fail · {counts.repaired ?? 0} repaired.
         Open a rig to add a hardware update or QC result.
+        {readyOnly && (
+          <>
+            {" "}
+            <strong>Showing only rigs ready for the field.</strong> <Link href="/rigs">Show all</Link>
+          </>
+        )}
       </p>
 
       <nav aria-label="QC filter" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "12px 0" }}>
@@ -140,7 +152,7 @@ export default async function RigsPage({ searchParams }: PageProps<"/rigs">) {
                     <td>
                       {personName.get(r.current_holder) ?? hubName.get(r.current_hub) ?? (r.current_hub || "—")}
                     </td>
-                    <td style={{ color: QC_COLOR[qcStatus], fontWeight: 600 }}>{QC_LABELS[qcStatus] ?? qcStatus}</td>
+                    <td style={{ color: QC_COLOR[qcStatus], fontWeight: 600 }}>{rigCondition(r.status, qcStatus).label}</td>
                     <td>
                       {qc ? (
                         <>

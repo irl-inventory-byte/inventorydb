@@ -33,8 +33,9 @@ export const ITEM_TYPE_LABELS: Record<string, string> = {
 
 export const QC_LABELS: Record<string, string> = {
   qc_pending: "QC pending",
-  pass: "Pass",
-  fail: "Fail",
+  pass: "QC passed",
+  fail: "QC failed",
+  repaired: "Repaired",
 };
 
 /** First value of a search param, which Next may give as string, array or undefined. */
