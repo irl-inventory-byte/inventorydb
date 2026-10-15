@@ -10,6 +10,7 @@ import TypeSwitch from "../TypeSwitch";
 import { ActivityChart, BarList, n } from "./charts";
 import styles from "./dashboard.module.css";
 import { HubOrgChart, countHidden } from "./hub-tree-view";
+import AttentionFilter from "./attentionfilter";
 import { Icon, type IconName } from "./icons";
 import { SummaryKpis } from "./summary-kpis";
 import { RIG_STATES, RIG_STATE_LABELS, qcPerformance, rigState, type RigState } from "@/lib/rig-state";
@@ -22,7 +23,9 @@ interface Attention {
   key: string;
   person: string;
   role: string;
+  city: string; // city of the hub(s) where the items are, e.g. "Bangalore" or "Bangalore, Pune"
   items: number;
+  hours: number | null; // how long the oldest item has been out, for sorting longest first; null for lost / damaged
   outFor: string; // "14 hours", "3 days", "—"
   issue: string;
   href: string;
@@ -173,6 +176,23 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const attention: Attention[] = [];
   const seen = new Set<string>();
 
+  // City of a hub (its City column, or its name when City is blank), and the cities where a person's items are.
+  const hubCity = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
+  const holderCities = new Map<string, Set<string>>();
+  for (const i of items) {
+    if (!i.current_holder || i.status === "in_stock") continue;
+    const set = holderCities.get(i.current_holder) ?? new Set<string>();
+    set.add(hubCity.get(i.current_hub) ?? i.current_hub);
+    holderCities.set(i.current_holder, set);
+  }
+  const personHub = new Map(people.map((p) => [p.person_id, p.hub]));
+  const cityOfPerson = (id: string) => {
+    const set = holderCities.get(id);
+    if (set && set.size) return [...set].filter(Boolean).sort().join(", ");
+    const hub = personHub.get(id);
+    return hub ? (hubCity.get(hub) ?? hub) : "—";
+  };
+
   for (const g of d.late) {
     seen.add(g.key);
     if (g.kind === "pending") {
@@ -180,7 +200,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
         key: `late-pending-${g.key}`,
         person: g.label,
         role: "Hub",
+        city: hubCity.get(g.key) ?? g.key,
         items: g.count,
+        hours: g.oldestHours,
         outFor: howLong(g.oldestHours),
         issue: "Sent, not received",
         href: `/handover/receive?${new URLSearchParams({ hub: g.key })}`,
@@ -191,7 +213,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
         key: `late-${g.kind}-${g.key}`,
         person: g.label,
         role: g.kind === "fo" ? "FO" : "IFO",
+        city: cityOfPerson(g.key),
         items: g.count,
+        hours: g.oldestHours,
         outFor: howLong(g.oldestHours),
         issue: g.kind === "fo" ? "Not returned" : "Not arrived",
         href: inventory({ holder: g.key, status: g.kind === "fo" ? "with_fo" : "traveling" }),
@@ -208,7 +232,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       key: `late-${h.role}-${h.person_id}`,
       person: h.name,
       role: ROLE_LABELS[h.role],
+      city: cityOfPerson(h.person_id),
       items: h.count,
+      hours: h.oldestDays * 24,
       outFor: `${h.oldestDays} day${h.oldestDays === 1 ? "" : "s"}`,
       issue: "Not returned",
       href: inventory({ holder: h.person_id, status: h.role === "rig" ? "with_rig" : "with_internal" }),
@@ -217,12 +243,32 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   }
 
   if (s.lost > 0) {
-    attention.push({ key: "lost", person: "—", role: "—", items: s.lost, outFor: "—", issue: "Lost", href: inventory({ status: "lost" }), tone: "critical" });
+    attention.push({ key: "lost", person: "—", role: "—", city: "—", items: s.lost, hours: null, outFor: "—", issue: "Lost", href: inventory({ status: "lost" }), tone: "critical" });
   }
   if (s.damaged > 0) {
-    attention.push({ key: "damaged", person: "—", role: "—", items: s.damaged, outFor: "—", issue: "Damaged", href: inventory({ status: "damaged" }), tone: "critical" });
+    attention.push({ key: "damaged", person: "—", role: "—", city: "—", items: s.damaged, hours: null, outFor: "—", issue: "Damaged", href: inventory({ status: "damaged" }), tone: "critical" });
   }
 
+  // Longest out first. Lost / damaged rows have no time, so they go last.
+  attention.sort((a, b) => (b.hours ?? -1) - (a.hours ?? -1) || b.items - a.items);
+
+  // Filter by city and role (?acity=…&arole=…). A row with items in several cities matches each of them.
+  const splitCities = (c: string) => c.split(",").map((x) => x.trim()).filter((x) => x && x !== "—");
+  const cityOptions = [...new Set(attention.flatMap((a) => splitCities(a.city)))].sort((a, b) => a.localeCompare(b));
+  const roleOptions = [...new Set(attention.map((a) => a.role).filter((r) => r && r !== "—"))].sort((a, b) => a.localeCompare(b));
+  const cityFilter = one(sp.acity);
+  const roleFilter = one(sp.arole);
+  const shownAttention = attention.filter(
+    (a) => (!cityFilter || splitCities(a.city).includes(cityFilter)) && (!roleFilter || a.role === roleFilter),
+  );
+  const keepParams: Record<string, string> = {};
+  if (one(sp.type)) keepParams.type = one(sp.type);
+  if (showEmpty) keepParams.empty = "1";
+
+  // Who has items: longest out first, then most items.
+  const holdersSorted = [...d.holders].sort(
+    (a, b) => (b.oldestDays ?? -1) - (a.oldestDays ?? -1) || b.count - a.count || a.name.localeCompare(b.name),
+  );
   const holdersTotal = d.holders.reduce((total, holder) => total + holder.count, 0);
 
   return (
@@ -402,10 +448,16 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             <h2>Needs attention</h2>
             <p className={styles.muted}>
               FO, IFO, rig team, IM or hubs holding items for more than {LATE_AFTER_HOURS} hours, plus lost and
-              damaged items.
+              damaged items. Longest out first.
             </p>
 
-            {attention.length === 0 ? (
+            {attention.length > 0 && (
+              <AttentionFilter cities={cityOptions} roles={roleOptions} city={cityFilter} role={roleFilter} keep={keepParams} />
+            )}
+
+            {attention.length > 0 && shownAttention.length === 0 ? (
+              <p className={styles.muted}>Nothing matches this filter.</p>
+            ) : attention.length === 0 ? (
               <p className={styles.ok}>
                 <span className={`${styles.icon} ${styles.iconGood}`} aria-hidden>
                   ✓
@@ -422,7 +474,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
               >
                 <table
                   className={styles.table}
-                  style={{ width: "100%", minWidth: "520px", borderCollapse: "separate", borderSpacing: 0 }}
+                  style={{ width: "100%", minWidth: "620px", borderCollapse: "separate", borderSpacing: 0 }}
                 >
                   <thead>
                     <tr>
@@ -431,6 +483,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                       </th>
                       <th scope="col" style={TH_STYLE}>
                         Role
+                      </th>
+                      <th scope="col" style={TH_STYLE}>
+                        City
                       </th>
                       <th scope="col" className={styles.num} style={TH_STYLE}>
                         Items
@@ -445,7 +500,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                   </thead>
 
                   <tbody>
-                    {attention.map((a) => (
+                    {shownAttention.map((a) => (
                       <tr key={a.key}>
                         <td style={{ whiteSpace: "normal", overflow: "visible", overflowWrap: "anywhere" }}>
                           <Link
@@ -463,6 +518,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                           </Link>
                         </td>
                         <td>{a.role}</td>
+                        <td>{a.city}</td>
                         <td className={styles.num}>{a.items ? n(a.items) : "—"}</td>
                         <td>{a.outFor}</td>
                         <td>
@@ -477,15 +533,15 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
                   <tfoot style={{ position: "static" }}>
                     <tr>
-                      <th scope="row" colSpan={2} style={{ ...TFOOT_STYLE, textAlign: "left" }}>
+                      <th scope="row" colSpan={3} style={{ ...TFOOT_STYLE, textAlign: "left" }}>
                         Total
                       </th>
                       <td className={styles.num} style={TFOOT_STYLE}>
-                        {n(attention.reduce((total, a) => total + a.items, 0))}
+                        {n(shownAttention.reduce((total, a) => total + a.items, 0))}
                       </td>
                       <td style={TFOOT_STYLE}>—</td>
                       <td style={TFOOT_STYLE}>
-                        {attention.length} row{attention.length === 1 ? "" : "s"}
+                        {shownAttention.length} row{shownAttention.length === 1 ? "" : "s"}
                       </td>
                     </tr>
                   </tfoot>
@@ -531,7 +587,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                       </td>
                     </tr>
                   ) : (
-                    d.holders.map((h) => (
+                    holdersSorted.map((h) => (
                       <tr key={h.person_id}>
                         <td style={{ whiteSpace: "normal", overflow: "visible", overflowWrap: "anywhere" }}>
                           <Link
