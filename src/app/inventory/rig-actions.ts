@@ -229,3 +229,137 @@ export async function addQcCheck(formData: FormData) {
   refresh(itemId);
   redirect(`${back}?${new URLSearchParams({ done: "qc" })}`);
 }
+/* ------------------------------------------------------------------ */
+/* ADD MANY RIGS AT ONCE: Admin and IM                                 */
+/* ------------------------------------------------------------------ */
+
+const RIG_BULK_LIMIT = 200;
+
+export type RigCheck = {
+  rigId: string;
+  status: "ready" | "exists" | "repeated" | "notfound" | "nopenalty";
+  brand: string;
+  model: string;
+  penalty: string;
+};
+
+/** Check a list of rig IDs against the inventory and the rig sheet. */
+export async function checkRigs(ids: string[]): Promise<{ rows: RigCheck[]; error?: string }> {
+  const user = await requireRole("admin", "im");
+  if (!canSeeType(user.role, "rig")) return { rows: [] };
+
+  let records;
+  try {
+    records = await loadRigRecords();
+  } catch (error) {
+    console.error("Rig sheet lookup failed:", error);
+    return { rows: [], error: rigSheetError(error) };
+  }
+
+  const inInventory = new Set((await getStore().list("items")).map((i) => i.item_id.toUpperCase()));
+  const seen = new Set<string>();
+  const rows: RigCheck[] = [];
+
+  for (const raw of ids.slice(0, RIG_BULK_LIMIT)) {
+    const rigId = String(raw ?? "").trim();
+    if (!rigId) continue;
+    const key = rigId.toUpperCase();
+    const found = findRig(records, rigId);
+    const base = { rigId, brand: found?.brand ?? "", model: found?.model ?? "", penalty: found?.penalty ?? "" };
+
+    if (seen.has(key)) rows.push({ ...base, status: "repeated" });
+    else if (inInventory.has(key)) rows.push({ ...base, status: "exists" });
+    else if (!found) rows.push({ ...base, status: "notfound" });
+    else if (!found.penalty) rows.push({ ...base, status: "nopenalty" });
+    else rows.push({ ...base, status: "ready" });
+    seen.add(key);
+  }
+  return { rows };
+}
+
+export type RigBulkResult = { added: string[]; skipped: { rigId: string; reason: string }[]; error?: string };
+
+/**
+ * Add many rigs at once. Every rig: home hub Bangalore, details and penalty from the rig sheet
+ * (looked up again here, not taken from the browser), in stock, QC pending.
+ */
+export async function addRigs(ids: string[]): Promise<RigBulkResult> {
+  const user = await requireRole("admin", "im");
+  if (!canSeeType(user.role, "rig")) return { added: [], skipped: [], error: "Not allowed." };
+
+  const list = (ids ?? []).map((s) => String(s ?? "").trim()).filter(Boolean).slice(0, RIG_BULK_LIMIT);
+  if (!list.length) return { added: [], skipped: [], error: "There are no rigs to add." };
+
+  let records;
+  try {
+    records = await loadRigRecords();
+  } catch (error) {
+    return { added: [], skipped: [], error: rigSheetError(error) };
+  }
+
+  const store = getStore();
+  const [items, hubs] = await Promise.all([store.list("items"), store.list("hubs")]);
+  const homeHub = rigHomeHub(hubs)?.hub_id ?? "";
+  if (!homeHub) return { added: [], skipped: [], error: "No active hub named Bangalore. Add it on the Hubs page first." };
+
+  const known = [...items];
+  const events: Parameters<typeof store.commitBatch>[0] = [];
+  const toSave: Parameters<typeof store.commitBatch>[1] = [];
+  const skipped: RigBulkResult["skipped"] = [];
+  const now = istTimestamp();
+
+  for (const rigId of list) {
+    const found = findRig(records, rigId);
+    if (!found) {
+      skipped.push({ rigId, reason: "not in the rig sheet" });
+      continue;
+    }
+    if (!found.penalty) {
+      skipped.push({ rigId, reason: "no penalty amount in the rig sheet" });
+      continue;
+    }
+    const plan = planAddItem(
+      {
+        itemId: found.rigId,
+        homeHub,
+        prismNo: "",
+        brand: found.brand,
+        model: found.model,
+        price: found.penalty,
+        itemType: "rig",
+        attributes: found.details.length ? JSON.stringify(Object.fromEntries(found.details)) : "",
+      },
+      known,
+      { hubs, by: user.email ?? "unknown", now, newId }
+    );
+    if (plan.errors.length || !plan.item || !plan.event) {
+      skipped.push({ rigId, reason: plan.errors.join(" ") || "could not be prepared" });
+      continue;
+    }
+    known.push(plan.item);
+    events.push(plan.event);
+    toSave.push(plan.item);
+  }
+
+  if (!toSave.length) return { added: [], skipped };
+
+  await store.commitBatch(events, toSave);
+
+  // Every new rig starts as "QC pending".
+  const me = await whoIs(user);
+  await store.appendRows(
+    "qc_checks",
+    toSave.map((item) => ({
+      check_id: newId("qc"),
+      item_id: item.item_id,
+      recorded_at: now,
+      recorded_by: me.email,
+      recorded_by_name: me.name,
+      qc_status: "qc_pending" as const,
+      comment: "Added to inventory",
+    }))
+  );
+
+  refresh();
+  return { added: toSave.map((i) => i.item_id), skipped };
+}

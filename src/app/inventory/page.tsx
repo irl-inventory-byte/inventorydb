@@ -12,6 +12,7 @@ import TypeSwitch from "../TypeSwitch";
 import AddCardForm from "./AddCardForm";
 import MultiSelect from "./MultiSelect";
 import RigAddForm from "./RigAddForm";
+import RigBulkAddForm from "./RigBulkAddForm";
 import { rigHomeHub } from "@/lib/rig-hub";
 import BulkAddForm from "./BulkAddForm";
 import { applyCorrection } from "./actions";
@@ -656,6 +657,18 @@ export default async function InventoryPage({
           )}
 
           <RigAddForm homeHub={rigHomeHub(hubs)} />
+        </details>
+      )}
+
+      {/* Add many rigs at once: Admin and IM. Home hub Bangalore, details from the rig sheet. */}
+      {canAddRig && (
+        <details className={styles.details}>
+          <summary>+ Add multiple rigs</summary>
+          <p className={styles.muted}>
+            Scan or paste many rig IDs. Brand, model and penalty load from the rig sheet. Every rig starts in
+            stock at Bangalore, with QC pending.
+          </p>
+          <RigBulkAddForm homeHubName={rigHomeHub(hubs)?.name} />
         </details>
       )}
 
