@@ -96,7 +96,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     qc_pending: { icon: "shield", color: "var(--series-7)", hint: "Received by QC" },
     qc_fail: { icon: "alert", color: "var(--warning)", hint: "Hardware has not received it yet" },
     rtd: { icon: "send", color: "var(--series-3)", hint: "Repaired, received by IM" },
-    dead: { icon: "archive", color: "var(--critical)", hint: "Declared dead by hardware" },
+    dead: { icon: "archive", color: "var(--text-muted)", hint: "Declared dead by hardware" },
+    lost: { icon: "alert", color: "var(--critical)", hint: "Marked lost or damaged" },
   };
   const rigKpis: Kpi[] = RIG_STATES.map((k) => ({
     label: RIG_STATE_LABELS[k],

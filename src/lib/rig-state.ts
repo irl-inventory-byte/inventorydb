@@ -33,6 +33,7 @@ export function rigCondition(status: Status | string, qc: string | undefined): R
  *   qc_fail     QC fail             QC marked Fail; the hardware team has not received it yet
  *   rtd         RTD                 repaired by hardware, and the IM has received it
  *   dead        Dead / Retired      the hardware team declared it dead
+ *   lost        Lost or damaged     marked lost or damaged (admin correction)
  */
 export const RIG_STATES = [
   "in_stock",
@@ -44,6 +45,7 @@ export const RIG_STATES = [
   "qc_fail",
   "rtd",
   "dead",
+  "lost",
 ] as const;
 export type RigState = (typeof RIG_STATES)[number] | "other";
 
@@ -57,6 +59,7 @@ export const RIG_STATE_LABELS: Record<RigState, string> = {
   qc_fail: "QC fail",
   rtd: "RTD (Ready to deploy)",
   dead: "Dead / Retired",
+  lost: "Lost or damaged",
   other: "Other",
 };
 
@@ -64,6 +67,9 @@ export function rigState(status: Status | string, qc: string | undefined): RigSt
   switch (status) {
     case "retired":
       return "dead";
+    case "lost":
+    case "damaged":
+      return "lost";
     case "with_hardware":
       return "hardware";
     case "pending_hardware":
