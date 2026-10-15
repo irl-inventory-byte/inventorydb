@@ -213,6 +213,15 @@ export default async function Home({
           </div>
         </div>
 
+        {/* No tiles at all means the login's role is not one the app knows. Say so instead of a blank page. */}
+        {!ROLE_LABELS[user.role] && (
+          <p className={styles.banner}>
+            Your login has no valid role
+            {user.roleRaw ? ` (the users tab says “${user.roleRaw}”)` : ""}. Ask an admin to set your role on
+            Manage users, then sign out and sign in again.
+          </p>
+        )}
+
         {one(sp.denied) && (
           <p className={styles.banner}>
             Your role can&apos;t open that page.

@@ -6,16 +6,36 @@ import { resolveLinkedPerson, type LoginRole } from "@/lib/user-link";
 
 declare module "next-auth" {
   interface Session {
-    user: { role: Role; personId: string } & DefaultSession["user"];
+    user: { role: Role; personId: string; roleRaw?: string } & DefaultSession["user"];
   }
 }
 
 declare module "@auth/core/jwt" {
   interface JWT {
     role?: Role;
+    roleRaw?: string;
     personId?: string;
   }
 }
+
+// A role as typed in the users tab ("Hardware team", " QC ", "Inventory manager") → its code.
+const ROLE_ALIASES: Record<string, Role> = {
+  admin: "admin",
+  im: "im",
+  "inventory manager": "im",
+  rig: "rig",
+  "rig team": "rig",
+  fo: "fo",
+  "field officer": "fo",
+  hardware: "hardware",
+  "hardware team": "hardware",
+  qc: "qc",
+  "qc team": "qc",
+  internal: "internal",
+  "internal team": "internal",
+};
+const normalizeRole = (raw: string | undefined): Role | undefined =>
+  ROLE_ALIASES[String(raw ?? "").trim().toLowerCase().replace(/\s+/g, " ")];
 
 // Only people listed in the `users` tab can sign in. Role changes apply at next sign-in.
 async function findUser(email: string) {
@@ -35,9 +55,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (profile?.email) {
         // Present only at sign-in, so the sheet is read once per login, not per request.
         const user = await findUser(profile.email);
-        token.role = user?.role;
-        token.personId = user
-          ? resolveLinkedPerson(user as { email: string; role: LoginRole; person_id: string }, await getStore().list("people"))
+        const role = normalizeRole(user?.role);
+        token.role = role;
+        token.roleRaw = user?.role ?? "";
+        token.personId = user && role
+          ? resolveLinkedPerson({ ...user, role } as { email: string; role: LoginRole; person_id: string }, await getStore().list("people"))
           : "";
       }
       return token;
@@ -45,6 +67,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     session({ session, token }) {
       session.user.role = token.role as Role;
       session.user.personId = token.personId ?? "";
+      session.user.roleRaw = token.roleRaw ?? "";
       return session;
     },
   },
