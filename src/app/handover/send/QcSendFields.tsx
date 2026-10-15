@@ -12,9 +12,11 @@ import SendToFields, { type PersonGroup } from "./SendToFields";
 export default function QcSendFields({
   groups,
   hubs,
+  bangalore,
 }: {
   groups: PersonGroup[];
   hubs: { id: string; name: string }[];
+  bangalore?: { id: string; name: string };
 }) {
   const [result, setResult] = useState<"" | "pass" | "fail">("");
   const wanted = result === "pass" ? "im" : result === "fail" ? "hardware" : "";
@@ -71,7 +73,7 @@ export default function QcSendFields({
       )}
 
       {/* Changing the result resets the person, so a Pass can't go to hardware by mistake. */}
-      <SendToFields key={result || "none"} groups={shown} hubs={hubs} allowInternal={false} />
+      <SendToFields key={result || "none"} groups={shown} hubs={hubs} allowInternal={false} bangalore={bangalore} />
     </>
   );
 }

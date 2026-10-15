@@ -1,4 +1,5 @@
 import { displayName } from "./actors";
+import { rigHomeHub } from "./rig-hub";
 import type { Hub, Item, ItemEvent, Person, Role, Status } from "./schema";
 
 export interface HandoverContext {
@@ -145,6 +146,11 @@ export function planSend(targets: Item[], input: SendInput, ctx: HandoverContext
     holder = recipient?.person_id ?? "";
     toRole = recipient?.role;
     if (!recipient || !status) plan.errors.push("Choose the person the items are going to.");
+  }
+  // QC and hardware teams always work at Bangalore: rigs sent to them go there, whatever was chosen.
+  if (toRole === "qc" || toRole === "hardware") {
+    const bangalore = rigHomeHub(ctx.hubs)?.hub_id;
+    if (bangalore) input = { ...input, toHub: bangalore };
   }
   if (!activeHub(input.toHub)) plan.errors.push("Choose the location the items are going to.");
 

@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireRole } from "@/lib/authz";
 import { normalizeMobile } from "@/lib/mobile";
+import { rigHomeHub } from "@/lib/rig-hub";
 import { getStore } from "@/lib/store";
 
 // Email and mobile number are required for both adding and editing.
@@ -70,13 +71,19 @@ export async function addPerson(formData: FormData) {
     fail(problem(formData));
   }
 
-  const input = parsed.data;
   const store = getStore();
 
   const [people, hubs] = await Promise.all([
     store.list("people"),
     store.list("hubs"),
   ]);
+
+  // QC and hardware teams always work at Bangalore, whatever hub was chosen.
+  const bangalore = rigHomeHub(hubs)?.hub_id;
+  const input =
+    (parsed.data.role === "qc" || parsed.data.role === "hardware") && bangalore
+      ? { ...parsed.data, hub: bangalore }
+      : parsed.data;
 
   // One mobile number per person.
   if (people.some((person) => (person.mobile ?? "") === input.mobile)) {
@@ -138,13 +145,19 @@ export async function savePerson(formData: FormData) {
     fail(personId ? problem(formData) : "invalid");
   }
 
-  const input = parsed.data;
   const store = getStore();
 
   const [people, hubs] = await Promise.all([
     store.list("people"),
     store.list("hubs"),
   ]);
+
+  // QC and hardware teams always work at Bangalore, whatever hub was chosen.
+  const bangalore = rigHomeHub(hubs)?.hub_id;
+  const input =
+    (parsed.data.role === "qc" || parsed.data.role === "hardware") && bangalore
+      ? { ...parsed.data, hub: bangalore }
+      : parsed.data;
 
   const existing = people.find(
     (person) => person.person_id === personId

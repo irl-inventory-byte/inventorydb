@@ -24,10 +24,12 @@ export default function SendToFields({
   groups,
   hubs,
   allowInternal = true,
+  bangalore,
 }: {
   groups: PersonGroup[];
   hubs: { id: string; name: string }[];
   allowInternal?: boolean;
+  bangalore?: { id: string; name: string }; // QC and hardware teams always work here
 }) {
   const [role, setRole] = useState("");
   const [person, setPerson] = useState("");
@@ -110,6 +112,14 @@ export default function SendToFields({
           Send to (location)
         </label>
         <div className={styles.control}>
+          {bangalore && (role === "qc" || role === "hardware") ? (
+            <>
+              <input type="hidden" name="hub" value={bangalore.id} />
+              <strong id="hub">{bangalore.name}</strong>
+              <p className={styles.hint}>The QC and hardware teams always work at {bangalore.name}.</p>
+            </>
+          ) : (
+          <>
           <select
             id="hub"
             name="hub"
@@ -128,6 +138,8 @@ export default function SendToFields({
             Where the items will be recorded. Choose it every time: it is not filled in from the person, because they
             may be working at another hub.
           </p>
+          </>
+          )}
         </div>
       </div>
     </>

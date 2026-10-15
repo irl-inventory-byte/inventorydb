@@ -8,6 +8,7 @@ import styles from "../form.module.css";
 import { sendCards } from "../actions";
 import SendScanFields from "./SendScanFields";
 import { rigCondition } from "@/lib/rig-state";
+import { rigHomeHub } from "@/lib/rig-hub";
 import QcSendFields from "./QcSendFields";
 import SendToFields from "./SendToFields";
 
@@ -66,6 +67,9 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
     actorOptions(people, users, (id) => hubName.get(id) ?? id, ["im", "rig", "qc", "hardware", "internal"]),
   );
   const activeHubs = hubs.filter((h) => h.active !== "false").sort((a, b) => a.name.localeCompare(b.name));
+  // QC and hardware teams always work at Bangalore.
+  const bangaloreHub = rigHomeHub(hubs);
+  const bangalore = bangaloreHub ? { id: bangaloreHub.hub_id, name: bangaloreHub.name } : undefined;
 
   // Start at the IM's own hub. Someone with no hub (an admin) starts where most cards are in stock.
   const stockByHub = new Map<string, number>();
@@ -142,12 +146,13 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
         />
 
         {user.role === "qc" ? (
-          <QcSendFields groups={personGroups} hubs={activeHubs.map((h) => ({ id: h.hub_id, name: h.name }))} />
+          <QcSendFields groups={personGroups} hubs={activeHubs.map((h) => ({ id: h.hub_id, name: h.name }))} bangalore={bangalore} />
         ) : (
           <SendToFields
             groups={personGroups}
             hubs={activeHubs.map((h) => ({ id: h.hub_id, name: h.name }))}
             allowInternal={!held}
+            bangalore={bangalore}
           />
         )}
 
