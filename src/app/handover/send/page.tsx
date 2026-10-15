@@ -26,6 +26,7 @@ const GROUP_LABELS: Record<string, string> = {
 const SEND_TO: Record<string, Role[]> = {
   admin: ["im", "ifo", "fo", "rig", "qc", "hardware", "internal"],
   im: ["im", "ifo", "fo", "rig", "qc", "internal"],
+  internal: ["im", "ifo", "fo", "rig", "qc", "internal"], // works like an IM
   rig: ["im", "ifo", "fo", "rig", "internal"],
   qc: ["im", "hardware"], // QC pass → IM, QC fail → hardware team
   hardware: ["im"], // repaired rig → IM
@@ -62,7 +63,7 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
   const recipients = people.filter((p) => p.active !== "false").sort((a, b) => a.name.localeCompare(b.name));
   const byOptions = allowedActors(
     user,
-    actorOptions(people, users, (id) => hubName.get(id) ?? id, ["im", "rig", "qc", "hardware"]),
+    actorOptions(people, users, (id) => hubName.get(id) ?? id, ["im", "rig", "qc", "hardware", "internal"]),
   );
   const activeHubs = hubs.filter((h) => h.active !== "false").sort((a, b) => a.name.localeCompare(b.name));
 

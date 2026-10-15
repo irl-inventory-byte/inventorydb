@@ -32,7 +32,7 @@ async function run(
   summary: (plan: HandoverPlan) => Record<string, string>,
   onSaved?: (plan: HandoverPlan) => void | Promise<void>,
   // Who may use this flow, and which people can be named as Sent by / Received by.
-  access: { roles: Role[]; actorRoles: Role[] } = { roles: HANDLER_ROLES, actorRoles: ["im", "rig"] },
+  access: { roles: Role[]; actorRoles: Role[] } = { roles: HANDLER_ROLES, actorRoles: ["im", "rig", "internal"] },
 ) {
   const user = await requireRole(...access.roles);
   const ids = collectIds(String(formData.get("scanned") ?? ""), formData.getAll("ids").map(String));
@@ -184,7 +184,7 @@ export async function sendCards(formData: FormData) {
       const base = await siteUrl();
       after(() => archiveReceipt(batchId, base));
     },
-    { roles: SEND_ROLES, actorRoles: ["im", "rig", "qc", "hardware"] },
+    { roles: SEND_ROLES, actorRoles: ["im", "rig", "qc", "hardware", "internal"] },
   );
 }
 
@@ -206,6 +206,6 @@ export async function receiveCards(formData: FormData) {
         : planReceive(targets, { hub, note, expected }, ctx),
     (plan): Record<string, string> => (plan.mismatch ? { mismatch: plan.mismatch } : {}),
     undefined,
-    { roles: RECEIVE_ROLES, actorRoles: ["im", "rig", "qc", "hardware"] },
+    { roles: RECEIVE_ROLES, actorRoles: ["im", "rig", "qc", "hardware", "internal"] },
   );
 }

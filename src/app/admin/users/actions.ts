@@ -9,7 +9,7 @@ import { checkUserLink, type LoginRole } from "@/lib/user-link";
 
 const UserInput = z.object({
   email: z.email().transform((e) => e.toLowerCase()),
-  role: z.enum(["admin", "im", "rig", "fo", "hardware", "qc"]),
+  role: z.enum(["admin", "im", "rig", "fo", "hardware", "qc", "internal"]),
   person: z.string(),
 });
 

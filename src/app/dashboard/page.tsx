@@ -5,7 +5,7 @@ import { LATE_AFTER_HOURS, computeDashboard } from "@/lib/dashboard";
 import { buildHubTree } from "@/lib/hub-tree";
 import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
 import type { QcCheck, Status } from "@/lib/schema";
-import { HANDLER_ROLES, canSeeType, storeFor, typeParam } from "@/lib/access";
+import { HANDLER_ROLES, INVENTORY_ROLES, canSeeType, storeFor, typeParam } from "@/lib/access";
 import TypeSwitch from "../TypeSwitch";
 import { ActivityChart, BarList, n } from "./charts";
 import styles from "./dashboard.module.css";
@@ -294,9 +294,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           <Link href="/dashboard/analytics" className={styles.tab}>
             Analytics
           </Link>
-          <Link href="/inventory" className={styles.tab}>
-            Inventory
-          </Link>
+          {INVENTORY_ROLES.includes(user.role) && (
+            <Link href="/inventory" className={styles.tab}>
+              Inventory
+            </Link>
+          )}
           <Link href="/handover/receipts" className={styles.tab}>
             Receipts
           </Link>

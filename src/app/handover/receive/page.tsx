@@ -43,7 +43,7 @@ export default async function ReceivePage({
       people,
       users,
       (id) => hubNames.get(id) ?? id,
-      ["im", "rig", "qc", "hardware"]
+      ["im", "rig", "qc", "hardware", "internal"]
     )
   );
 

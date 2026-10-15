@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MY_DASHBOARD_ROLES, RECEIVE_ROLES, SEND_ROLES, VIEW_ROLES } from "@/lib/access";
+import { INVENTORY_ROLES, MY_DASHBOARD_ROLES, RECEIVE_ROLES, SEND_ROLES, VIEW_ROLES } from "@/lib/access";
 import { signOut } from "@/auth";
 import { requireRole } from "@/lib/authz";
 import { ROLE_LABELS, one } from "@/lib/labels";
@@ -38,7 +38,7 @@ const WORK: Tile[] = [
     title: "Inventory",
     desc: "Search, filter and open any item and its history.",
     icon: "list",
-    roles: VIEW_ROLES,
+    roles: INVENTORY_ROLES,
   },
   {
     href: "/handover/receipts",

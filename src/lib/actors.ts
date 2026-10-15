@@ -10,7 +10,7 @@ export interface ActorOption {
  * active admin who is not already covered by a linked entry. The signed-in account is always recorded
  * separately as `recorded_by`, so naming someone else here never hides who really did it.
  */
-const ACTOR_LABEL: Partial<Record<Role, string>> = { im: "IM", rig: "Rig", qc: "QC", hardware: "Hardware" };
+const ACTOR_LABEL: Partial<Record<Role, string>> = { im: "IM", rig: "Rig", qc: "QC", hardware: "Hardware", internal: "Internal" };
 
 export function actorOptions(
   people: Person[],

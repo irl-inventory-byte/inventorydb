@@ -21,7 +21,7 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
   users.sort((a, b) => a.email.localeCompare(b.email));
   // Logins link to an IM or a rig team member; the server checks the role matches the login's role.
   const linkable = people
-    .filter((p) => ["im", "rig", "fo", "hardware", "qc"].includes(p.role) && p.active !== "false")
+    .filter((p) => ["im", "rig", "fo", "hardware", "qc", "internal"].includes(p.role) && p.active !== "false")
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const roleSelect = (value?: string) => (
@@ -31,6 +31,7 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
       <option value="fo">FO</option>
       <option value="hardware">Hardware team</option>
       <option value="qc">QC team</option>
+      <option value="internal">Internal team</option>
       <option value="admin">Admin</option>
     </select>
   );
