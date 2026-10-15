@@ -153,6 +153,7 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
             hubs={activeHubs.map((h) => ({ id: h.hub_id, name: h.name }))}
             allowInternal={!held}
             bangalore={bangalore}
+            alwaysBangalore={user.role === "hardware"}
           />
         )}
 

@@ -148,7 +148,9 @@ export function planSend(targets: Item[], input: SendInput, ctx: HandoverContext
     if (!recipient || !status) plan.errors.push("Choose the person the items are going to.");
   }
   // QC and hardware teams always work at Bangalore: rigs sent to them go there, whatever was chosen.
-  if (toRole === "qc" || toRole === "hardware") {
+  // The same when the QC or hardware team is SENDING (to an IM or to hardware): it stays at Bangalore.
+  const senderAtBangalore = ctx.senderRole === "qc" || ctx.senderRole === "hardware";
+  if (toRole === "qc" || toRole === "hardware" || senderAtBangalore) {
     const bangalore = rigHomeHub(ctx.hubs)?.hub_id;
     if (bangalore) input = { ...input, toHub: bangalore };
   }

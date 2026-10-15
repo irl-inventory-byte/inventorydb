@@ -73,7 +73,7 @@ export default function QcSendFields({
       )}
 
       {/* Changing the result resets the person, so a Pass can't go to hardware by mistake. */}
-      <SendToFields key={result || "none"} groups={shown} hubs={hubs} allowInternal={false} bangalore={bangalore} />
+      <SendToFields key={result || "none"} groups={shown} hubs={hubs} allowInternal={false} bangalore={bangalore} alwaysBangalore />
     </>
   );
 }
