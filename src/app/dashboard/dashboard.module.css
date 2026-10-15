@@ -537,9 +537,9 @@
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 12px;
 }
-/* Rigs view: 7 tiles in 2 even rows (4 + 3) on a wide screen. */
+/* Rigs view: 9 state tiles in 3 even rows of 3 on a wide screen. */
 .kpiGridRig {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 @media (max-width: 900px) {
   .kpiGridRig {

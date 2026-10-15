@@ -363,3 +363,71 @@ export async function addRigs(ids: string[]): Promise<RigBulkResult> {
   refresh();
   return { added: toSave.map((i) => i.item_id), skipped };
 }
+/* ------------------------------------------------------------------ */
+/* DECLARE A RIG DEAD: Hardware team (and Admin / IM)                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The hardware team declares a rig they hold dead. It becomes "Retired" (Dead / Retired on the
+ * dashboard), leaves everyone's hands, and the reason is saved as a hardware update.
+ */
+export async function retireRig(formData: FormData) {
+  const user = await requireRole(...HARDWARE_ROLES);
+
+  const itemId = String(formData.get("itemId") ?? "").trim();
+  const back = `/inventory/${encodeURIComponent(itemId)}`;
+  const item = await rigOrFail(itemId, back);
+
+  const reason = String(formData.get("reason") ?? "").trim().slice(0, 1000);
+  if (!reason) redirect(`${back}?${new URLSearchParams({ error: "Write why the rig is dead." })}`);
+  if (formData.get("confirm") !== "on") {
+    redirect(`${back}?${new URLSearchParams({ error: "Tick the box to confirm the rig is dead." })}`);
+  }
+  if (item.status !== "with_hardware") {
+    redirect(`${back}?${new URLSearchParams({ error: "Only a rig with the hardware team can be declared dead." })}`);
+  }
+
+  const me = await whoIs(user);
+  const people = await getStore().list("people");
+  const holderName = people.find((p) => p.person_id === item.current_holder)?.name ?? item.current_holder;
+  if (user.role === "hardware" && user.personId && item.current_holder !== user.personId) {
+    redirect(`${back}?${new URLSearchParams({ error: "This rig is with another hardware team member." })}`);
+  }
+
+  const now = istTimestamp();
+  const event = {
+    event_id: newId("e"),
+    batch_id: newId("b"),
+    item_id: item.item_id,
+    action: "retire" as const,
+    from_person: holderName,
+    to_person: "",
+    from_id: item.current_holder,
+    to_id: "",
+    from_hub: item.current_hub,
+    hub: item.current_hub,
+    status_after: "retired" as const,
+    occurred_at: now,
+    recorded_at: now,
+    recorded_by: me.email,
+    note: `Declared dead: ${reason}`,
+  };
+  const store = getStore();
+  await store.commitBatch([event], [
+    { ...item, status: "retired", current_holder: "", last_event_id: event.event_id, updated_at: now },
+  ]);
+  await store.appendRows("hardware_updates", [
+    {
+      update_id: newId("hw"),
+      item_id: item.item_id,
+      recorded_at: now,
+      recorded_by: me.email,
+      recorded_by_name: me.name,
+      update_type: "Declared dead",
+      comment: reason,
+    },
+  ]);
+
+  refresh(item.item_id);
+  redirect(`${back}?${new URLSearchParams({ done: "retired" })}`);
+}

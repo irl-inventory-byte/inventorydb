@@ -93,11 +93,11 @@ function rigRouteErrors(
   }
 
   // IM (or an admin)
-  if (to === "fo" || to === "ifo") {
+  if (to === "fo" || to === "ifo" || to === "internal") {
     const notReady = rigs.filter((t) => !READY_FOR_FIELD.has(qc(t)));
-    if (notReady.length) errors.push(`These rigs are not ready for the field: ${listOf(named(notReady))}. Send them to the QC team first.`);
+    if (notReady.length) errors.push(`These rigs are not ready to deploy: ${listOf(named(notReady))}. Send them to the QC team first.`);
   } else if (to !== "qc") {
-    errors.push(`Rigs can only be sent to the QC team, or to an FO / IFO when QC passed or repaired: ${listOf(rigs.map((t) => t.item_id))}.`);
+    errors.push(`Rigs can only be sent to the QC team, or to an FO / IFO / internal person when QC passed or RTD: ${listOf(rigs.map((t) => t.item_id))}.`);
   }
   return errors;
 }
@@ -182,10 +182,13 @@ export function planSend(targets: Item[], input: SendInput, ctx: HandoverContext
     );
   }
   if (plan.errors.length || !status) return plan;
+  const sendStatus: Status = status;
 
   const base = eventBase(ctx, input.note.trim());
   for (const item of targets) {
     const hub = input.toHub;
+    // A rig checked out to an internal person (e.g. a demo rig) is "With internal", not waiting to be received.
+    const status = item.item_type === "rig" && toRole === "internal" ? "with_internal" : sendStatus;
     const event: ItemEvent = {
       ...base,
       event_id: ctx.newId("e"),

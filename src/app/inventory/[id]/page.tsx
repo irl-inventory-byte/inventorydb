@@ -96,6 +96,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/inv
           hardwareUpdates={hardwareUpdates}
           qcChecks={qcChecks}
           canHardware={HARDWARE_ROLES.includes(user.role)}
+          canRetire={HARDWARE_ROLES.includes(user.role) && item.status === "with_hardware"}
           canQc={QC_ROLES.includes(user.role)}
         />
       )}

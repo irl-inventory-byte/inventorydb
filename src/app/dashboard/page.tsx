@@ -12,7 +12,7 @@ import styles from "./dashboard.module.css";
 import { HubOrgChart, countHidden } from "./hub-tree-view";
 import { Icon, type IconName } from "./icons";
 import { SummaryKpis } from "./summary-kpis";
-import { qcPerformance, rigCondition } from "@/lib/rig-state";
+import { RIG_STATES, RIG_STATE_LABELS, qcPerformance, rigState, type RigState } from "@/lib/rig-state";
 
 const inventory = (params: Record<string, string>) => `/inventory?${new URLSearchParams(params)}`;
 const days = (d: number | null) => (d === null ? "—" : d === 0 ? "today" : `${d}d`);
@@ -71,72 +71,41 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
   const s = d.byStatus;
   const share = (v: number) => (d.total ? `${Math.round((v / d.total) * 100)}% of all items` : "");
-  // Rigs whose latest QC result is Fail (rows are oldest first, so the last one wins).
+  // Latest QC result per rig (rows are oldest first, so the last one wins).
   const latestQc = new Map<string, string>();
   for (const c of qcChecks) latestQc.set(c.item_id, c.qc_status);
-  const hardwareIssues = items.filter((i) => i.item_type === "rig" && latestQc.get(i.item_id) === "fail").length;
-  // In stock and QC passed or repaired: can go to the field now.
-  const readyForField = items.filter(
-    (i) => i.item_type === "rig" && i.status === "in_stock" && rigCondition(i.status, latestQc.get(i.item_id)).ready
-  ).length;
   const qcTeam = qcPerformance(qcChecks, 2);
-  const rigList = (params: Record<string, string>) => inventory({ ...params, type: "rig" });
 
   type Kpi = { label: string; value: number; hint: string; href: string; icon: IconName; color: string };
 
-  // RIGS: With QC team, With hardware team and Hardware issue instead of With rig team.
-  const rigKpis: Kpi[] = [
-    { label: "In stock", value: s.in_stock, hint: share(s.in_stock), href: rigList({ status: "in_stock" }), icon: "check", color: "var(--series-3)" },
-    {
-      label: "Ready for field",
-      value: readyForField,
-      hint: readyForField ? "In stock, QC passed or repaired" : "None ready",
-      href: "/rigs?ready=1",
-      icon: "send",
-      color: "var(--series-3)",
-    },
-    { label: "With field officers", value: s.with_fo, hint: share(s.with_fo), href: rigList({ status: "with_fo" }), icon: "user", color: "var(--series-2)" },
-    {
-      label: "With QC team",
-      value: s.with_qc + s.pending_qc,
-      hint: s.pending_qc ? `${n(s.pending_qc)} not received yet` : share(s.with_qc),
-      href: rigList({ status: "pending_qc,with_qc" }),
-      icon: "shield",
-      color: "var(--series-7)",
-    },
-    {
-      label: "With hardware team",
-      value: s.with_hardware + s.pending_hardware,
-      hint: s.pending_hardware ? `${n(s.pending_hardware)} not received yet` : share(s.with_hardware),
-      href: rigList({ status: "pending_hardware,with_hardware" }),
-      icon: "wrench",
-      color: "var(--series-1)",
-    },
-    {
-      label: "In transit",
-      value: s.traveling + s.pending,
-      hint: share(s.traveling + s.pending),
-      href: rigList({ status: "traveling,pending" }),
-      icon: "truck",
-      color: "var(--series-4)",
-    },
-    {
-      label: "Hardware issue",
-      value: hardwareIssues,
-      hint: hardwareIssues ? "Latest QC result is Fail" : "No failed rigs",
-      href: "/rigs?qc=fail",
-      icon: "alert",
-      color: "var(--warning)",
-    },
-    {
-      label: "Lost or damaged",
-      value: s.lost + s.damaged,
-      hint: share(s.lost + s.damaged),
-      href: rigList({ status: "lost,damaged" }),
-      icon: "alert",
-      color: "var(--critical)",
-    },
-  ];
+  // RIGS: one tile per rig state (see RIG_STATES in lib/rig-state.ts). Each opens Rig checks filtered to it.
+  const rigCount = Object.fromEntries(RIG_STATES.map((k) => [k, 0])) as Record<RigState, number>;
+  for (const i of items) {
+    if (i.item_type !== "rig") continue;
+    const st = rigState(i.status, latestQc.get(i.item_id));
+    rigCount[st] = (rigCount[st] ?? 0) + 1;
+  }
+  const rigTotal = items.filter((i) => i.item_type === "rig").length;
+  const rigShare = (v: number) => (rigTotal ? `${Math.round((v / rigTotal) * 100)}% of all rigs` : "");
+  const RIG_TILE: Record<(typeof RIG_STATES)[number], { icon: IconName; color: string; hint?: string }> = {
+    in_stock: { icon: "check", color: "var(--series-3)", hint: "With the IM" },
+    hardware: { icon: "wrench", color: "var(--series-1)", hint: "Received by hardware" },
+    internal: { icon: "user", color: "var(--series-7)", hint: "Checked out to internal people" },
+    fo: { icon: "user", color: "var(--series-2)", hint: "Checked out to an FO" },
+    transit: { icon: "truck", color: "var(--series-4)", hint: "With IFO, or sent and not received" },
+    qc_pending: { icon: "shield", color: "var(--series-7)", hint: "Received by QC" },
+    qc_fail: { icon: "alert", color: "var(--warning)", hint: "Hardware has not received it yet" },
+    rtd: { icon: "send", color: "var(--series-3)", hint: "Repaired, received by IM" },
+    dead: { icon: "archive", color: "var(--critical)", hint: "Declared dead by hardware" },
+  };
+  const rigKpis: Kpi[] = RIG_STATES.map((k) => ({
+    label: RIG_STATE_LABELS[k],
+    value: rigCount[k],
+    hint: rigCount[k] ? rigShare(rigCount[k]) : (RIG_TILE[k].hint ?? ""),
+    href: `/rigs?state=${k}`,
+    icon: RIG_TILE[k].icon,
+    color: RIG_TILE[k].color,
+  }));
 
   // SD CARDS (and the "All" view): unchanged.
   const sdKpis: Kpi[] = [

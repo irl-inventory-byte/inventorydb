@@ -2,7 +2,7 @@ import { QC_LABELS } from "@/lib/labels";
 import type { HardwareUpdate, QcCheck } from "@/lib/schema";
 import { formatIst } from "@/lib/time";
 import styles from "../../admin/admin.module.css";
-import { addHardwareUpdate, addQcCheck } from "../rig-actions";
+import { addHardwareUpdate, addQcCheck, retireRig } from "../rig-actions";
 
 const HARDWARE_TYPES = [
   "Inspection",
@@ -28,12 +28,14 @@ export default function RigChecks({
   hardwareUpdates,
   qcChecks,
   canHardware,
+  canRetire = false,
   canQc,
 }: {
   itemId: string;
   hardwareUpdates: HardwareUpdate[];
   qcChecks: QcCheck[];
   canHardware: boolean;
+  canRetire?: boolean; // hardware team, rig is with the hardware team
   canQc: boolean;
 }) {
   const latestQc = qcChecks.at(-1);
@@ -121,6 +123,24 @@ export default function RigChecks({
               <input name="comment" maxLength={1000} placeholder="What was done, parts used, findings" />
             </label>
             <button type="submit">Save update</button>
+          </div>
+        </form>
+      )}
+
+      {canRetire && (
+        <form action={retireRig} className={styles.list} aria-label="Declare this rig dead">
+          <input type="hidden" name="itemId" value={itemId} />
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end", border: "1px solid #F2C0BC", borderRadius: 8, padding: 12 }}>
+            <label style={{ ...fieldStyle, flex: "1 1 320px" }}>
+              <span>Declare dead: why can&apos;t it be repaired? *</span>
+              <input name="reason" maxLength={1000} required placeholder="e.g. main board burnt, not repairable" />
+            </label>
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input type="checkbox" name="confirm" required /> This rig is dead
+            </label>
+            <button type="submit" style={{ color: "#B42318", borderColor: "#B42318" }}>
+              Declare dead / Retire
+            </button>
           </div>
         </form>
       )}

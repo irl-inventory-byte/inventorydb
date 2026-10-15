@@ -16,10 +16,73 @@ const AMBER = "#8A4B00";
 export function rigCondition(status: Status | string, qc: string | undefined): RigCondition {
   const q = qc || "qc_pending";
   const inStock = status === "in_stock";
-  if (q === "fail") return { label: "QC failed · Send to hardware", color: RED, ready: false };
-  if (q === "repaired") return { label: inStock ? "Repaired · Ready for field" : "Repaired", color: GREEN, ready: true };
+  if (q === "fail") return { label: "QC fail · Send to hardware", color: RED, ready: false };
+  if (q === "repaired") return { label: inStock ? "RTD · Ready to deploy" : "Repaired", color: GREEN, ready: true };
   if (q === "pass") return { label: inStock ? "QC passed · Idle" : "QC passed", color: GREEN, ready: true };
   return { label: "QC pending", color: AMBER, ready: false };
+}
+
+/**
+ * RIG STATES on the dashboard (one per rig):
+ *   in_stock    In stock            with the IM (not RTD)
+ *   hardware    With hardware team  the hardware team has received it
+ *   internal    Internal            the IM checked it out to an internal person (e.g. a demo rig)
+ *   fo          With field officer  the IM checked it out to an FO
+ *   transit     In transit          with an IFO, or sent and not yet received (IM / QC)
+ *   qc_pending  QC pending          the QC team has received it
+ *   qc_fail     QC fail             QC marked Fail; the hardware team has not received it yet
+ *   rtd         RTD                 repaired by hardware, and the IM has received it
+ *   dead        Dead / Retired      the hardware team declared it dead
+ */
+export const RIG_STATES = [
+  "in_stock",
+  "hardware",
+  "internal",
+  "fo",
+  "transit",
+  "qc_pending",
+  "qc_fail",
+  "rtd",
+  "dead",
+] as const;
+export type RigState = (typeof RIG_STATES)[number] | "other";
+
+export const RIG_STATE_LABELS: Record<RigState, string> = {
+  in_stock: "In stock",
+  hardware: "With hardware team",
+  internal: "Internal",
+  fo: "With field officer",
+  transit: "In transit",
+  qc_pending: "QC pending",
+  qc_fail: "QC fail",
+  rtd: "RTD (Ready to deploy)",
+  dead: "Dead / Retired",
+  other: "Other",
+};
+
+export function rigState(status: Status | string, qc: string | undefined): RigState {
+  switch (status) {
+    case "retired":
+      return "dead";
+    case "with_hardware":
+      return "hardware";
+    case "pending_hardware":
+      return "qc_fail";
+    case "with_qc":
+      return qc === "fail" ? "qc_fail" : "qc_pending";
+    case "with_internal":
+      return "internal";
+    case "with_fo":
+      return "fo";
+    case "traveling":
+    case "pending":
+    case "pending_qc":
+      return "transit";
+    case "in_stock":
+      return qc === "repaired" ? "rtd" : "in_stock";
+    default:
+      return "other";
+  }
 }
 
 /** Latest QC result per rig (rows are stored oldest first, so the last one wins). */

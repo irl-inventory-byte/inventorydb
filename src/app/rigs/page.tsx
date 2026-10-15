@@ -3,7 +3,7 @@ import { storeFor } from "@/lib/access";
 import { requireRole } from "@/lib/authz";
 import { STATUS_LABELS, one } from "@/lib/labels";
 import type { HardwareUpdate, QcCheck } from "@/lib/schema";
-import { rigCondition } from "@/lib/rig-state";
+import { RIG_STATES, RIG_STATE_LABELS, rigCondition, rigState, type RigState } from "@/lib/rig-state";
 import { formatIst } from "@/lib/time";
 import styles from "../admin/admin.module.css";
 
@@ -32,6 +32,8 @@ export default async function RigsPage({ searchParams }: PageProps<"/">) {
   const qcFilter = one(sp.qc);
   // ?ready=1: in stock and QC passed or repaired (the dashboard's "Ready for field" tile).
   const readyOnly = one(sp.ready) === "1";
+  // ?state=…: one rig state from the dashboard tiles (In stock, QC pending, RTD, …).
+  const stateFilter = (RIG_STATES as readonly string[]).includes(one(sp.state)) ? (one(sp.state) as RigState) : "";
   const q = one(sp.q).trim().toLowerCase();
 
   const store = storeFor(user.role, "rig");
@@ -60,6 +62,7 @@ export default async function RigsPage({ searchParams }: PageProps<"/">) {
 
   const shown = rigs
     .filter((r) => !qcFilter || (latestQc.get(r.item_id)?.qc_status ?? "qc_pending") === qcFilter)
+    .filter((r) => !stateFilter || rigState(r.status, latestQc.get(r.item_id)?.qc_status) === stateFilter)
     .filter((r) => !readyOnly || (r.status === "in_stock" && rigCondition(r.status, latestQc.get(r.item_id)?.qc_status).ready))
     .filter(
       (r) =>
@@ -83,6 +86,12 @@ export default async function RigsPage({ searchParams }: PageProps<"/">) {
       <p className={styles.muted}>
         {rigs.length} rigs · {counts.qc_pending ?? 0} QC pending · {counts.pass ?? 0} pass · {counts.fail ?? 0} fail · {counts.repaired ?? 0} repaired.
         Open a rig to add a hardware update or QC result.
+        {stateFilter && (
+          <>
+            {" "}
+            <strong>Showing only: {RIG_STATE_LABELS[stateFilter]}.</strong> <Link href="/rigs">Show all</Link>
+          </>
+        )}
         {readyOnly && (
           <>
             {" "}
@@ -148,7 +157,11 @@ export default async function RigsPage({ searchParams }: PageProps<"/">) {
                       <Link href={`/inventory/${encodeURIComponent(r.item_id)}`}>{r.item_id}</Link>
                     </td>
                     <td>{[r.brand, r.model].filter(Boolean).join(" ") || "—"}</td>
-                    <td>{STATUS_LABELS[r.status] ?? r.status}</td>
+                    <td>
+                      {rigState(r.status, qcStatus) === "other"
+                        ? (STATUS_LABELS[r.status] ?? r.status)
+                        : RIG_STATE_LABELS[rigState(r.status, qcStatus)]}
+                    </td>
                     <td>
                       {personName.get(r.current_holder) ?? hubName.get(r.current_hub) ?? (r.current_hub || "—")}
                     </td>
