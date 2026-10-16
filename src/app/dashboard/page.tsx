@@ -275,14 +275,18 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // Longest out first. Lost / damaged rows have no time, so they go last.
   attention.sort((a, b) => (b.hours ?? -1) - (a.hours ?? -1) || b.items - a.items);
 
-  // Filter by city and role (?acity=…&arole=…). A row with items in several cities matches each of them.
+  // Filter by cities and roles. A row with items in several cities matches if any of them is chosen.
   const splitCities = (c: string) => c.split(",").map((x) => x.trim()).filter((x) => x && x !== "—");
   const cityOptions = [...new Set(attention.flatMap((a) => splitCities(a.city)))].sort((a, b) => a.localeCompare(b));
   const roleOptions = [...new Set(attention.map((a) => a.role).filter((r) => r && r !== "—"))].sort((a, b) => a.localeCompare(b));
-  const cityFilter = one(sp.acity);
-  const roleFilter = one(sp.arole);
+  // Several values allowed, comma separated: ?acity=Bangalore,Pune&arole=FO,IFO
+  const listParam = (v: string) => v.split(",").map((x) => x.trim()).filter(Boolean);
+  const cityFilter = listParam(one(sp.acity));
+  const roleFilter = listParam(one(sp.arole));
   const shownAttention = attention.filter(
-    (a) => (!cityFilter || splitCities(a.city).includes(cityFilter)) && (!roleFilter || a.role === roleFilter),
+    (a) =>
+      (cityFilter.length === 0 || splitCities(a.city).some((c) => cityFilter.includes(c))) &&
+      (roleFilter.length === 0 || roleFilter.includes(a.role)),
   );
   const keepParams: Record<string, string> = {};
   if (one(sp.type)) keepParams.type = one(sp.type);
