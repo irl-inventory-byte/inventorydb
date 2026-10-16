@@ -121,9 +121,21 @@ export async function sendCards(formData: FormData) {
         for (const c of await getStore().list("qc_checks")) qcStatus.set(c.item_id, c.qc_status);
       }
 
-      if (ctx.senderRole === "qc") {
+      if (ctx.senderRole === "qc" && qcResult === "transfer") {
+        // QC → QC transfer: no result is saved; the other QC person receives the rig and checks it.
+        const to = ctx.people.find((p) => p.person_id === input.recipient);
+        if (!to || to.role !== "qc") {
+          return { events: [], items: [], errors: ["A transfer goes to another QC person. Choose one from the QC team."] };
+        }
+        if (to.person_id === ctx.actorPersonId) {
+          return { events: [], items: [], errors: ["Choose another QC person, not yourself."] };
+        }
+      } else if (ctx.senderRole === "qc") {
         if (qcResult !== "pass" && qcResult !== "fail") {
-          return { events: [], items: [], errors: ["Choose the QC result: Pass or Fail."] };
+          return { events: [], items: [], errors: ["Choose the QC result: Pass, Fail or Transfer."] };
+        }
+        if (ctx.people.find((p) => p.person_id === input.recipient)?.role === "qc") {
+          return { events: [], items: [], errors: ["To send to another QC person, choose Transfer."] };
         }
         if (qcResult === "fail" && !qcComment) {
           return { events: [], items: [], errors: ["Write what failed."] };

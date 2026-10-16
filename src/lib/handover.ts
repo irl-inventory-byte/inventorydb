@@ -55,6 +55,7 @@ const READY_FOR_FIELD = new Set(["pass", "repaired"]);
  *   IM → FO or IFO                  only when the rig is QC passed or repaired by hardware
  *   QC team → IM                    only when QC is Pass
  *   QC team → hardware team         only when QC is Fail
+ *   QC team → another QC person     always (a transfer, no QC result)
  *   hardware team → IM              after repair (the rig is then "Repaired · Ready for field")
  * Nothing else is allowed for a rig. Returns the error messages, if any.
  */
@@ -82,8 +83,10 @@ function rigRouteErrors(
     } else if (to === "hardware") {
       const notFail = rigs.filter((t) => qc(t) !== "fail");
       if (notFail.length) errors.push(`Only QC-failed rigs go to the hardware team: ${listOf(named(notFail))}. Record Fail first.`);
+    } else if (to === "qc") {
+      // QC → QC transfer: hand the rig to another QC person without a result. Always allowed.
     } else {
-      errors.push("The QC team can send a rig only to an IM (QC pass) or to the hardware team (QC fail).");
+      errors.push("The QC team can send a rig only to an IM (QC pass), to the hardware team (QC fail) or to another QC person (transfer).");
     }
     return errors;
   }

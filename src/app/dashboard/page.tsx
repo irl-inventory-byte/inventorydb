@@ -84,21 +84,33 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
   // RIGS: one tile per rig state (see RIG_STATES in lib/rig-state.ts). Each opens Rig checks filtered to it.
   const rigCount = Object.fromEntries(RIG_STATES.map((k) => [k, 0])) as Record<RigState, number>;
+  // QC passed tile: who passed those rigs (the QC person on each rig's latest result).
+  const latestQcBy = new Map<string, string>();
+  for (const c of qcChecks) latestQcBy.set(c.item_id, c.recorded_by_name || c.recorded_by);
+  const passedBy = new Map<string, number>();
   for (const i of items) {
     if (i.item_type !== "rig") continue;
     const st = rigState(i.status, latestQc.get(i.item_id));
     rigCount[st] = (rigCount[st] ?? 0) + 1;
+    if (st === "qc_pass") {
+      const who = latestQcBy.get(i.item_id) || "QC team";
+      passedBy.set(who, (passedBy.get(who) ?? 0) + 1);
+    }
   }
+  const passedFrom = [...passedBy.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const passedFromText = passedFrom.length
+    ? `From ${passedFrom.slice(0, 2).map(([who, c]) => `${who} (${c})`).join(", ")}${passedFrom.length > 2 ? ` +${passedFrom.length - 2} more` : ""}`
+    : "";
   const rigTotal = items.filter((i) => i.item_type === "rig").length;
   const rigShare = (v: number) => (rigTotal ? `${Math.round((v / rigTotal) * 100)}% of all rigs` : "");
   const RIG_TILE: Record<(typeof RIG_STATES)[number], { icon: IconName; color: string; hint?: string }> = {
-    in_stock: { icon: "check", color: "var(--series-3)", hint: "With the IM, not QC passed yet" },
+    in_stock: { icon: "check", color: "var(--series-3)", hint: "With the IM" },
     hardware: { icon: "wrench", color: "var(--series-1)", hint: "Received by hardware" },
     internal: { icon: "user", color: "var(--series-7)", hint: "Checked out to internal people" },
     fo: { icon: "user", color: "var(--series-2)", hint: "Checked out to an FO" },
-    transit: { icon: "truck", color: "var(--series-4)", hint: "With IFO, or sent and not received" },
+    transit: { icon: "truck", color: "var(--series-4)", hint: "Sent by the IM to an IFO" },
     qc_pending: { icon: "shield", color: "var(--series-7)", hint: "Received by QC" },
-    qc_pass: { icon: "check", color: "var(--series-3)", hint: "Passed by QC, idle with the IM" },
+    qc_pass: { icon: "check", color: "var(--series-3)", hint: "Passed by QC, sent to IM, not received yet" },
     qc_fail: { icon: "alert", color: "var(--warning)", hint: "Hardware has not received it yet" },
     rtd: { icon: "send", color: "var(--series-3)", hint: "Repaired, received by IM" },
     dead: { icon: "archive", color: "var(--text-muted)", hint: "Declared dead by hardware" },
@@ -106,7 +118,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const rigKpis: Kpi[] = RIG_STATES.map((k) => ({
     label: RIG_STATE_LABELS[k],
     value: rigCount[k],
-    hint: rigCount[k] ? rigShare(rigCount[k]) : (RIG_TILE[k].hint ?? ""),
+    hint: k === "qc_pass" && passedFromText ? passedFromText : rigCount[k] ? rigShare(rigCount[k]) : (RIG_TILE[k].hint ?? ""),
     href: `/rigs?state=${k}`,
     icon: RIG_TILE[k].icon,
     color: RIG_TILE[k].color,

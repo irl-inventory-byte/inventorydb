@@ -24,15 +24,16 @@ export function rigCondition(status: Status | string, qc: string | undefined): R
 
 /**
  * RIG STATES on the dashboard (one per rig):
- *   in_stock    In stock            with the IM, not QC passed yet (new or waiting for QC)
+ *   in_stock    In stock            with the IM (received), or moving IM → IM
  *   hardware    With hardware team  the hardware team has received it
  *   fo          With field officer  the IM checked it out to an FO
- *   transit     In transit          with an IFO, or sent and not yet received (IM / QC)
+ *   transit     In transit          the IM sent it to an IFO (courier) — only this
  *   internal    Internal            the IM checked it out to an internal person (e.g. a demo rig)
- *   qc_pending  QC pending          the QC team has received it
- *   qc_pass     QC passed           QC passed it and it is back with the IM, idle (ready for field)
+ *   qc_pending  QC pending          sent to QC or with QC (incl. QC → QC transfers), no result yet
+ *   qc_pass     QC passed           QC passed it and sent it to an IM, who has not received it yet
+ *                                   (once the IM receives it, it is In stock)
  *   qc_fail     QC fail             QC marked Fail; the hardware team has not received it yet
- *   rtd         RTD                 repaired by hardware, and the IM has received it
+ *   rtd         RTD                 repaired by hardware and sent to / received by the IM
  *   dead        Dead / Retired      the hardware team declared it dead
  * Lost or damaged rigs have no tile; Rig checks still shows them as "Lost or damaged".
  */
@@ -83,11 +84,14 @@ export function rigState(status: Status | string, qc: string | undefined): RigSt
     case "with_fo":
       return "fo";
     case "traveling":
-    case "pending":
+      return "transit"; // IM → IFO only
     case "pending_qc":
-      return "transit";
+      return "qc_pending"; // sent to QC (from an IM or another QC person), not received yet
+    case "pending":
+      // Sent to an IM, not received yet: QC → IM (passed), hardware → IM (repaired), or IM → IM.
+      return qc === "pass" ? "qc_pass" : qc === "repaired" ? "rtd" : "in_stock";
     case "in_stock":
-      return qc === "repaired" ? "rtd" : qc === "pass" ? "qc_pass" : "in_stock";
+      return qc === "repaired" ? "rtd" : "in_stock";
     default:
       return "other";
   }

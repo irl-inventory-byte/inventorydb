@@ -29,7 +29,7 @@ const SEND_TO: Record<string, Role[]> = {
   im: ["im", "ifo", "fo", "rig", "qc", "internal"],
   internal: ["im", "ifo", "fo", "rig", "qc", "internal"], // works like an IM
   rig: ["im", "ifo", "fo", "rig", "internal"],
-  qc: ["im", "hardware"], // QC pass → IM, QC fail → hardware team
+  qc: ["im", "hardware", "qc"], // QC pass → IM, QC fail → hardware team, transfer → another QC person
   hardware: ["im"], // repaired rig → IM
 };
 
@@ -89,6 +89,8 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
     label: GROUP_LABELS[role] ?? role,
     people: recipients
       .filter((p) => p.role === role)
+      // A QC person transfers to ANOTHER QC person, never to themselves.
+      .filter((p) => !(user.role === "qc" && role === "qc" && p.person_id === user.personId))
       .map((p) => ({
         id: p.person_id,
         label: `${p.name} (${hubName.get(p.hub) ?? p.hub})${p.linked_user ? ` — ${p.linked_user}` : ""}`,

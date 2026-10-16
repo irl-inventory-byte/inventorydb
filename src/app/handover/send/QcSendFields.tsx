@@ -7,6 +7,7 @@ import SendToFields, { type PersonGroup } from "./SendToFields";
 /**
  * QC team only: choose the QC result first, then who the rigs go to.
  *   Pass → an IM.   Fail → the hardware team (a comment is required).
+ *   Transfer → another QC person (no result is saved; they receive and check the rig).
  * The result is saved for every rig in this send, together with the handover.
  */
 export default function QcSendFields({
@@ -18,11 +19,11 @@ export default function QcSendFields({
   hubs: { id: string; name: string }[];
   bangalore?: { id: string; name: string };
 }) {
-  const [result, setResult] = useState<"" | "pass" | "fail">("");
-  const wanted = result === "pass" ? "im" : result === "fail" ? "hardware" : "";
+  const [result, setResult] = useState<"" | "pass" | "fail" | "transfer">("");
+  const wanted = result === "pass" ? "im" : result === "fail" ? "hardware" : result === "transfer" ? "qc" : "";
   const shown = groups.filter((g) => g.role === wanted);
 
-  const choice = (value: "pass" | "fail", label: string, color: string) => (
+  const choice = (value: "pass" | "fail" | "transfer", label: string, color: string) => (
     <label
       style={{
         display: "inline-flex",
@@ -57,6 +58,7 @@ export default function QcSendFields({
           <div role="radiogroup" aria-label="QC result" style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
             {choice("pass", "Pass → send to IM", "#15803D")}
             {choice("fail", "Fail → send to hardware team", "#B42318")}
+            {choice("transfer", "Transfer → another QC person", "#1D4ED8")}
           </div>
         </div>
       </div>
