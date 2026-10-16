@@ -24,30 +24,31 @@ export function rigCondition(status: Status | string, qc: string | undefined): R
 
 /**
  * RIG STATES on the dashboard (one per rig):
- *   in_stock    In stock            with the IM (not RTD)
+ *   in_stock    In stock            with the IM, not QC passed yet (new or waiting for QC)
  *   hardware    With hardware team  the hardware team has received it
- *   internal    Internal            the IM checked it out to an internal person (e.g. a demo rig)
  *   fo          With field officer  the IM checked it out to an FO
  *   transit     In transit          with an IFO, or sent and not yet received (IM / QC)
+ *   internal    Internal            the IM checked it out to an internal person (e.g. a demo rig)
  *   qc_pending  QC pending          the QC team has received it
+ *   qc_pass     QC passed           QC passed it and it is back with the IM, idle (ready for field)
  *   qc_fail     QC fail             QC marked Fail; the hardware team has not received it yet
  *   rtd         RTD                 repaired by hardware, and the IM has received it
  *   dead        Dead / Retired      the hardware team declared it dead
- *   lost        Lost or damaged     marked lost or damaged (admin correction)
+ * Lost or damaged rigs have no tile; Rig checks still shows them as "Lost or damaged".
  */
 export const RIG_STATES = [
   "in_stock",
   "hardware",
-  "internal",
   "fo",
   "transit",
+  "internal",
   "qc_pending",
+  "qc_pass",
   "qc_fail",
   "rtd",
   "dead",
-  "lost",
 ] as const;
-export type RigState = (typeof RIG_STATES)[number] | "other";
+export type RigState = (typeof RIG_STATES)[number] | "lost" | "other";
 
 export const RIG_STATE_LABELS: Record<RigState, string> = {
   in_stock: "In stock",
@@ -56,6 +57,7 @@ export const RIG_STATE_LABELS: Record<RigState, string> = {
   fo: "With field officer",
   transit: "In transit",
   qc_pending: "QC pending",
+  qc_pass: "QC passed",
   qc_fail: "QC fail",
   rtd: "RTD (Ready to deploy)",
   dead: "Dead / Retired",
@@ -85,7 +87,7 @@ export function rigState(status: Status | string, qc: string | undefined): RigSt
     case "pending_qc":
       return "transit";
     case "in_stock":
-      return qc === "repaired" ? "rtd" : "in_stock";
+      return qc === "repaired" ? "rtd" : qc === "pass" ? "qc_pass" : "in_stock";
     default:
       return "other";
   }
