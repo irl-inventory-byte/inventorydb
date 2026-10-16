@@ -332,7 +332,7 @@ export async function SummaryKpis({
           href={card.href}
           className={styles.summary}
           style={
-            card.key === "fleet"
+            card.key === "fleet" || card.key === "utilization"
               ? {
                   display: "flex",
                   flexDirection: "column",
@@ -385,6 +385,30 @@ export async function SummaryKpis({
           <span className={styles.summaryNote}>
             {card.note}
           </span>
+
+          {/* What Utilization means. */}
+          {card.key === "utilization" && (
+            <span
+              style={{
+                display: "block",
+                width: "100%",
+                marginTop: 12,
+                paddingTop: 12,
+                borderTop: "1px solid #cbd5e1",
+                fontSize: 12,
+                lineHeight: 1.5,
+                color: "#334155",
+                whiteSpace: "normal",
+              }}
+            >
+              <strong>Utilization</strong> = items in use ÷ usable items.
+              <br />
+              <strong>In use</strong> = out of the hub: with an FO, IFO, rig team or internal person, or sent and not
+              received yet.
+              <br />
+              <strong>Usable</strong> = every item except lost, damaged and retired.
+            </span>
+          )}
 
           {/* NEW: storage and colour details inside Fleet. */}
           {card.key === "fleet" && fleetDetails.length > 0 && (
