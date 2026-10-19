@@ -1,0 +1,7 @@
+ .env.local.example              |   6 [32m+[m[31m-[m
+ package.json                    |   5 [32m+[m[31m-[m
+ scripts/migrate-to-supabase.mts | 117 [32m+++++++++++++++++++++++++++++[m
+ src/lib/store/index.ts          |  10 [32m+++[m
+ src/lib/store/supabase.ts       | 147 [32m++++++++++++++++++++++++++++++++++++[m
+ supabase/setup.sql              | 164 [32m+++++++++++++++++++++++++++++++++++++++++[m
+ 6 files changed, 446 insertions(+), 3 deletions(-)

@@ -1124,3 +1124,66 @@
   font-size: 0.9rem;
   color: var(--text-secondary);
 } 
+/* Rig dashboard: leaderboard highlights (most rigs QC'd / most passes / most fails). */
+.leaders {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.leader {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.leaderLabel {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+.leaderName {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.leaderValue {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* Rig dashboard: check-outs / check-ins per hour, two bars side by side per hour. */
+.hourCols {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 4px;
+}
+.hourCol {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 100%;
+}
+.hourCol:first-child::after {
+  left: 0;
+  transform: none;
+}
+.hourCol:last-child::after {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+.hourBar {
+  flex: 1 1 0;
+  border-radius: 4px 4px 0 0;
+}
+.hourAxis {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 4px;
+  padding-left: 34px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
