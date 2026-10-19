@@ -22,13 +22,13 @@
 
 .muted {
   margin: 0;
-  color: #666;
+  color: var(--muted-text);
   font-size: 0.9rem;
 }
 
 .error {
   margin: 0;
-  color: #b3261e;
+  color: var(--error-text);
   font-size: 0.9rem;
 }
 
@@ -36,8 +36,8 @@
   padding: 10px 16px;
   border-radius: 8px;
   border: 1px solid #222;
-  background: #222;
-  color: #fff;
+  background: var(--btn-bg);
+  color: var(--btn-text);
   font-size: 1rem;
   cursor: pointer;
 }

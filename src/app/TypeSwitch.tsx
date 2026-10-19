@@ -12,11 +12,14 @@ export default function TypeSwitch({
   current,
   path,
   params = {},
+  includeAll = true,
 }: {
   role: Role;
   current: ItemType | "";
   path: string;
   params?: Record<string, string>;
+  /** false: no "All items" choice (the dashboard always shows one type). */
+  includeAll?: boolean;
 }) {
   const types = allowedTypes(role);
   if (types.length < 2) return null;
@@ -31,7 +34,7 @@ export default function TypeSwitch({
   };
 
   const options: [string, string][] = [
-    ["", "All items"],
+    ...(includeAll ? [["", "All items"] as [string, string]] : []),
     ...types.map((t) => [t, ITEM_TYPE_LABELS[t] ?? t] as [string, string]),
   ];
 

@@ -14,6 +14,7 @@ export const STATUS_LABELS: Record<Status, string> = {
   lost: "Lost",
   damaged: "Damaged",
   retired: "Retired",
+  rnd: "R&D",
 };
 
 export const ROLE_LABELS: Record<Role, string> = {

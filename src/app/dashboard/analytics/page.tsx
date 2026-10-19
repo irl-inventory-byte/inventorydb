@@ -34,6 +34,7 @@ const TILES: {
   { status: "lost", icon: { glyph: "✕", tone: "critical" } },
   { status: "damaged", icon: { glyph: "▲", tone: "warning" } },
   { status: "retired", icon: { glyph: "●", tone: "muted" } },
+  { status: "rnd", icon: { glyph: "●", tone: "muted" } },
 ];
 
 const TONE = {

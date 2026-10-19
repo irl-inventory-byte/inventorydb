@@ -26,6 +26,7 @@ import styles from "./dashboard.module.css";
 export const HARDWARE_STAY_DAYS = 2; // with the hardware team for more than this → listed
 export const NO_HARDWARE_DAYS = 7; // no hardware-team event for more than this → listed
 export const HOURLY_DAYS = 30; // hourly split looks at the last N days
+export const NO_ACTIVITY_DAYS = 7; // "Unknown" tile: rigs with no activity for more than this
 
 const GREEN = "#15803D";
 const RED = "#B42318";
@@ -262,8 +263,8 @@ export function RigMetrics({
           <>
             <div className={styles.leaders}>
               <Leader label="Most rigs QC'd" who={mostDone?.name ?? "—"} value={mostDone ? rigWord(mostDone.rigs) : ""} />
-              <Leader label="Most QC passes" who={mostPass?.name ?? "—"} value={mostPass ? `${n(mostPass.pass)} passes` : ""} />
-              <Leader label="Most QC fails" who={mostFail?.name ?? "—"} value={mostFail ? `${n(mostFail.fail)} fails` : ""} />
+              <Leader label="Most QC passes" who={mostPass?.name ?? "—"} value={mostPass ? `${n(mostPass.pass)} pass${mostPass.pass === 1 ? "" : "es"}` : ""} />
+              <Leader label="Most QC fails" who={mostFail?.name ?? "—"} value={mostFail ? `${n(mostFail.fail)} fail${mostFail.fail === 1 ? "" : "s"}` : ""} />
             </div>
             <div className={styles.tableScroll} style={SCROLL} tabIndex={0} role="region" aria-label="QC team leaderboard table">
               <table className={styles.table} style={{ minWidth: 720 }}>

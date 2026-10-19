@@ -250,7 +250,7 @@ export interface NoHardware {
   days: number;
 }
 
-const OUT_OF_USE = new Set(["with_hardware", "pending_hardware", "retired", "lost", "damaged"]);
+const OUT_OF_USE = new Set(["with_hardware", "pending_hardware", "retired", "rnd", "lost", "damaged"]);
 
 /**
  * Rigs in use with no hardware-team event (sent to / received by / sent back from hardware, or a hardware
@@ -301,6 +301,55 @@ export function noHardwareFor(
       since: new Date(start).toISOString(),
       days: Math.floor(days),
     });
+  }
+  return out.sort((a, b) => b.days - a.days || a.item_id.localeCompare(b.item_id));
+}
+
+/* ------------------------------------------------------------------ */
+/* Unknown: rigs with no activity at all for more than N days          */
+/* ------------------------------------------------------------------ */
+
+export interface Inactive {
+  item_id: string;
+  status: string;
+  holder: string;
+  lastActivity: string; // ISO time of the latest handover, QC result or hardware update
+  days: number;
+}
+
+// Not counted as "unknown": with or sent to hardware, dead, R&D, lost or damaged.
+const NOT_UNKNOWN = new Set(["with_hardware", "pending_hardware", "retired", "rnd", "lost", "damaged"]);
+
+/**
+ * "Unknown" rigs: nothing has happened to them (no handover, QC result or hardware update) for more than
+ * `minDays` days, so nobody can say where they are or how they are. Rigs with hardware, dead, R&D, lost
+ * or damaged are left out. Longest first.
+ */
+export function inactiveRigs(
+  items: Item[],
+  events: ItemEvent[],
+  checks: QcCheck[],
+  updates: HardwareUpdate[],
+  now: Date,
+  minDays = 7,
+): Inactive[] {
+  const last = new Map<string, number>();
+  const bump = (id: string, v: string) => {
+    const t = time(v);
+    if (Number.isFinite(t) && t > (last.get(id) ?? -Infinity)) last.set(id, t);
+  };
+  for (const e of events) bump(e.item_id, e.occurred_at);
+  for (const c of checks) bump(c.item_id, c.recorded_at);
+  for (const u of updates) bump(u.item_id, u.recorded_at);
+
+  const out: Inactive[] = [];
+  for (const i of items) {
+    if (!isRig(i) || NOT_UNKNOWN.has(i.status)) continue;
+    const t = last.get(i.item_id) ?? time(i.updated_at);
+    if (!Number.isFinite(t)) continue;
+    const days = (now.getTime() - t) / DAY_MS;
+    if (days <= minDays) continue;
+    out.push({ item_id: i.item_id, status: i.status, holder: i.current_holder, lastActivity: new Date(t).toISOString(), days: Math.floor(days) });
   }
   return out.sort((a, b) => b.days - a.days || a.item_id.localeCompare(b.item_id));
 }

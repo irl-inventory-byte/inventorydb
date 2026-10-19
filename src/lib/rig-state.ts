@@ -35,6 +35,7 @@ export function rigCondition(status: Status | string, qc: string | undefined): R
  *   qc_fail     QC fail             QC marked Fail; the hardware team has not received it yet
  *   rtd         RTD                 repaired by hardware and sent to / received by the IM
  *   dead        Dead / Retired      the hardware team declared it dead
+ *   rnd         R&D                 the hardware team moved it to R&D (out of service)
  * Lost or damaged rigs have no tile; Rig checks still shows them as "Lost or damaged".
  */
 export const RIG_STATES = [
@@ -48,6 +49,7 @@ export const RIG_STATES = [
   "qc_fail",
   "rtd",
   "dead",
+  "rnd",
 ] as const;
 export type RigState = (typeof RIG_STATES)[number] | "lost" | "other";
 
@@ -62,6 +64,7 @@ export const RIG_STATE_LABELS: Record<RigState, string> = {
   qc_fail: "QC fail",
   rtd: "RTD (Ready to deploy)",
   dead: "Dead / Retired",
+  rnd: "R&D",
   lost: "Lost or damaged",
   other: "Other",
 };
@@ -70,6 +73,8 @@ export function rigState(status: Status | string, qc: string | undefined): RigSt
   switch (status) {
     case "retired":
       return "dead";
+    case "rnd":
+      return "rnd";
     case "lost":
     case "damaged":
       return "lost";

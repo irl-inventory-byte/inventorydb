@@ -331,3 +331,55 @@ export function planReceive(
   }
   return plan;
 }
+export type HardwareOutcome = "rnd" | "dead";
+
+/**
+ * HARDWARE TEAM, on the Send page: instead of sending repaired rigs to an IM, mark the rigs they hold as
+ *   R&D   → status "rnd" (stays with the hardware person who marked it, shown in the R&D tile)
+ *   Dead  → status "retired" (no holder, shown in Dead / Retired), the same as "Declared dead" on a rig's page
+ * A reason is required. Only rigs this person has received (With hardware team) can be marked.
+ */
+export function planHardwareOutcome(
+  targets: Item[],
+  input: { outcome: HardwareOutcome; reason: string },
+  ctx: HandoverContext,
+): HandoverPlan {
+  const plan: HandoverPlan = { events: [], items: [], errors: [] };
+  if (ctx.senderRole !== "hardware") {
+    plan.errors.push("Only the hardware team can mark rigs as R&D or Dead.");
+    return plan;
+  }
+  if (input.outcome !== "rnd" && input.outcome !== "dead") plan.errors.push("Choose Repaired, R&D or Dead.");
+  const reason = input.reason.trim();
+  if (!reason) plan.errors.push(input.outcome === "dead" ? "Write why the rig is dead." : "Write why the rig is going to R&D.");
+  const notHeld = targets.filter(
+    (t) => t.item_type !== "rig" || t.status !== "with_hardware" || t.current_holder !== ctx.actorPersonId,
+  );
+  if (notHeld.length) {
+    plan.errors.push(`You can only mark rigs that are with you (receive them first on Receive items). Not with you: ${listOf(notHeld.map((t) => t.item_id))}.`);
+  }
+  if (plan.errors.length) return plan;
+
+  const dead = input.outcome === "dead";
+  const status: Status = dead ? "retired" : "rnd";
+  const holder = dead ? "" : ctx.actorPersonId;
+  const base = eventBase(ctx, `${dead ? "Declared dead" : "Moved to R&D"}: ${reason}`);
+  for (const item of targets) {
+    const event: ItemEvent = {
+      ...base,
+      event_id: ctx.newId("e"),
+      item_id: item.item_id,
+      action: dead ? "retire" : "rnd",
+      from_person: displayName(ctx.people, ctx.actorPersonId),
+      to_person: dead ? "" : displayName(ctx.people, ctx.actorPersonId),
+      from_id: ctx.actorPersonId,
+      to_id: holder,
+      from_hub: item.current_hub,
+      hub: item.current_hub,
+      status_after: status,
+    };
+    plan.events.push(event);
+    plan.items.push({ ...item, status, current_holder: holder, last_event_id: event.event_id, updated_at: ctx.now });
+  }
+  return plan;
+}

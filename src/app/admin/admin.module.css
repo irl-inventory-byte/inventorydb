@@ -17,13 +17,13 @@
 
 .muted {
   margin: 0;
-  color: #666;
+  color: var(--muted-text);
   font-size: 0.9rem;
 }
 
 .error {
   margin: 0;
-  color: #b3261e;
+  color: var(--error-text);
 }
 
 .list {
@@ -75,7 +75,7 @@
 
 .ok {
   margin: 0;
-  color: #1e6b2f;
+  color: var(--ok-text);
 }
 
 .table {
@@ -100,7 +100,7 @@
 }
 
 .facts dt {
-  color: #666;
+  color: var(--muted-text);
 }
 
 .facts dd {
@@ -135,8 +135,8 @@
   padding: 6px 14px;
   border-radius: 6px;
   border: 1px solid #222;
-  background: #222;
-  color: #fff;
+  background: var(--btn-bg);
+  color: var(--btn-text);
   cursor: pointer;
 }
 
@@ -182,8 +182,8 @@
   padding: 8px 16px;
   border-radius: 6px;
   border: 1px solid #222;
-  background: #222;
-  color: #fff;
+  background: var(--btn-bg);
+  color: var(--btn-text);
   font-weight: 600;
   cursor: pointer;
 }

@@ -47,3 +47,300 @@ a {
     color-scheme: dark;
   }
 }
+
+/* Text colours that follow the theme. CSS modules use these instead of fixed greys / reds / greens. */
+:root {
+  --muted-text: #666666;
+  --error-text: #b3261e;
+  --ok-text: #1e6b2f;
+  --warn-text: #8a5a00;
+  --soft-bg: #f5f5f5;
+  --btn-bg: #222222;
+  --btn-text: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --muted-text: #a3a3a3;
+    --error-text: #f87171;
+    --ok-text: #4ade80;
+    --warn-text: #fbbf24;
+    --soft-bg: #1f1f1f;
+    --btn-bg: #e5e5e5;
+    --btn-text: #111111;
+  }
+
+  /*
+   * DARK MODE SAFETY NET. Some screens set colours directly on an element (style="color:#0f172a").
+   * In dark mode these exact colours are swapped: dark text → light, red / green / amber / blue text → a
+   * lighter shade, and white boxes → dark. Each colour is listed twice: as written in the page (#hex) and
+   * as the browser rewrites it after a change (rgb). Pastel badges (light background + dark text) are left
+   * as they are, because they stay readable.
+   */
+  [style^="color:#0f172a" i],
+  [style*=";color:#0f172a" i],
+  [style^="color: rgb(15, 23, 42)"],
+  [style*="; color: rgb(15, 23, 42)"],
+  [style^="color:#1a1a1a" i],
+  [style*=";color:#1a1a1a" i],
+  [style^="color: rgb(26, 26, 26)"],
+  [style*="; color: rgb(26, 26, 26)"],
+  [style^="color:#334155" i],
+  [style*=";color:#334155" i],
+  [style^="color: rgb(51, 65, 85)"],
+  [style*="; color: rgb(51, 65, 85)"],
+  [style^="color:#111" i],
+  [style*=";color:#111" i],
+  [style^="color: rgb(17, 17, 17)"],
+  [style*="; color: rgb(17, 17, 17)"],
+  [style^="color:#111111" i],
+  [style*=";color:#111111" i],
+  [style^="color: rgb(17, 17, 17)"],
+  [style*="; color: rgb(17, 17, 17)"],
+  [style^="color:#1f2937" i],
+  [style*=";color:#1f2937" i],
+  [style^="color: rgb(31, 41, 55)"],
+  [style*="; color: rgb(31, 41, 55)"],
+  [style^="color:#374151" i],
+  [style*=";color:#374151" i],
+  [style^="color: rgb(55, 65, 81)"],
+  [style*="; color: rgb(55, 65, 81)"],
+  [style^="color:#222" i],
+  [style*=";color:#222" i],
+  [style^="color: rgb(34, 34, 34)"],
+  [style*="; color: rgb(34, 34, 34)"],
+  [style^="color:#222222" i],
+  [style*=";color:#222222" i],
+  [style^="color: rgb(34, 34, 34)"],
+  [style*="; color: rgb(34, 34, 34)"] {
+    color: var(--foreground) !important;
+  }
+  [style^="color:#6b7280" i],
+  [style*=";color:#6b7280" i],
+  [style^="color: rgb(107, 114, 128)"],
+  [style*="; color: rgb(107, 114, 128)"],
+  [style^="color:#666" i],
+  [style*=";color:#666" i],
+  [style^="color: rgb(102, 102, 102)"],
+  [style*="; color: rgb(102, 102, 102)"],
+  [style^="color:#666666" i],
+  [style*=";color:#666666" i],
+  [style^="color: rgb(102, 102, 102)"],
+  [style*="; color: rgb(102, 102, 102)"],
+  [style^="color:#888" i],
+  [style*=";color:#888" i],
+  [style^="color: rgb(136, 136, 136)"],
+  [style*="; color: rgb(136, 136, 136)"],
+  [style^="color:#888888" i],
+  [style*=";color:#888888" i],
+  [style^="color: rgb(136, 136, 136)"],
+  [style*="; color: rgb(136, 136, 136)"] {
+    color: #a3a3a3 !important;
+  }
+  [style^="color:#b42318" i],
+  [style*=";color:#b42318" i],
+  [style^="color: rgb(180, 35, 24)"],
+  [style*="; color: rgb(180, 35, 24)"],
+  [style^="color:#b91c1c" i],
+  [style*=";color:#b91c1c" i],
+  [style^="color: rgb(185, 28, 28)"],
+  [style*="; color: rgb(185, 28, 28)"],
+  [style^="color:#991b1b" i],
+  [style*=";color:#991b1b" i],
+  [style^="color: rgb(153, 27, 27)"],
+  [style*="; color: rgb(153, 27, 27)"],
+  [style^="color:#dc2626" i],
+  [style*=";color:#dc2626" i],
+  [style^="color: rgb(220, 38, 38)"],
+  [style*="; color: rgb(220, 38, 38)"],
+  [style^="color:#b3261e" i],
+  [style*=";color:#b3261e" i],
+  [style^="color: rgb(179, 38, 30)"],
+  [style*="; color: rgb(179, 38, 30)"] {
+    color: #f87171 !important;
+  }
+  [style^="color:#15803d" i],
+  [style*=";color:#15803d" i],
+  [style^="color: rgb(21, 128, 61)"],
+  [style*="; color: rgb(21, 128, 61)"],
+  [style^="color:#16a34a" i],
+  [style*=";color:#16a34a" i],
+  [style^="color: rgb(22, 163, 74)"],
+  [style*="; color: rgb(22, 163, 74)"],
+  [style^="color:#1e6b2f" i],
+  [style*=";color:#1e6b2f" i],
+  [style^="color: rgb(30, 107, 47)"],
+  [style*="; color: rgb(30, 107, 47)"] {
+    color: #4ade80 !important;
+  }
+  [style^="color:#8a4b00" i],
+  [style*=";color:#8a4b00" i],
+  [style^="color: rgb(138, 75, 0)"],
+  [style*="; color: rgb(138, 75, 0)"],
+  [style^="color:#8a5a00" i],
+  [style*=";color:#8a5a00" i],
+  [style^="color: rgb(138, 90, 0)"],
+  [style*="; color: rgb(138, 90, 0)"] {
+    color: #fbbf24 !important;
+  }
+  [style^="color:#1d4ed8" i],
+  [style*=";color:#1d4ed8" i],
+  [style^="color: rgb(29, 78, 216)"],
+  [style*="; color: rgb(29, 78, 216)"],
+  [style^="color:#0284c7" i],
+  [style*=";color:#0284c7" i],
+  [style^="color: rgb(2, 132, 199)"],
+  [style*="; color: rgb(2, 132, 199)"] {
+    color: #93c5fd !important;
+  }
+  [style^="background:#e5e7eb" i],
+  [style*=";background:#e5e7eb" i],
+  [style^="background: rgb(229, 231, 235)"],
+  [style*="; background: rgb(229, 231, 235)"],
+  [style^="background:#fff" i],
+  [style*=";background:#fff" i],
+  [style^="background: rgb(255, 255, 255)"],
+  [style*="; background: rgb(255, 255, 255)"],
+  [style^="background:#ffffff" i],
+  [style*=";background:#ffffff" i],
+  [style^="background: rgb(255, 255, 255)"],
+  [style*="; background: rgb(255, 255, 255)"],
+  [style^="background:#fff7f7" i],
+  [style*=";background:#fff7f7" i],
+  [style^="background: rgb(255, 247, 247)"],
+  [style*="; background: rgb(255, 247, 247)"],
+  [style^="background:#f8fafc" i],
+  [style*=";background:#f8fafc" i],
+  [style^="background: rgb(248, 250, 252)"],
+  [style*="; background: rgb(248, 250, 252)"],
+  [style^="background:#fef2f2" i],
+  [style*=";background:#fef2f2" i],
+  [style^="background: rgb(254, 242, 242)"],
+  [style*="; background: rgb(254, 242, 242)"],
+  [style^="background:#fffbf4" i],
+  [style*=";background:#fffbf4" i],
+  [style^="background: rgb(255, 251, 244)"],
+  [style*="; background: rgb(255, 251, 244)"],
+  [style^="background:#f9fafb" i],
+  [style*=";background:#f9fafb" i],
+  [style^="background: rgb(249, 250, 251)"],
+  [style*="; background: rgb(249, 250, 251)"],
+  [style^="background:#f5f5f5" i],
+  [style*=";background:#f5f5f5" i],
+  [style^="background: rgb(245, 245, 245)"],
+  [style*="; background: rgb(245, 245, 245)"],
+  [style^="background:#eef2ff" i],
+  [style*=";background:#eef2ff" i],
+  [style^="background: rgb(238, 242, 255)"],
+  [style*="; background: rgb(238, 242, 255)"],
+  [style^="background-color:#e5e7eb" i],
+  [style*=";background-color:#e5e7eb" i],
+  [style^="background-color: rgb(229, 231, 235)"],
+  [style*="; background-color: rgb(229, 231, 235)"],
+  [style^="background-color:#fff" i],
+  [style*=";background-color:#fff" i],
+  [style^="background-color: rgb(255, 255, 255)"],
+  [style*="; background-color: rgb(255, 255, 255)"],
+  [style^="background-color:#ffffff" i],
+  [style*=";background-color:#ffffff" i],
+  [style^="background-color: rgb(255, 255, 255)"],
+  [style*="; background-color: rgb(255, 255, 255)"],
+  [style^="background-color:#fff7f7" i],
+  [style*=";background-color:#fff7f7" i],
+  [style^="background-color: rgb(255, 247, 247)"],
+  [style*="; background-color: rgb(255, 247, 247)"],
+  [style^="background-color:#f8fafc" i],
+  [style*=";background-color:#f8fafc" i],
+  [style^="background-color: rgb(248, 250, 252)"],
+  [style*="; background-color: rgb(248, 250, 252)"],
+  [style^="background-color:#fef2f2" i],
+  [style*=";background-color:#fef2f2" i],
+  [style^="background-color: rgb(254, 242, 242)"],
+  [style*="; background-color: rgb(254, 242, 242)"],
+  [style^="background-color:#fffbf4" i],
+  [style*=";background-color:#fffbf4" i],
+  [style^="background-color: rgb(255, 251, 244)"],
+  [style*="; background-color: rgb(255, 251, 244)"],
+  [style^="background-color:#f9fafb" i],
+  [style*=";background-color:#f9fafb" i],
+  [style^="background-color: rgb(249, 250, 251)"],
+  [style*="; background-color: rgb(249, 250, 251)"],
+  [style^="background-color:#f5f5f5" i],
+  [style*=";background-color:#f5f5f5" i],
+  [style^="background-color: rgb(245, 245, 245)"],
+  [style*="; background-color: rgb(245, 245, 245)"],
+  [style^="background-color:#eef2ff" i],
+  [style*=";background-color:#eef2ff" i],
+  [style^="background-color: rgb(238, 242, 255)"],
+  [style*="; background-color: rgb(238, 242, 255)"] {
+    background-color: #1a1a19 !important;
+  }
+  table,
+  th,
+  td {
+    border-color: #333333;
+  }
+}
+
+/* Page loading (app/loading.tsx) and the bar shown while moving to another page (NavProgress). */
+.page-loading {
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  font-size: 1rem;
+  color: var(--muted-text);
+}
+.page-loading-spinner {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 4px solid rgba(127, 127, 127, 0.25);
+  border-top-color: #2a78d6;
+  animation: page-spin 0.8s linear infinite;
+}
+@keyframes page-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.nav-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 100%;
+  z-index: 9999;
+  background: linear-gradient(90deg, transparent, #2a78d6, transparent);
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+  animation: nav-slide 1s ease-in-out infinite;
+}
+@keyframes nav-slide {
+  from {
+    background-position: -50% 0;
+  }
+  to {
+    background-position: 150% 0;
+  }
+}
+.nav-progress-label {
+  position: fixed;
+  top: 10px;
+  right: 12px;
+  z-index: 9999;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: #1e293b;
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-loading-spinner,
+  .nav-progress {
+    animation: none;
+  }
+}

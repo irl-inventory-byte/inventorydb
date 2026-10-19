@@ -4,8 +4,8 @@ import { requireRole } from "@/lib/authz";
 import { LATE_AFTER_HOURS, computeDashboard } from "@/lib/dashboard";
 import { buildHubTree } from "@/lib/hub-tree";
 import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
-import type { QcCheck, Status } from "@/lib/schema";
-import { HANDLER_ROLES, INVENTORY_ROLES, canSeeType, storeFor, typeParam } from "@/lib/access";
+import type { HardwareUpdate, QcCheck, Status } from "@/lib/schema";
+import { HANDLER_ROLES, INVENTORY_ROLES, allowedTypes, canSeeType, storeFor, typeParam } from "@/lib/access";
 import TypeSwitch from "../TypeSwitch";
 import { ActivityChart, BarList, n } from "./charts";
 import styles from "./dashboard.module.css";
@@ -13,7 +13,9 @@ import { HubOrgChart, countHidden } from "./hub-tree-view";
 import AttentionFilter from "./attentionfilter";
 import { Icon, type IconName } from "./icons";
 import { SummaryKpis } from "./summary-kpis";
-import { RIG_STATES, RIG_STATE_LABELS, qcPerformance, rigState, type RigState } from "@/lib/rig-state";
+import { RIG_STATES, RIG_STATE_LABELS, rigState, type RigState } from "@/lib/rig-state";
+import { inactiveRigs } from "@/lib/rig-metrics";
+import { NO_ACTIVITY_DAYS, RigMetrics } from "./rig-metrics";
 
 const inventory = (params: Record<string, string>) => `/inventory?${new URLSearchParams(params)}`;
 const days = (d: number | null) => (d === null ? "—" : d === 0 ? "today" : `${d}d`);
@@ -35,7 +37,7 @@ interface Attention {
 const GLYPH = { critical: "✕", warning: "▲", info: "●" } as const;
 const TONE = { critical: styles.iconCritical, warning: styles.iconWarning, info: styles.iconMuted };
 
-const STATUS_ORDER: Status[] = ["in_stock", "with_fo", "traveling", "with_rig", "with_internal", "pending_qc", "with_qc", "pending_hardware", "with_hardware", "pending", "lost", "damaged", "retired"];
+const STATUS_ORDER: Status[] = ["in_stock", "with_fo", "traveling", "with_rig", "with_internal", "pending_qc", "with_qc", "pending_hardware", "with_hardware", "pending", "lost", "damaged", "retired", "rnd"];
 const HUB_BARS = 8;
 
 // Shared styles for dark sticky table headers / footers.
@@ -51,22 +53,25 @@ const TFOOT_STYLE: CSSProperties = {
 export default async function DashboardPage({ searchParams }: PageProps<"/dashboard">) {
   const user = await requireRole();
   const sp = await searchParams;
-  // Each login sees only its item types; IM/Admin/FO can switch SD cards / Rigs.
-  const type = typeParam(one(sp.type), user.role);
+  // Each login sees only its item types; IM/Admin/FO can switch SD cards / Rigs. There is no "All items"
+  // view on the dashboard: with no choice yet it opens on the first type this login can see (SD cards).
+  const type = typeParam(one(sp.type), user.role) || allowedTypes(user.role)[0] || "";
   const store = storeFor(user.role, type);
   // Rig view: the Rigs switch is on, or this login only sees rigs (QC, hardware).
   const rigView = type === "rig" || !canSeeType(user.role, "sd_card");
   // QC team performance shows whenever rigs are in view (All or Rigs).
   const showQc = canSeeType(user.role, "rig") && type !== "sd_card";
-  const [items, events, people, hubs, qcChecks] = await Promise.all([
+  const [items, events, people, hubs, qcChecks, hardwareUpdates] = await Promise.all([
     store.list("items"),
     store.list("events"),
     store.list("people"),
     store.list("hubs"),
     showQc ? store.list("qc_checks") : Promise.resolve([] as QcCheck[]),
+    showQc ? store.list("hardware_updates") : Promise.resolve([] as HardwareUpdate[]),
   ]);
+  const now = new Date();
 
-  const d = computeDashboard(items, events, people, hubs, { hub: "", days: 14, now: new Date() });
+  const d = computeDashboard(items, events, people, hubs, { hub: "", days: 14, now });
   const tree = buildHubTree(hubs, items);
   const showEmpty = one(sp.empty) === "1";
   const hiddenEmpty = countHidden(tree, false);
@@ -78,7 +83,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // Latest QC result per rig (rows are oldest first, so the last one wins).
   const latestQc = new Map<string, string>();
   for (const c of qcChecks) latestQc.set(c.item_id, c.qc_status);
-  const qcTeam = qcPerformance(qcChecks, 2);
 
   type Kpi = { label: string; value: number; hint: string; href: string; icon: IconName; color: string };
 
@@ -114,6 +118,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     qc_fail: { icon: "alert", color: "var(--warning)", hint: "Hardware has not received it yet" },
     rtd: { icon: "send", color: "var(--series-3)", hint: "Repaired, received by IM" },
     dead: { icon: "archive", color: "var(--text-muted)", hint: "Declared dead by hardware" },
+    rnd: { icon: "wrench", color: "var(--series-7)", hint: "Moved to R&D by hardware" },
   };
   const rigKpis: Kpi[] = RIG_STATES.map((k) => ({
     label: RIG_STATE_LABELS[k],
@@ -123,6 +128,17 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     icon: RIG_TILE[k].icon,
     color: RIG_TILE[k].color,
   }));
+  // Unknown: rigs with no handover, QC result or hardware update for more than NO_ACTIVITY_DAYS days
+  // (with hardware, dead, R&D, lost and damaged rigs are left out). It overlaps the tiles above.
+  const unknownRigs = showQc ? inactiveRigs(items, events, qcChecks, hardwareUpdates, now, NO_ACTIVITY_DAYS) : [];
+  rigKpis.push({
+    label: "Unknown",
+    value: unknownRigs.length,
+    hint: `No activity for ${NO_ACTIVITY_DAYS}+ days`,
+    href: "/rigs?state=unknown",
+    icon: "alert",
+    color: "var(--critical)",
+  });
 
   // SD CARDS (and the "All" view): unchanged.
   const sdKpis: Kpi[] = [
@@ -372,7 +388,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           <input name="q" placeholder="Find an item by serial, prism no., brand or model" aria-label="Find an item" />
         </form>
 
-        <TypeSwitch role={user.role} current={type} path="/dashboard" />
+        <TypeSwitch role={user.role} current={type} path="/dashboard" includeAll={false} />
 
         <SummaryKpis d={d} items={items} rigView={rigView} />
 
@@ -392,47 +408,15 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
         </section>
 
         {showQc && (
-          <section className={styles.card} aria-label="QC team performance">
-            <div className={styles.sectionHead}>
-              <h2>QC team performance</h2>
-              <span className={styles.muted}>Pass and Fail recorded by each QC person</span>
-            </div>
-            {qcTeam.length === 0 ? (
-              <p className={styles.muted}>No QC results recorded yet.</p>
-            ) : (
-              <div className={styles.tableScroll} role="region" aria-label="QC team performance table" tabIndex={0} style={{ overflowX: "auto" }}>
-                <table className={styles.table} style={{ width: "100%", minWidth: "560px" }}>
-                  <thead>
-                    <tr>
-                      <th scope="col">QC person</th>
-                      <th scope="col" style={{ textAlign: "right" }}>Checked</th>
-                      <th scope="col" style={{ textAlign: "right" }}>Pass</th>
-                      <th scope="col" style={{ textAlign: "right" }}>Fail</th>
-                      <th scope="col" style={{ textAlign: "right" }}>Passed, then failed within 2 days</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {qcTeam.map((q) => (
-                      <tr key={q.key}>
-                        <td>{q.name}</td>
-                        <td style={{ textAlign: "right" }}>{n(q.checked)}</td>
-                        <td style={{ textAlign: "right", color: "#15803D", fontWeight: 600 }}>{n(q.pass)}</td>
-                        <td style={{ textAlign: "right", color: "#B42318", fontWeight: 600 }}>{n(q.fail)}</td>
-                        <td style={{ textAlign: "right", fontWeight: q.passFailedSoon ? 700 : 400, color: q.passFailedSoon ? "#B42318" : undefined }}>
-                          {n(q.passFailedSoon)}
-                          {q.pass > 0 && ` (${Math.round((q.passFailedSoon / q.pass) * 100)}% of passes)`}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            <p className={styles.muted}>
-              &quot;Passed, then failed within 2 days&quot; = a rig this person passed that got a Fail result within 48
-              hours of that pass.
-            </p>
-          </section>
+          <RigMetrics
+            items={items}
+            events={events}
+            people={people}
+            hubs={hubs}
+            qcChecks={qcChecks}
+            hardwareUpdates={hardwareUpdates}
+            now={now}
+          />
         )}
 
         <section className={styles.card} aria-label="Hub hierarchy">

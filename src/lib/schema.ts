@@ -107,6 +107,7 @@ export const STATUSES = [
   "lost",
   "damaged",
   "retired",
+  "rnd", // rigs only: moved to R&D by the hardware team (out of service, like Dead)
 ] as const;
 export type Status = (typeof STATUSES)[number];
 
@@ -120,6 +121,7 @@ export const ACTIONS = [
   "report_lost",
   "report_damaged",
   "retire",
+  "rnd", // the hardware team moved a rig to R&D
   "reassign_home_hub",
   "correct",
   "import",
