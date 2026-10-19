@@ -4,13 +4,14 @@ import { useState } from "react";
 import styles from "../form.module.css";
 import SendToFields, { type PersonGroup } from "./SendToFields";
 
-type Outcome = "" | "repaired" | "rnd" | "dead";
+type Outcome = "" | "repaired" | "dead" | "rnd";
 
 /**
- * Hardware team only: choose what happened to the rigs first.
- *   Repaired → send to an IM (the rig is then RTD · Ready to deploy).
- *   R&D      → the rig stays with you, marked R&D (shown in the R&D tile). A reason is required.
- *   Dead     → the rig is retired (shown in Dead / Retired). A reason is required.
+ * Hardware team only: a "Rig status" dropdown before "Send to".
+ *   Repaired        → send to an IM (the rig is then RTD · Ready to deploy).
+ *   Dead / Retired  → the rig is retired (Dead / Retired tile). A reason and a confirm tick are required.
+ *   R & D           → the rig stays with you, marked R&D (R&D tile). A reason is required.
+ * Dead / Retired and R & D are not sent to anyone.
  */
 export default function HardwareSendFields({
   groups,
@@ -23,39 +24,24 @@ export default function HardwareSendFields({
 }) {
   const [outcome, setOutcome] = useState<Outcome>("");
 
-  const choice = (value: Exclude<Outcome, "">, label: string, color: string) => (
-    <label
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 8,
-        minHeight: 40,
-        padding: "6px 16px",
-        border: `2px solid ${outcome === value ? color : "#b5b5b5"}`,
-        borderRadius: 8,
-        fontWeight: 600,
-        color: outcome === value ? color : undefined,
-        cursor: "pointer",
-      }}
-    >
-      <input type="radio" name="hwOutcome" value={value} checked={outcome === value} onChange={() => setOutcome(value)} required />
-      {label}
-    </label>
-  );
-
   return (
     <>
       <div className={styles.field}>
-        <span className={styles.label}>Rig is</span>
+        <label className={styles.label} htmlFor="hwOutcome">
+          Rig status
+        </label>
         <div className={styles.control}>
-          <div role="radiogroup" aria-label="What happened to the rig" style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-            {choice("repaired", "Repaired → send to IM", "#15803D")}
-            {choice("rnd", "R&D", "#1D4ED8")}
-            {choice("dead", "Dead", "#B42318")}
-          </div>
+          <select id="hwOutcome" name="hwOutcome" value={outcome} onChange={(e) => setOutcome(e.target.value as Outcome)} required>
+            <option value="" disabled>
+              Select rig status
+            </option>
+            <option value="repaired">Repaired</option>
+            <option value="dead">Dead / Retired</option>
+            <option value="rnd">R &amp; D</option>
+          </select>
           <p className={styles.hint}>
-            R&amp;D and Dead are not sent to anyone: the rigs leave service and show in the R&amp;D or Dead / Retired
-            tile on the dashboard.
+            Repaired → send to an IM. Dead / Retired and R &amp; D are not sent to anyone: the rigs leave service and show
+            in that tile on the dashboard.
           </p>
         </div>
       </div>
@@ -64,10 +50,10 @@ export default function HardwareSendFields({
         <SendToFields groups={groups.filter((g) => g.role === "im")} hubs={hubs} allowInternal={false} bangalore={bangalore} alwaysBangalore />
       )}
 
-      {(outcome === "rnd" || outcome === "dead") && (
+      {(outcome === "dead" || outcome === "rnd") && (
         <div className={styles.field}>
           <label className={styles.label} htmlFor="hwReason">
-            {outcome === "dead" ? "Why is it dead?" : "Why R&D?"}
+            {outcome === "dead" ? "Why is it dead?" : "Why R & D?"}
           </label>
           <div className={styles.control}>
             <textarea id="hwReason" name="hwReason" rows={2} className={styles.textarea} required />

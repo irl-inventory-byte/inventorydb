@@ -9,6 +9,7 @@ import { sendCards } from "../actions";
 import SendScanFields from "./SendScanFields";
 import { rigCondition } from "@/lib/rig-state";
 import { rigHomeHub } from "@/lib/rig-hub";
+import HardwareSendFields from "./HardwareSendFields";
 import QcSendFields from "./QcSendFields";
 import SendToFields from "./SendToFields";
 
@@ -30,7 +31,7 @@ const SEND_TO: Record<string, Role[]> = {
   internal: ["im", "ifo", "fo", "rig", "qc", "internal"], // works like an IM
   rig: ["im", "ifo", "fo", "rig", "internal"],
   qc: ["im", "hardware", "qc"], // QC pass → IM, QC fail → hardware team, transfer → another QC person
-  hardware: ["im"], // repaired rig → IM
+  hardware: ["im"], // repaired rig → IM (R&D and Dead are not sent to anyone)
 };
 
 // QC and hardware teams send the rigs they are holding.
@@ -149,6 +150,8 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
 
         {user.role === "qc" ? (
           <QcSendFields groups={personGroups} hubs={activeHubs.map((h) => ({ id: h.hub_id, name: h.name }))} bangalore={bangalore} />
+        ) : user.role === "hardware" ? (
+          <HardwareSendFields groups={personGroups} hubs={activeHubs.map((h) => ({ id: h.hub_id, name: h.name }))} bangalore={bangalore} />
         ) : (
           <SendToFields
             groups={personGroups}
@@ -162,7 +165,7 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
         {seesRigs && user.role !== "qc" && (
           <p className={styles.hint}>
             {user.role === "hardware"
-              ? "Rigs: after repair, send the rig to an IM. It is then Ready for field."
+              ? "Rigs: Repaired → send to an IM (it is then Ready for field). R&D or Dead → the rig leaves service."
               : "Rigs: QC passed or repaired → FO or IFO. QC pending or failed → QC team only."}
           </p>
         )}
@@ -182,7 +185,12 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
           <Link href="/handover/receive">Receive items instead →</Link>
         </div>
 
-        {one(sp.done) && (
+        {one(sp.done) && one(sp.outcome) && (
+          <p className={`${styles.ok} ${styles.result}`}>
+            Marked {one(sp.done)} rig(s) as {one(sp.outcome) === "dead" ? "Dead" : "R&D"}.
+          </p>
+        )}
+        {one(sp.done) && !one(sp.outcome) && (
           <p className={`${styles.ok} ${styles.result}`}>
             Sent {one(sp.done)} item(s) to {toPerson} at {toHubName}. Status: {status}.{" "}
             {one(sp.batch) && <Link href={`/handover/receipt/${one(sp.batch)}`}>View / print receipt →</Link>}

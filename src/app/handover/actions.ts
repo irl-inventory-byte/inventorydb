@@ -6,7 +6,15 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { actorOptions, allowedActors, defaultActor, displayName, resolveActor } from "@/lib/actors";
 import { requireRole } from "@/lib/authz";
-import { planReceive, planReceiveHeld, planSend, receivesHeld, type HandoverContext, type HandoverPlan } from "@/lib/handover";
+import {
+  planHardwareOutcome,
+  planReceive,
+  planReceiveHeld,
+  planSend,
+  receivesHeld,
+  type HandoverContext,
+  type HandoverPlan,
+} from "@/lib/handover";
 import type { Item, Role, TabRows } from "@/lib/schema";
 import { collectIds } from "@/lib/scan";
 import { archiveReceipt } from "@/lib/receipt-archive";
@@ -97,6 +105,10 @@ async function run(
 }
 
 export async function sendCards(formData: FormData) {
+  // Hardware team: R&D or Dead instead of sending a repaired rig to an IM.
+  const hwOutcome = String(formData.get("hwOutcome") ?? "");
+  if (hwOutcome === "rnd" || hwOutcome === "dead") return markHardwareOutcome(formData, hwOutcome);
+
   // The person (or a typed "Internal" name) and the location are both required; planSend refuses the
   // send if either is missing.
   const input = {
@@ -195,6 +207,34 @@ export async function sendCards(formData: FormData) {
       if (!batchId) return;
       const base = await siteUrl();
       after(() => archiveReceipt(batchId, base));
+    },
+    { roles: SEND_ROLES, actorRoles: ["im", "rig", "qc", "hardware", "internal"] },
+  );
+}
+
+/** Hardware team marks the rigs they hold as R&D or Dead (from the Send page). No receipt: nothing changes hands. */
+async function markHardwareOutcome(formData: FormData, outcome: "rnd" | "dead") {
+  const reason = String(formData.get("hwReason") ?? "").trim().slice(0, 1000);
+  let updates: TabRows["hardware_updates"][] = [];
+  await run(
+    formData,
+    "/handover/send",
+    (targets, ctx) => {
+      const plan = planHardwareOutcome(targets, { outcome, reason }, ctx);
+      updates = plan.items.map((t) => ({
+        update_id: ctx.newId("hw"),
+        item_id: t.item_id,
+        recorded_at: ctx.now,
+        recorded_by: ctx.by,
+        recorded_by_name: displayName(ctx.people, ctx.actorPersonId),
+        update_type: outcome === "dead" ? "Declared dead" : "Moved to R&D",
+        comment: reason,
+      }));
+      return plan;
+    },
+    (): Record<string, string> => ({ outcome }),
+    async () => {
+      if (updates.length) await getStore().appendRows("hardware_updates", updates);
     },
     { roles: SEND_ROLES, actorRoles: ["im", "rig", "qc", "hardware", "internal"] },
   );
