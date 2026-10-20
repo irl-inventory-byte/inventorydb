@@ -459,10 +459,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
         <section className={styles.card} aria-label="Items moved per day">
           <div className={styles.sectionHead}>
-            <h2>Items moved per day</h2>
+            <h2>{rigView ? "Rigs" : "SD cards"} moved per day</h2>
             <span className={styles.muted}>Last 14 days</span>
           </div>
-          <ActivityChart days={d.activity} />
+          <ActivityChart days={d.activity} unit={rigView ? "rigs" : "SD cards"} />
         </section>
 
         <div style={{ display: "grid", gap: 20 }}>

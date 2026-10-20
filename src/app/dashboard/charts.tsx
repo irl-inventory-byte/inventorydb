@@ -47,8 +47,11 @@ const SERIES = [
 
 const PLOT_HEIGHT = 170;
 
-/** Cards moved per day: stacked columns, 2px gaps, one shared axis, tooltip per day. */
-export function ActivityChart({ days }: { days: ActivityDay[] }) {
+/**
+ * Items moved per day: stacked columns, 2px gaps, one shared axis, tooltip per day.
+ * The day's total sits on top of each column (a data label). `unit` names what is counted, e.g. "SD cards".
+ */
+export function ActivityChart({ days, unit = "items" }: { days: ActivityDay[]; unit?: string }) {
   const totals = days.map((d) => d.sent + d.received + d.corrected);
   const top = niceMax(Math.max(0, ...totals));
   const ticks = [0, top / 2, top];
@@ -65,7 +68,7 @@ export function ActivityChart({ days }: { days: ActivityDay[] }) {
           </span>
         ))}
       </div>
-      <div className={styles.plotWrap}>
+      <div className={styles.plotWrap} style={{ paddingTop: 14 }}>
         <div className={styles.plot} style={{ height: PLOT_HEIGHT }}>
           {ticks.slice(1).map((t) => (
             <div key={t} className={styles.gridLine} style={{ bottom: `${(t / top) * 100}%` }}>
@@ -73,14 +76,19 @@ export function ActivityChart({ days }: { days: ActivityDay[] }) {
             </div>
           ))}
           <div className={styles.cols}>
-            {days.map((d) => (
+            {days.map((d, i) => (
               <div
                 key={d.date}
                 className={`${styles.col} ${styles.tip}`}
                 tabIndex={0}
-                data-tip={`${shortDate(d.date)}\nSent ${d.sent}\nReceived ${d.received}\nCorrected ${d.corrected}`}
-                aria-label={`${shortDate(d.date)}: ${d.sent} sent, ${d.received} received, ${d.corrected} corrected`}
+                data-tip={`${shortDate(d.date)} · ${unit}\nSent ${d.sent}\nReceived ${d.received}\nCorrected ${d.corrected}\nTotal ${totals[i]}`}
+                aria-label={`${shortDate(d.date)}: ${d.sent} ${unit} sent, ${d.received} received, ${d.corrected} corrected`}
               >
+                {totals[i] > 0 && (
+                  <span className={styles.colLabel} style={{ bottom: `calc(${(totals[i] / top) * 100}% + 3px)` }} aria-hidden="true">
+                    {n(totals[i])}
+                  </span>
+                )}
                 <div className={styles.stack}>
                   {SERIES.map((s) =>
                     d[s.key] > 0 ? (
