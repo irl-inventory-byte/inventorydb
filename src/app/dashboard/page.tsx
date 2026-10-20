@@ -7,7 +7,9 @@ import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
 import type { HardwareUpdate, QcCheck, Status } from "@/lib/schema";
 import { HANDLER_ROLES, INVENTORY_ROLES, allowedTypes, canSeeType, storeFor, typeParam } from "@/lib/access";
 import TypeSwitch from "../TypeSwitch";
-import { ActivityChart, BarList, n } from "./charts";
+import { BarList, n } from "./charts";
+import { DailyMoves } from "./daily-moves";
+import { dailyMoves, moveFilterOptions } from "@/lib/daily-moves";
 import styles from "./dashboard.module.css";
 import { HubOrgChart, countHidden } from "./hub-tree-view";
 import AttentionFilter from "./attentionfilter";
@@ -316,9 +318,19 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       (cityFilter.length === 0 || splitCities(a.city).some((c) => cityFilter.includes(c))) &&
       (roleFilter.length === 0 || roleFilter.includes(a.role)),
   );
+  // "Moved per day" chart: person and city filters (?mperson=…&mcity=…). The other settings are kept.
+  const movePerson = one(sp.mperson);
+  const moveCity = one(sp.mcity);
+  const movedDays = dailyMoves(events, hubs, now, 14, { person: movePerson, city: moveCity });
+  const moveOptions = moveFilterOptions(events, hubs, people, now, 14);
+  const moveKeep: Record<string, string> = {};
+  for (const k of ["type", "acity", "arole", "empty"]) if (one(sp[k])) moveKeep[k] = one(sp[k]);
+
   const keepParams: Record<string, string> = {};
   if (one(sp.type)) keepParams.type = one(sp.type);
   if (showEmpty) keepParams.empty = "1";
+  if (movePerson) keepParams.mperson = movePerson;
+  if (moveCity) keepParams.mcity = moveCity;
 
   // Who has items: longest out first, then most items.
   const holdersSorted = [...d.holders].sort(
@@ -457,13 +469,16 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           </section>
         </div>
 
-        <section className={styles.card} aria-label="Items moved per day">
-          <div className={styles.sectionHead}>
-            <h2>{rigView ? "Rigs" : "SD cards"} moved per day</h2>
-            <span className={styles.muted}>Last 14 days</span>
-          </div>
-          <ActivityChart days={d.activity} unit={rigView ? "rigs" : "SD cards"} />
-        </section>
+        <DailyMoves
+          title={rigView ? "Rigs moved per day" : "SD cards moved per day"}
+          unit={rigView ? "rigs" : "SD cards"}
+          days={movedDays}
+          people={moveOptions.people}
+          cities={moveOptions.cities}
+          person={movePerson}
+          city={moveCity}
+          keep={moveKeep}
+        />
 
         <div style={{ display: "grid", gap: 20 }}>
           {/* NEEDS ATTENTION — table (full width, so every column shows) */}

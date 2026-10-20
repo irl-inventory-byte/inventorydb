@@ -4,8 +4,6 @@ import { ROLE_LABELS } from "@/lib/labels";
 import { RIG_STATE_LABELS, rigState } from "@/lib/rig-state";
 import {
   fieldLeaderboard,
-  hourLabel,
-  hourlySplit,
   longAtHardware,
   mostFailed,
   mostPassed,
@@ -18,14 +16,12 @@ import {
   type RigQcCount,
 } from "@/lib/rig-metrics";
 import type { HardwareUpdate, Hub, Item, ItemEvent, Person, QcCheck } from "@/lib/schema";
-import { formatIst } from "@/lib/time";
 import { n } from "./charts";
 import styles from "./dashboard.module.css";
 
 /** Thresholds used on the Rig dashboard. */
 export const HARDWARE_STAY_DAYS = 2; // with the hardware team for more than this → listed
 export const NO_HARDWARE_DAYS = 7; // no hardware-team event for more than this → listed
-export const HOURLY_DAYS = 30; // hourly split looks at the last N days
 export const NO_ACTIVITY_DAYS = 7; // "Unknown" tile: rigs with no activity for more than this
 
 const GREEN = "#15803D";
@@ -99,103 +95,6 @@ function RigQcTable({ rows, mode }: { rows: RigQcCount[]; mode: "fail" | "pass" 
   );
 }
 
-/** Rigs sent and received per hour: two series side by side, one shared axis, tooltip per hour, table view. */
-function HourChart({ hours }: { hours: { hour: number; out: number; in: number }[] }) {
-  const max = Math.max(0, ...hours.flatMap((h) => [h.out, h.in]));
-  const top = max <= 4 ? 4 : (() => {
-    const mag = 10 ** Math.floor(Math.log10(max));
-    return [1, 2, 5, 10].map((m) => m * mag).find((c) => c >= max) ?? max;
-  })();
-  const total = hours.reduce((s, h) => s + h.out + h.in, 0);
-  const busiest = [...hours].filter((h) => h.out + h.in > 0).sort((a, b) => b.out + b.in - (a.out + a.in) || a.hour - b.hour).slice(0, 3);
-  const OUT = "var(--series-1)";
-  const IN = "var(--series-2)";
-
-  return (
-    <>
-      {total === 0 ? (
-        <p className={styles.muted}>No rig check-outs or check-ins in the last {HOURLY_DAYS} days.</p>
-      ) : (
-        <p className={styles.muted}>
-          Busiest hours:{" "}
-          {busiest.map((h, idx) => (
-            <span key={h.hour}>
-              {idx > 0 && ", "}
-              <strong>{hourLabel(h.hour)}</strong> ({n(h.out + h.in)})
-            </span>
-          ))}
-        </p>
-      )}
-      <div className={styles.legend}>
-        <span>
-          <i className={styles.swatch} style={{ background: OUT }} />
-          Check-out (rigs sent)
-        </span>
-        <span>
-          <i className={styles.swatch} style={{ background: IN }} />
-          Check-in (rigs received)
-        </span>
-      </div>
-      <div className={styles.plotWrap}>
-        <div className={styles.plot} style={{ height: 180 }}>
-          {[top / 2, top].map((t) => (
-            <div key={t} className={styles.gridLine} style={{ bottom: `${(t / top) * 100}%` }}>
-              <span>{n(t)}</span>
-            </div>
-          ))}
-          <div className={styles.hourCols}>
-            {hours.map((h) => (
-              <div
-                key={h.hour}
-                className={`${styles.hourCol} ${styles.tip}`}
-                tabIndex={0}
-                data-tip={`${hourLabel(h.hour)}\nCheck-out ${h.out}\nCheck-in ${h.in}`}
-                aria-label={`${hourLabel(h.hour)}: ${h.out} checked out, ${h.in} checked in`}
-              >
-                <div className={styles.hourBar} style={{ height: `${(h.out / top) * 100}%`, background: OUT }} />
-                <div className={styles.hourBar} style={{ height: `${(h.in / top) * 100}%`, background: IN }} />
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className={styles.hourAxis}>
-        {hours.map((h) => (
-          <span key={h.hour}>{h.hour % 3 === 0 ? h.hour : ""}</span>
-        ))}
-      </div>
-      <p className={styles.muted} style={{ textAlign: "center", fontSize: "0.75rem" }}>
-        Hour of the day (0 = midnight, 12 = noon, India time)
-      </p>
-      <details className={styles.details}>
-        <summary>Table view</summary>
-        <div className={styles.tableScroll}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th scope="col">Hour</th>
-                <th scope="col" style={R}>Check-out</th>
-                <th scope="col" style={R}>Check-in</th>
-                <th scope="col" style={R}>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {hours.map((h) => (
-                <tr key={h.hour}>
-                  <td>{hourLabel(h.hour)}</td>
-                  <td style={R}>{n(h.out)}</td>
-                  <td style={R}>{n(h.in)}</td>
-                  <td style={{ ...R, fontWeight: 600 }}>{n(h.out + h.in)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
-    </>
-  );
-}
-
 export function RigMetrics({
   items,
   events,
@@ -250,8 +149,6 @@ export function RigMetrics({
   // 6
   const noHardware = noHardwareFor(rigs, rigEvents, hardwareUpdates, people, now, NO_HARDWARE_DAYS);
 
-  // 7
-  const hours = hourlySplit(rigs, rigEvents, now, HOURLY_DAYS);
 
   return (
     <>
@@ -441,14 +338,6 @@ export function RigMetrics({
         </Card>
       </div>
 
-      {/* 7. HOURLY SPLIT */}
-      <Card title="Rig check-outs and check-ins by hour" note={`Last ${HOURLY_DAYS} days · India time`}>
-        <HourChart hours={hours} />
-        <p className={styles.muted}>
-          Every rig sent (check-out) and received (check-in), by the hour it happened. Plan more IMs and QC people for
-          the busiest hours. Last updated {formatIst(now.toISOString())}.
-        </p>
-      </Card>
     </>
   );
 }
