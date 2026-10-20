@@ -239,8 +239,11 @@ const RECEIVE_HELD: Partial<Record<Role, { from: Status; to: Status }>> = {
 export const receivesHeld = (role: Role | "admin" | undefined) => !!role && role !== "admin" && !!RECEIVE_HELD[role];
 
 /**
- * QC or hardware team member receives the rigs sent to THEM. The rig stays at the hub it was sent to and
- * becomes "With QC team" / "With hardware team" under their name.
+ * QC or hardware team member receives rigs. The rig stays at the hub it was sent to and becomes
+ * "With QC team" / "With hardware team" under the receiver's name.
+ *   QC team:       only the rigs sent to THEM.
+ *   Hardware team: ANY rig sent to the hardware team, whichever hardware person was chosen on the send
+ *                  (e.g. QC sent it to Manju, Sraj can receive it). It is then with whoever received it.
  */
 export function planReceiveHeld(targets: Item[], input: { note: string }, ctx: HandoverContext): HandoverPlan {
   const plan: HandoverPlan = { events: [], items: [], errors: [] };
@@ -249,8 +252,9 @@ export function planReceiveHeld(targets: Item[], input: { note: string }, ctx: H
     plan.errors.push("Only the QC or hardware team can receive rigs this way.");
     return plan;
   }
+  const anyoneInTeam = ctx.senderRole === "hardware";
   const wrong = targets.filter(
-    (t) => t.item_type !== "rig" || t.status !== rule.from || t.current_holder !== ctx.actorPersonId,
+    (t) => t.item_type !== "rig" || t.status !== rule.from || (!anyoneInTeam && t.current_holder !== ctx.actorPersonId),
   );
   if (wrong.length) {
     plan.errors.push(`These rigs were not sent to you, or are already received: ${listOf(wrong.map((t) => t.item_id))}.`);
@@ -273,7 +277,8 @@ export function planReceiveHeld(targets: Item[], input: { note: string }, ctx: H
       status_after: rule.to,
     };
     plan.events.push(event);
-    plan.items.push({ ...item, status: rule.to, last_event_id: event.event_id, updated_at: ctx.now });
+    // The rig is now with whoever received it (for hardware this may be a different person than was chosen).
+    plan.items.push({ ...item, status: rule.to, current_holder: ctx.actorPersonId, last_event_id: event.event_id, updated_at: ctx.now });
   }
   return plan;
 }

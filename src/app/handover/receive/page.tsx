@@ -47,12 +47,15 @@ export default async function ReceivePage({
     )
   );
 
-  // QC / hardware team: receive the rigs sent to YOU (no hub to choose).
+  // QC team: receive the rigs sent to YOU. Hardware team: receive ANY rig sent to the hardware team.
+  // No hub to choose.
   const HELD_FROM: Partial<Record<Role, Status>> = { qc: "pending_qc", hardware: "pending_hardware" };
   const heldFrom = HELD_FROM[user.role as Role];
   if (heldFrom) {
     const me = byOptions[0]?.value ?? "";
-    const waiting = items.filter((i) => i.status === heldFrom && i.current_holder === me);
+    const wholeTeam = user.role === "hardware";
+    const waiting = items.filter((i) => i.status === heldFrom && (wholeTeam || i.current_holder === me));
+    const personNames = new Map(people.map((p) => [p.person_id, p.name]));
     return (
       <main className={styles.page}>
         <p className={styles.back}>
@@ -60,12 +63,16 @@ export default async function ReceivePage({
         </p>
         <h1>Receive rigs</h1>
         <p className={styles.muted}>
-          Rigs sent to you show here until you receive them. Scan each rig you have in hand, then press Receive.
+          {wholeTeam
+            ? "Rigs sent to the hardware team show here until someone receives them. Any hardware person can receive them, whoever they were sent to. Scan each rig you have in hand, then press Receive."
+            : "Rigs sent to you show here until you receive them. Scan each rig you have in hand, then press Receive."}
         </p>
 
-        <h2>Waiting for you ({waiting.length})</h2>
+        <h2>
+          {wholeTeam ? "Waiting for the hardware team" : "Waiting for you"} ({waiting.length})
+        </h2>
         {waiting.length === 0 ? (
-          <p className={styles.muted}>No rigs are waiting for you.</p>
+          <p className={styles.muted}>{wholeTeam ? "No rigs are waiting for the hardware team." : "No rigs are waiting for you."}</p>
         ) : (
           <table className={styles.table}>
             <thead>
@@ -75,6 +82,7 @@ export default async function ReceivePage({
                 <th scope="col">Model</th>
                 <th scope="col">Hub</th>
                 <th scope="col">Status</th>
+                {wholeTeam && <th scope="col">Sent to</th>}
               </tr>
             </thead>
             <tbody>
@@ -87,6 +95,7 @@ export default async function ReceivePage({
                   <td>{i.model || "—"}</td>
                   <td>{hubNames.get(i.current_hub) ?? i.current_hub}</td>
                   <td>{STATUS_LABELS[i.status] ?? i.status}</td>
+                  {wholeTeam && <td>{personNames.get(i.current_holder) ?? (i.current_holder || "—")}</td>}
                 </tr>
               ))}
             </tbody>
