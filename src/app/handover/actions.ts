@@ -164,6 +164,22 @@ export async function sendCards(formData: FormData) {
           comment: qcComment,
         }));
       } else {
+        // Hardware team: "Repaired" goes to an IM, "Send to hardware" to ANOTHER hardware person.
+        if (ctx.senderRole === "hardware") {
+          const to = ctx.people.find((p) => p.person_id === input.recipient);
+          if (hwOutcome === "transfer") {
+            if (!to || to.role !== "hardware") {
+              return { events: [], items: [], errors: ["\"Send to hardware\" goes to another hardware person. Choose one from the Hardware team."] };
+            }
+            if (to.person_id === ctx.actorPersonId) {
+              return { events: [], items: [], errors: ["Choose another hardware person, not yourself."] };
+            }
+          } else if (hwOutcome === "repaired" && to && to.role !== "im") {
+            return { events: [], items: [], errors: ["A repaired rig goes to an IM. To hand it to another hardware person, choose \"Send to hardware\"."] };
+          } else if (!hwOutcome) {
+            return { events: [], items: [], errors: ["Choose the rig status."] };
+          }
+        }
         // IM → QC team: the rig's QC goes back to "QC pending" until QC records Pass or Fail.
         // Hardware team → IM: the rig is "Repaired · Ready for field".
         const toRole = ctx.people.find((p) => p.person_id === input.recipient)?.role;

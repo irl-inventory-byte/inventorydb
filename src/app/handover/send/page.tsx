@@ -31,7 +31,7 @@ const SEND_TO: Record<string, Role[]> = {
   internal: ["im", "ifo", "fo", "rig", "qc", "internal"], // works like an IM
   rig: ["im", "ifo", "fo", "rig", "internal"],
   qc: ["im", "hardware", "qc"], // QC pass → IM, QC fail → hardware team, transfer → another QC person
-  hardware: ["im"], // repaired rig → IM (R&D and Dead are not sent to anyone)
+  hardware: ["im", "hardware"], // repaired → IM, or a transfer to another hardware person (R&D and Dead: nobody)
 };
 
 // QC and hardware teams send the rigs they are holding.
@@ -90,8 +90,8 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
     label: GROUP_LABELS[role] ?? role,
     people: recipients
       .filter((p) => p.role === role)
-      // A QC person transfers to ANOTHER QC person, never to themselves.
-      .filter((p) => !(user.role === "qc" && role === "qc" && p.person_id === user.personId))
+      // A QC or hardware person transfers to ANOTHER person of their team, never to themselves.
+      .filter((p) => !((user.role === "qc" || user.role === "hardware") && role === user.role && p.person_id === user.personId))
       .map((p) => ({
         id: p.person_id,
         label: `${p.name} (${hubName.get(p.hub) ?? p.hub})${p.linked_user ? ` — ${p.linked_user}` : ""}`,
@@ -165,7 +165,7 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
         {seesRigs && user.role !== "qc" && (
           <p className={styles.hint}>
             {user.role === "hardware"
-              ? "Rigs: Repaired → send to an IM (it is then Ready for field). R&D or Dead → the rig leaves service."
+              ? "Rigs: Repaired → an IM (it is then Ready for field). Send to hardware → another hardware person. R&D or Dead → the rig leaves service."
               : "Rigs: QC passed or repaired → FO or IFO. QC pending or failed → QC team only."}
           </p>
         )}
@@ -187,7 +187,7 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
 
         {one(sp.done) && one(sp.outcome) && (
           <p className={`${styles.ok} ${styles.result}`}>
-            Marked {one(sp.done)} rig(s) as {one(sp.outcome) === "dead" ? "Dead" : "R&D"}.
+            Marked {one(sp.done)} rig(s) as {one(sp.outcome) === "dead" ? "Dead / Retired" : "R&D"}.
           </p>
         )}
         {one(sp.done) && !one(sp.outcome) && (

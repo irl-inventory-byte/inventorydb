@@ -57,6 +57,7 @@ const READY_FOR_FIELD = new Set(["pass", "repaired"]);
  *   QC team → hardware team         only when QC is Fail
  *   QC team → another QC person     always (a transfer, no QC result)
  *   hardware team → IM              after repair (the rig is then "Repaired · Ready for field")
+ *   hardware team → hardware team   a transfer to another hardware person (no repair recorded)
  * Nothing else is allowed for a rig. Returns the error messages, if any.
  */
 function rigRouteErrors(
@@ -92,7 +93,9 @@ function rigRouteErrors(
   }
 
   if (senderRole === "hardware") {
-    if (to !== "im") errors.push("The hardware team can send a repaired rig only to an IM.");
+    if (to !== "im" && to !== "hardware") {
+      errors.push("The hardware team can send a rig only to an IM (repaired) or to another hardware person.");
+    }
     return errors;
   }
 

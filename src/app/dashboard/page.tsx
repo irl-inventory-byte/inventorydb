@@ -318,10 +318,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       (cityFilter.length === 0 || splitCities(a.city).some((c) => cityFilter.includes(c))) &&
       (roleFilter.length === 0 || roleFilter.includes(a.role)),
   );
-  // "Moved per day" chart: person and city filters (?mperson=…&mcity=…). The other settings are kept.
+  // "Moved per day" chart: person, city and role filters (?mperson=…&mcity=…&mrole=…). Other settings are kept.
   const movePerson = one(sp.mperson);
   const moveCity = one(sp.mcity);
-  const movedDays = dailyMoves(events, hubs, now, 14, { person: movePerson, city: moveCity });
+  const moveRole = one(sp.mrole);
+  const movedDays = dailyMoves(events, hubs, now, 14, { person: movePerson, city: moveCity, role: moveRole }, people);
   const moveOptions = moveFilterOptions(events, hubs, people, now, 14);
   const moveKeep: Record<string, string> = {};
   for (const k of ["type", "acity", "arole", "empty"]) if (one(sp[k])) moveKeep[k] = one(sp[k]);
@@ -331,6 +332,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   if (showEmpty) keepParams.empty = "1";
   if (movePerson) keepParams.mperson = movePerson;
   if (moveCity) keepParams.mcity = moveCity;
+  if (moveRole) keepParams.mrole = moveRole;
 
   // Who has items: longest out first, then most items.
   const holdersSorted = [...d.holders].sort(
@@ -475,8 +477,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           days={movedDays}
           people={moveOptions.people}
           cities={moveOptions.cities}
+          roles={moveOptions.roles}
           person={movePerson}
           city={moveCity}
+          role={moveRole}
           keep={moveKeep}
         />
 
