@@ -1,3 +1,4 @@
+import { CachedBackend } from "./cached";
 import { MemoryBackend } from "./memory";
 import { SheetsBackend } from "./sheets";
 import { Store } from "./store";
@@ -12,12 +13,16 @@ function create(): Store {
         "STORE=sheets needs SHEET_ID, GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY",
       );
     }
+    // CachedBackend: each tab is downloaded once and reused for a few seconds, so a page or a send does
+    // not hit Google's per-minute read limit (see cached.ts).
     return new Store(
-      new SheetsBackend({
-        spreadsheetId: SHEET_ID,
-        clientEmail: GOOGLE_SERVICE_ACCOUNT_EMAIL,
-        privateKey: GOOGLE_PRIVATE_KEY,
-      }),
+      new CachedBackend(
+        new SheetsBackend({
+          spreadsheetId: SHEET_ID,
+          clientEmail: GOOGLE_SERVICE_ACCOUNT_EMAIL,
+          privateKey: GOOGLE_PRIVATE_KEY,
+        }),
+      ),
     );
   }
   return new Store(new MemoryBackend());

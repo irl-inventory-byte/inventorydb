@@ -24,6 +24,26 @@ function columnLetter(n: number): string {
 
 const tabs = Object.keys(TABS) as TabName[];
 
+/**
+ * Google answers 429 ("too many requests") when the per-minute limit is used up, and sometimes a short
+ * 500/503. Wait and try again (1 s, 2 s, 4 s) instead of failing the page. Writes are only retried on 429,
+ * because then Google did not save anything, so a retry can never add a row twice.
+ */
+async function withRetry<T>(fn: () => Promise<T>, write = false): Promise<T> {
+  const waits = [1000, 2000, 4000];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const e = err as { code?: number | string; status?: number; response?: { status?: number } };
+      const status = Number(e.response?.status ?? e.status ?? e.code);
+      const retryable = status === 429 || (!write && (status === 500 || status === 502 || status === 503));
+      if (!retryable || attempt >= waits.length) throw err;
+      await new Promise((r) => setTimeout(r, waits[attempt]));
+    }
+  }
+}
+
 export interface SheetsConfig {
   spreadsheetId: string;
   clientEmail: string;
@@ -98,13 +118,12 @@ export class SheetsBackend implements TableBackend {
   async readAll(tab: TabName): Promise<Row[]> {
     const columns = TABS[tab];
 
-    const result =
-      await this.api.spreadsheets.values.get({
+    const result: { data: sheets_v4.Schema$ValueRange } = await withRetry(() =>
+      this.api.spreadsheets.values.get({
         spreadsheetId: this.id,
-        range: `${tab}!A2:${columnLetter(
-          columns.length
-        )}`,
-      });
+        range: `${tab}!A2:${columnLetter(columns.length)}`,
+      }),
+    );
 
     return (result.data.values ?? [])
       .filter(
@@ -133,15 +152,19 @@ export class SheetsBackend implements TableBackend {
   async append(tab: TabName, rows: Row[]) {
     if (!rows.length) return;
 
-    await this.api.spreadsheets.values.append({
-      spreadsheetId: this.id,
-      range: `${tab}!A1`,
-      valueInputOption: "RAW",
-      insertDataOption: "INSERT_ROWS",
-      requestBody: {
-        values: this.toValues(tab, rows),
-      },
-    });
+    await withRetry(
+      () =>
+        this.api.spreadsheets.values.append({
+          spreadsheetId: this.id,
+          range: `${tab}!A1`,
+          valueInputOption: "RAW",
+          insertDataOption: "INSERT_ROWS",
+          requestBody: {
+            values: this.toValues(tab, rows),
+          },
+        }),
+      true,
+    );
   }
 
   async upsert(tab: TabName, rows: Row[]) {
@@ -151,11 +174,12 @@ export class SheetsBackend implements TableBackend {
     const key = columns[0];
     const last = columnLetter(columns.length);
 
-    const keys =
-      await this.api.spreadsheets.values.get({
+    const keys: { data: sheets_v4.Schema$ValueRange } = await withRetry(() =>
+      this.api.spreadsheets.values.get({
         spreadsheetId: this.id,
         range: `${tab}!A:A`,
-      });
+      }),
+    );
 
     const rowOf = new Map<string, number>();
 
@@ -187,13 +211,17 @@ export class SheetsBackend implements TableBackend {
     }
 
     if (updates.length) {
-      await this.api.spreadsheets.values.batchUpdate({
-        spreadsheetId: this.id,
-        requestBody: {
-          valueInputOption: "RAW",
-          data: updates,
-        },
-      });
+      await withRetry(
+        () =>
+          this.api.spreadsheets.values.batchUpdate({
+            spreadsheetId: this.id,
+            requestBody: {
+              valueInputOption: "RAW",
+              data: updates,
+            },
+          }),
+        true,
+      );
     }
 
     await this.append(tab, inserts);
