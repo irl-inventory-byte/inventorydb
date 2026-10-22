@@ -183,6 +183,8 @@ export default async function Home({
           </div>
 
           <div className={styles.actions}>
+            {/* Logins with a secondary role switch between their two roles here, next to their name. */}
+            <RoleSwitch role={user.role} primaryRole={user.primaryRole} secondaryRole={user.secondaryRole} back="/" />
             <div className={styles.userChip}>
               <span
                 className={styles.avatar}
@@ -218,9 +220,6 @@ export default async function Home({
             </form>
           </div>
         </div>
-
-        {/* Logins with a secondary role can switch between their two roles. */}
-        <RoleSwitch role={user.role} primaryRole={user.primaryRole} secondaryRole={user.secondaryRole} back="/" />
 
         {/* No tiles at all means the login's role is not one the app knows. Say so instead of a blank page. */}
         {!ROLE_LABELS[user.role] && (

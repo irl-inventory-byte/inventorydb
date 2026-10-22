@@ -8,7 +8,8 @@ type Outcome = "" | "repaired" | "transfer" | "dead" | "rnd";
 
 /**
  * Hardware team only: a "Rig status" dropdown before "Send to".
- *   Repaired          → send to an IM (the rig is then RTD · Ready to deploy).
+ *   Repaired          → send to an IM (the rig is then RTD · Ready to deploy). Sanitization status (Yes / No)
+ *                       is required and saved on the receipt.
  *   Send to hardware  → hand the rig to ANOTHER hardware person (no repair recorded); they receive it.
  *   Dead / Retired    → the rig is retired (Dead / Retired tile). A reason and a confirm tick are required.
  *   R & D             → the rig stays with you, marked R&D (R&D tile). A reason is required.
@@ -50,6 +51,23 @@ export default function HardwareSendFields({
           </p>
         </div>
       </div>
+
+      {outcome === "repaired" && (
+        <div className={styles.field}>
+          <span className={styles.label}>Sanitization status</span>
+          <div className={styles.control}>
+            <div role="radiogroup" aria-label="Sanitization status" style={{ display: "flex", gap: 20, alignItems: "center" }}>
+              <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                <input type="radio" name="sanitized" value="yes" required /> Yes
+              </label>
+              <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                <input type="radio" name="sanitized" value="no" /> No
+              </label>
+            </div>
+            <p className={styles.hint}>Was the rig sanitized before it goes back to the IM? Saved on the receipt.</p>
+          </div>
+        </div>
+      )}
 
       {(outcome === "repaired" || outcome === "transfer") &&
         (shown.length ? (

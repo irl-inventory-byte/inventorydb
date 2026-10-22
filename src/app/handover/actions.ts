@@ -145,6 +145,10 @@ export async function sendCards(formData: FormData) {
   const qcResult = String(formData.get("qcResult") ?? "");
   const qcComment = String(formData.get("qcComment") ?? "").trim().slice(0, 1000);
   let qcRows: TabRows["qc_checks"][] = [];
+  // Hardware team → IM (Repaired): was the rig sanitized? Yes / No, saved on the receipt and the rig's history.
+  const sanitized = String(formData.get("sanitized") ?? "");
+  const sanitizedText = sanitized === "yes" ? "Yes" : sanitized === "no" ? "No" : "";
+  let hwRows: TabRows["hardware_updates"][] = [];
 
   await run(
     formData,
@@ -199,6 +203,8 @@ export async function sendCards(formData: FormData) {
             }
           } else if (hwOutcome === "repaired" && to && to.role !== "im") {
             return { events: [], items: [], errors: ["A repaired rig goes to an IM. To hand it to another hardware person, choose \"Send to hardware\"."] };
+          } else if (hwOutcome === "repaired" && !sanitizedText) {
+            return { events: [], items: [], errors: ["Choose the Sanitization status: Yes or No."] };
           } else if (!hwOutcome) {
             return { events: [], items: [], errors: ["Choose the rig status."] };
           }
@@ -210,8 +216,26 @@ export async function sendCards(formData: FormData) {
           toRole === "qc" && ctx.senderRole !== "hardware"
             ? { status: "qc_pending" as const, comment: "Sent to QC for checking" }
             : ctx.senderRole === "hardware" && toRole === "im"
-              ? { status: "repaired" as const, comment: "Repaired by hardware team" }
+              ? {
+                  status: "repaired" as const,
+                  comment: `Repaired by hardware team${sanitizedText ? ` · Sanitization: ${sanitizedText}` : ""}`,
+                }
               : undefined;
+        if (ctx.senderRole === "hardware" && toRole === "im" && sanitizedText) {
+          // On the receipt (the send note) and in the rig's hardware updates.
+          input.note = [`Sanitization: ${sanitizedText}`, input.note.trim()].filter(Boolean).join(" · ");
+          hwRows = targets
+            .filter((t) => t.item_type === "rig")
+            .map((t) => ({
+              update_id: ctx.newId("hw"),
+              item_id: t.item_id,
+              recorded_at: ctx.now,
+              recorded_by: ctx.by,
+              recorded_by_name: displayName(ctx.people, ctx.actorPersonId),
+              update_type: "Sanitization",
+              comment: sanitizedText,
+            }));
+        }
         if (mark) {
           qcRows = targets
             .filter((t) => t.item_type === "rig")
@@ -238,6 +262,7 @@ export async function sendCards(formData: FormData) {
     async (plan) => {
       // Save the rig QC change (QC result, back to QC pending, or repaired) with the handover.
       if (qcRows.length) await getStore().appendRows("qc_checks", qcRows);
+      if (hwRows.length) await getStore().appendRows("hardware_updates", hwRows);
 
       // Save the receipt PDF to Drive and log it in the "Receipts" tab.
       // This runs after the page has redirected, so the user never waits for it,

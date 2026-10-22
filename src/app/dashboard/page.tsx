@@ -365,6 +365,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             </div>
           </div>
           <div className={styles.actions}>
+            {/* Primary / secondary role switch, in the top bar. */}
+            <RoleSwitch role={user.role} primaryRole={user.primaryRole} secondaryRole={user.secondaryRole} back="/dashboard" />
             {canHandle && (
               <>
                 <Link href="/handover/send" className={`${styles.btn} ${styles.btnPrimary}`}>
@@ -410,8 +412,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           <Icon name="search" size={18} />
           <input name="q" placeholder="Find an item by serial, prism no., brand or model" aria-label="Find an item" />
         </form>
-
-        <RoleSwitch role={user.role} primaryRole={user.primaryRole} secondaryRole={user.secondaryRole} back="/dashboard" />
 
         <TypeSwitch role={user.role} current={type} path="/dashboard" includeAll={false} />
 
