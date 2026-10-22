@@ -6,7 +6,7 @@ import styles from "../form.module.css";
 export interface PersonGroup {
   role: string;
   label: string;
-  people: { id: string; label: string }[];
+  people: { id: string; label: string; city?: string }[];
 }
 
 // A name typed by hand (not in People). Listed internal people are the "internal" group.
@@ -19,6 +19,7 @@ const INTERNAL = "typed_internal";
  * a typed name, so the card is recorded as "With internal" and shows under that name directly.
  * The location is never filled in for you: it starts empty and has to be chosen every time, because an
  * FO or IFO may be working away from their own hub.
+ * Field officers: a City list appears too, so the long FO list can be narrowed to one city first.
  */
 export default function SendToFields({
   groups,
@@ -37,8 +38,13 @@ export default function SendToFields({
   const [person, setPerson] = useState("");
   const [internalName, setInternalName] = useState("");
   const [hub, setHub] = useState("");
-  const people = groups.find((g) => g.role === role)?.people ?? [];
+  const [city, setCity] = useState("");
   const isInternal = role === INTERNAL;
+  const isFo = role === "fo";
+  const all = groups.find((g) => g.role === role)?.people ?? [];
+  // FO only: the cities the field officers are in, and the list narrowed to the chosen city.
+  const cities = isFo ? [...new Set(all.map((p) => p.city || "").filter(Boolean))].sort((a, b) => a.localeCompare(b)) : [];
+  const people = isFo && city ? all.filter((p) => p.city === city) : all;
 
   return (
     <>
@@ -56,6 +62,7 @@ export default function SendToFields({
                 setRole(e.target.value);
                 setPerson(""); // a person from the old category must not stay selected
                 setInternalName("");
+                setCity("");
               }}
             >
               <option value="">Select a category</option>
@@ -89,7 +96,9 @@ export default function SendToFields({
                 disabled={!role}
                 onChange={(e) => setPerson(e.target.value)}
               >
-                <option value="">{role ? "Select a person" : "Choose a category first"}</option>
+                <option value="">
+                  {!role ? "Choose a category first" : isFo && city ? `Select a field officer in ${city} (${people.length})` : "Select a person"}
+                </option>
                 {people.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.label}
@@ -98,6 +107,28 @@ export default function SendToFields({
               </select>
             )}
           </div>
+          {isFo && cities.length > 0 && (
+            <div className={styles.pair} style={{ marginTop: 8 }}>
+              <select
+                aria-label="City of the field officer"
+                value={city}
+                onChange={(e) => {
+                  setCity(e.target.value);
+                  setPerson(""); // pick again from the shorter list
+                }}
+              >
+                <option value="">All cities ({all.length} FOs)</option>
+                {cities.map((c) => (
+                  <option key={c} value={c}>
+                    {c} ({all.filter((p) => p.city === c).length})
+                  </option>
+                ))}
+              </select>
+              <span className={styles.hint} style={{ alignSelf: "center", margin: 0 }}>
+                Choose the city first to shorten the FO list.
+              </span>
+            </div>
+          )}
           <p className={styles.hint}>
             {isInternal ? (
               <>Recorded as &quot;With internal&quot;, under the name you type. Receive it back the same way as any other item.</>

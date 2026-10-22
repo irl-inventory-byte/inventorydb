@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/authz";
-import { one } from "@/lib/labels";
-import type { ItemEvent } from "@/lib/schema";
+import { ROLE_LABELS, one } from "@/lib/labels";
+import type { ItemEvent, Role } from "@/lib/schema";
 import { VIEW_ROLES, storeForAll } from "@/lib/access";
-import { formatIst } from "@/lib/time";
+import { formatIst, istDate } from "@/lib/time";
 import styles from "../../admin/admin.module.css";
 import { deleteReceipt, restoreReceipt, updateReceiptNote } from "./actions";
 
@@ -14,14 +14,16 @@ const TYPE_LABEL: Record<string, string> = {
   receive: "Receive",
   correct: "Correction",
   import: "Added",
+  retire: "Dead / Retired",
+  rnd: "R&D",
+  report_lost: "Lost",
+  report_damaged: "Damaged",
+  reassign_home_hub: "Home hub changed",
 };
 
-const TYPE_FILTERS = [
-  { value: "", label: "All types" },
-  { value: "check_out", label: "Send" },
-  { value: "receive", label: "Receive" },
-  { value: "correct", label: "Correction" },
-];
+// Fields in each filter (and the page links), in the address bar: ?q=&type=&city=&role=&person=&from=&to=
+const FILTER_KEYS = ["q", "type", "city", "role", "person", "from", "to"] as const;
+const isDay = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
 
 const actionLink = {
   display: "inline-block",
@@ -50,19 +52,29 @@ export default async function ReceiptsPage({
   const sp = (await searchParams) ?? {};
   const q = one(sp.q).trim().toLowerCase();
   const type = one(sp.type);
+  // Filters: city (of the From or To hub), role and name (of the From or To person), date range, action.
+  const cityF = one(sp.city);
+  const roleF = one(sp.role);
+  const personF = one(sp.person);
+  const fromF = isDay(one(sp.from)) ? one(sp.from) : "";
+  const toF = isDay(one(sp.to)) ? one(sp.to) : "";
   const showDeleted = isAdmin && one(sp.deletedView) === "1";
   const requestedPage = Number(one(sp.page)) || 1;
 
   const store = storeForAll(user.role); // SD cards, rigs and mobiles together
-  const [events, hubs, edits] = await Promise.all([
+  const [events, hubs, people, edits] = await Promise.all([
     store.list("events"),
     store.list("hubs"),
+    store.list("people"),
     // The tab is created on the first edit, so it may not exist yet.
     store.list("receipt_edits").catch(() => []),
   ]);
 
   const hubName = new Map(hubs.map((h) => [h.hub_id, h.name]));
   const hub = (id: string) => (id ? (hubName.get(id) ?? id) : "");
+  // A hub's city: its City, or its name when City is blank.
+  const hubCity = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
+  const roleOf = new Map(people.map((p) => [p.person_id, p.role]));
 
   // One receipt per batch.
   const byBatch = new Map<string, ItemEvent[]>();
@@ -98,6 +110,14 @@ export default async function ReceiptsPage({
       fromHub: hub(first.from_hub),
       toName: first.to_person,
       toHub: hub(first.hub),
+      // For the filters: both cities, both roles and both names on the receipt, and its IST day.
+      cities: [hubCity.get(first.from_hub), hubCity.get(first.hub)].filter((c): c is string => !!c),
+      roles: [roleOf.get(first.from_id), roleOf.get(first.to_id)].filter((r): r is Role => !!r),
+      names: [first.from_person, first.to_person].map((n) => (n ?? "").trim()).filter(Boolean),
+      day: (() => {
+        const t = Date.parse(first.occurred_at);
+        return Number.isNaN(t) ? "" : istDate(new Date(t));
+      })(),
       items: rows.map((r) => r.item_id),
       recordedBy: first.recorded_by,
       note: first.note,
@@ -113,6 +133,10 @@ export default async function ReceiptsPage({
     // IM / rig team never see deleted receipts. Admins see them on request.
     .filter((r) => (showDeleted ? r.deleted : !r.deleted))
     .filter((r) => !type || r.action === type)
+    .filter((r) => !cityF || r.cities.includes(cityF))
+    .filter((r) => !roleF || r.roles.includes(roleF as Role))
+    .filter((r) => !personF || r.names.includes(personF))
+    .filter((r) => (!fromF || (r.day && r.day >= fromF)) && (!toF || (r.day && r.day <= toF)))
     .filter(
       (r) =>
         !q ||
@@ -129,10 +153,24 @@ export default async function ReceiptsPage({
   const page = Math.min(Math.max(1, requestedPage), pages);
   const shown = receipts.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
+  // Choices for the filter lists, from the receipts that exist (deleted ones as they are being viewed).
+  const pool = all.filter((r) => (showDeleted ? r.deleted : !r.deleted));
+  const sortText = (list: Iterable<string>) => [...new Set(list)].sort((a, b) => a.localeCompare(b));
+  const cityOptions = sortText(pool.flatMap((r) => r.cities));
+  const roleOptions = sortText(pool.flatMap((r) => r.roles));
+  // With a role chosen, the name list shows only people of that role.
+  const nameOptions = sortText(
+    roleF
+      ? people.filter((p) => p.role === roleF).map((p) => p.name.trim()).filter((n) => pool.some((r) => r.names.includes(n)))
+      : pool.flatMap((r) => r.names),
+  );
+  const typeOptions = sortText(pool.map((r) => r.action));
+  const filters: Record<string, string> = { q: one(sp.q).trim(), type, city: cityF, role: roleF, person: personF, from: fromF, to: toF };
+  const filtered = FILTER_KEYS.some((k) => filters[k]);
+
   const link = (params: Record<string, string>) =>
     `/handover/receipts?${new URLSearchParams({
-      ...(q && { q }),
-      ...(type && { type }),
+      ...Object.fromEntries(FILTER_KEYS.filter((k) => filters[k]).map((k) => [k, filters[k]])),
       ...(showDeleted && { deletedView: "1" }),
       ...params,
     })}`;
@@ -169,26 +207,63 @@ export default async function ReceiptsPage({
       {restored && <p className={styles.ok} role="status">Receipt {restored} restored.</p>}
       {error && <p className={styles.error} role="alert">{error}</p>}
 
-      <form method="get" className={styles.row}>
+      <form method="get" className={styles.row} style={{ alignItems: "center" }}>
         <input
           name="q"
           defaultValue={one(sp.q)}
           placeholder="Search batch, serial, person, note or email"
           aria-label="Search receipts"
         />
-        <select name="type" defaultValue={type} aria-label="Receipt type">
-          {TYPE_FILTERS.map((t) => (
-            <option key={t.value} value={t.value}>
-              {t.label}
+        <select name="type" defaultValue={type} aria-label="Action">
+          <option value="">All actions</option>
+          {typeOptions.map((t) => (
+            <option key={t} value={t}>
+              {TYPE_LABEL[t] ?? t}
             </option>
           ))}
         </select>
+        <select name="city" defaultValue={cityF} aria-label="City">
+          <option value="">All cities</option>
+          {cityOptions.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        <select name="role" defaultValue={roleF} aria-label="Role">
+          <option value="">All roles</option>
+          {roleOptions.map((r) => (
+            <option key={r} value={r}>
+              {ROLE_LABELS[r as Role] ?? r}
+            </option>
+          ))}
+        </select>
+        <select name="person" defaultValue={personF} aria-label="Name" style={{ maxWidth: 240 }}>
+          <option value="">All names</option>
+          {nameOptions.map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          From
+          <input type="date" name="from" defaultValue={fromF} max={toF || undefined} aria-label="From date" />
+        </label>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          To
+          <input type="date" name="to" defaultValue={toF} min={fromF || undefined} aria-label="To date" />
+        </label>
         {showDeleted && <input type="hidden" name="deletedView" value="1" />}
         <button type="submit">Filter</button>
-        {(q || type) && (
-          <Link href={showDeleted ? "/handover/receipts?deletedView=1" : "/handover/receipts"}>Clear</Link>
+        {filtered && (
+          <Link href={showDeleted ? "/handover/receipts?deletedView=1" : "/handover/receipts"}>Clear filters</Link>
         )}
       </form>
+      <p className={styles.muted} style={{ marginTop: 0 }}>
+        City, role and name match either side of the receipt (From or To). Pick a role first to shorten the name list,
+        then press Filter.
+      </p>
 
       {isAdmin && (
         <p className={styles.row}>

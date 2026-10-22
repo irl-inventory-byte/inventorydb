@@ -90,6 +90,8 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
 
   // A person shows under their People role AND under their login's secondary role (e.g. an IM who is also QC).
   const secondary = secondaryByPerson(users);
+  // A person's city: the City of their hub, or the hub's name when City is blank (for the FO city filter).
+  const hubCityOf = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
   // Categories with the people in each, for the two-step picker. Empty categories are left out.
   const personGroups = (SEND_TO[user.role] ?? []).map((role) => ({
     role,
@@ -101,6 +103,7 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
       .map((p) => ({
         id: p.person_id,
         label: `${p.name} (${hubName.get(p.hub) ?? p.hub})${p.linked_user ? ` — ${p.linked_user}` : ""}`,
+        city: hubCityOf.get(p.hub) ?? "",
       })),
   })).filter((g) => g.people.length > 0);
 
