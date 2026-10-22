@@ -25,6 +25,7 @@ const CSS = `
 .dm-filters{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin:2px 0 4px}
 .dm-filters label{display:flex;gap:6px;align-items:center;font-size:.9rem;color:var(--text-secondary)}
 .dm-filters select{min-width:170px;max-width:260px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-1);color:var(--text-primary);font:inherit}
+.dm-filters input[type=date]{padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface-1);color:var(--text-primary);font:inherit}
 .dm-filters button{padding:7px 16px;border-radius:8px;border:1px solid #1e293b;background:#1e293b;color:#fff;font:inherit;font-weight:600;cursor:pointer}
 .dm-cols{position:absolute;inset:0;display:grid;gap:6px}
 .dm-day{display:flex;align-items:flex-end;justify-content:center;gap:3px;height:100%}
@@ -39,7 +40,8 @@ const CSS = `
 
 /**
  * "SD cards / Rigs moved per day": sent and received side by side for each day, the number on top of each
- * bar, full width so every day lines up with its date. Filters for person and city sit above the chart.
+ * bar, full width so every day lines up with its date. Filters for person, city, role and a From / To date
+ * range sit above the chart. Long ranges (more than 3 weeks) hide the numbers on the bars and label fewer dates.
  */
 export function DailyMoves({
   title,
@@ -51,6 +53,11 @@ export function DailyMoves({
   person,
   city,
   role,
+  from,
+  to,
+  today,
+  datesChosen,
+  cut,
   keep,
 }: {
   title: string;
@@ -62,6 +69,11 @@ export function DailyMoves({
   person: string;
   city: string;
   role: string;
+  from: string; // YYYY-MM-DD, first day shown
+  to: string; // YYYY-MM-DD, last day shown
+  today: string; // YYYY-MM-DD (India), the latest day that can be chosen
+  datesChosen: boolean; // a From / To was chosen (not the default last 14 days)
+  cut: boolean; // the chosen range was longer than allowed and was shortened
   keep: Record<string, string>; // other dashboard settings to keep when filtering
 }) {
   const top = niceMax(Math.max(0, ...days.flatMap((d) => [d.sent, d.received])));
@@ -69,8 +81,19 @@ export function DailyMoves({
   const totalReceived = days.reduce((s, d) => s + d.received, 0);
   const totalCorrected = days.reduce((s, d) => s + d.corrected, 0);
   const busy = days.filter((d) => d.sent + d.received + d.corrected > 0).reverse();
-  const cols = { gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` };
-  const filtered = !!(person || city || role);
+  // Many days: thinner gaps, no numbers on the bars (hover or Table view shows them), fewer date labels.
+  const dense = days.length > 21;
+  const step = Math.ceil(days.length / 14);
+  const cols = { gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))`, ...(dense ? { gap: 2 } : {}) };
+  // Quick ranges keep the person / city / role filters.
+  const quick = (n: number) => {
+    const q = new URLSearchParams({ ...keep, ...(person && { mperson: person }), ...(city && { mcity: city }), ...(role && { mrole: role }) });
+    const start = new Date(Date.parse(`${today}T00:00:00Z`) - (n - 1) * 86_400_000).toISOString().slice(0, 10);
+    q.set("mfrom", start);
+    q.set("mto", today);
+    return `/dashboard?${q}#moved`;
+  };
+  const filtered = !!(person || city || role || datesChosen);
   const roleName = (r: string) => ROLE_LABELS[r as Role] ?? r;
   // With a role chosen, the person list shows only people with that role.
   const shownPeople = role ? people.filter((p) => p.role === role || p.id === person) : people;
@@ -84,7 +107,9 @@ export function DailyMoves({
       <style>{CSS}</style>
       <div className={styles.sectionHead}>
         <h2>{title}</h2>
-        <span className={styles.muted}>Last {days.length} days</span>
+        <span className={styles.muted}>
+          {shortDate(from)} – {shortDate(to)} ({days.length} days)
+        </span>
       </div>
 
       <form method="get" action="/dashboard#moved" className="dm-filters">
@@ -125,6 +150,14 @@ export function DailyMoves({
             ))}
           </select>
         </label>
+        <label>
+          From
+          <input type="date" name="mfrom" defaultValue={from} max={today} />
+        </label>
+        <label>
+          To
+          <input type="date" name="mto" defaultValue={to} max={today} />
+        </label>
         <button type="submit">Apply</button>
         {filtered && (
           <Link href={clearHref} className={styles.link}>
@@ -134,7 +167,7 @@ export function DailyMoves({
       </form>
 
       <p className={styles.muted}>
-        {filtered && (
+        {(person || city || role) && (
           <>
             Showing{person ? ` ${personName}` : ""}
             {role ? ` ${roleName(role)}` : ""}
@@ -143,7 +176,19 @@ export function DailyMoves({
           </>
         )}
         <strong>{n(totalSent)}</strong> {unit} sent · <strong>{n(totalReceived)}</strong> received
-        {totalCorrected > 0 && <> · {n(totalCorrected)} corrected</>} in {days.length} days
+        {totalCorrected > 0 && <> · {n(totalCorrected)} corrected</>} in {days.length} days.{" "}
+        <span>
+          Quick:{" "}
+          {[7, 14, 30, 90].map((q, i) => (
+            <span key={q}>
+              {i > 0 && " · "}
+              <Link href={quick(q)} className={styles.link}>
+                {q} days
+              </Link>
+            </span>
+          ))}
+        </span>
+        {cut && <> (A range can be at most 92 days, so it starts on {shortDate(from)}.)</>}
       </p>
 
       <div className={styles.legend}>
@@ -174,9 +219,11 @@ export function DailyMoves({
                   <div key={i} className="dm-bar">
                     {b.v > 0 && (
                       <>
-                        <span className="dm-val" style={{ bottom: `calc(${(b.v / top) * 100}% + 3px)` }} aria-hidden="true">
-                          {compact(b.v)}
-                        </span>
+                        {!dense && (
+                          <span className="dm-val" style={{ bottom: `calc(${(b.v / top) * 100}% + 3px)` }} aria-hidden="true">
+                            {compact(b.v)}
+                          </span>
+                        )}
                         <div className="dm-fill" style={{ height: `${(b.v / top) * 100}%`, background: b.color }} />
                       </>
                     )}
@@ -189,7 +236,9 @@ export function DailyMoves({
       </div>
       <div className="dm-axis" style={cols}>
         {days.map((d, i) => (
-          <span key={d.date}>{i === 0 || d.date.endsWith("-01") ? shortDate(d.date) : dayNum(d.date)}</span>
+          <span key={d.date}>
+            {i % step !== 0 ? "" : i === 0 || d.date.endsWith("-01") || step > 1 ? shortDate(d.date) : dayNum(d.date)}
+          </span>
         ))}
       </div>
 

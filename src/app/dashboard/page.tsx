@@ -9,7 +9,8 @@ import { HANDLER_ROLES, INVENTORY_ROLES, allowedTypes, canSeeType, storeFor, typ
 import TypeSwitch from "../TypeSwitch";
 import { BarList, n } from "./charts";
 import { DailyMoves } from "./daily-moves";
-import { dailyMoves, moveFilterOptions } from "@/lib/daily-moves";
+import { dailyMoves, moveFilterOptions, pickRange } from "@/lib/daily-moves";
+import { istDate } from "@/lib/time";
 import styles from "./dashboard.module.css";
 import { HubOrgChart, countHidden } from "./hub-tree-view";
 import AttentionFilter from "./attentionfilter";
@@ -322,8 +323,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const movePerson = one(sp.mperson);
   const moveCity = one(sp.mcity);
   const moveRole = one(sp.mrole);
-  const movedDays = dailyMoves(events, hubs, now, 14, { person: movePerson, city: moveCity, role: moveRole }, people);
-  const moveOptions = moveFilterOptions(events, hubs, people, now, 14);
+  // Date range (?mfrom=YYYY-MM-DD&mto=YYYY-MM-DD). Default: the last 14 days.
+  const moveRange = pickRange(one(sp.mfrom), one(sp.mto), now, 14);
+  const movedDays = dailyMoves(events, hubs, moveRange, { person: movePerson, city: moveCity, role: moveRole }, people);
+  const moveOptions = moveFilterOptions(events, hubs, people, moveRange);
   const moveKeep: Record<string, string> = {};
   for (const k of ["type", "acity", "arole", "empty"]) if (one(sp[k])) moveKeep[k] = one(sp[k]);
 
@@ -333,6 +336,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   if (movePerson) keepParams.mperson = movePerson;
   if (moveCity) keepParams.mcity = moveCity;
   if (moveRole) keepParams.mrole = moveRole;
+  if (one(sp.mfrom)) keepParams.mfrom = one(sp.mfrom);
+  if (one(sp.mto)) keepParams.mto = one(sp.mto);
 
   // Who has items: longest out first, then most items.
   const holdersSorted = [...d.holders].sort(
@@ -481,6 +486,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           person={movePerson}
           city={moveCity}
           role={moveRole}
+          from={moveRange.from}
+          to={moveRange.to}
+          today={istDate(now)}
+          datesChosen={!!(one(sp.mfrom) || one(sp.mto))}
+          cut={moveRange.cut}
           keep={moveKeep}
         />
 
