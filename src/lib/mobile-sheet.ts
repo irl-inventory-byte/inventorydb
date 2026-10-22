@@ -9,7 +9,8 @@ import { google } from "googleapis";
  *
  * Share the sheet with GOOGLE_SERVICE_ACCOUNT_EMAIL as Viewer.
  *
- * Columns are matched by the header text in row 1, ignoring case, spaces and dots:
+ * Columns are matched by their heading, ignoring case, spaces and dots. The heading row is the first row
+ * (of the first 10) that has an "IMEI" heading, so title rows above the table are fine:
  *   IMEI          → any heading with "IMEI" in it (IMEI, IMEI 1, IMEI 2 …): a phone matches any of them
  *   Asset Tag, Serial, Model, Model No., Category, Manufacturer, Storage, Cost
  */
@@ -62,16 +63,29 @@ export function imeisIn(scanned: string): string[] {
   return all.length >= 14 ? [all] : [];
 }
 
-/** Turn the sheet's rows (row 1 = headers) into mobile records. Pure, for testing. */
+/** What was read from the mobile sheet, shown when a phone is not found. */
+export interface MobileSheetInfo {
+  tab: string;
+  phones: number;
+  imeiHeadings: string[];
+}
+
+/** Turn the sheet's rows into mobile records. Pure, for testing. */
 export function parseMobileRows(rows: string[][]): MobileRecord[] {
-  if (rows.length < 2) return [];
-  const headers = rows[0].map((h) => String(h ?? "").trim());
+  return parseMobileSheet(rows).records;
+}
+
+export function parseMobileSheet(rows: string[][]): { records: MobileRecord[]; imeiHeadings: string[] } {
+  // The heading row: the first of the top 10 rows with an "IMEI" heading.
+  const headAt = rows.slice(0, 10).findIndex((r) => r.some((h) => key(String(h ?? "")).includes("imei")));
+  if (headAt === -1) {
+    const first = (rows[0] ?? []).map((h) => String(h ?? "").trim()).filter(Boolean);
+    throw new Error(`The mobile sheet needs an "IMEI" column heading. Row 1 has: ${first.join(", ") || "(empty)"}`);
+  }
+  const headers = rows[headAt].map((h) => String(h ?? "").trim());
   const keys = headers.map(key);
 
   const imeiCols = keys.map((k, i) => (k.includes("imei") ? i : -1)).filter((i) => i !== -1);
-  if (imeiCols.length === 0) {
-    throw new Error(`The mobile sheet needs an "IMEI" column in row 1. Found: ${headers.join(", ") || "(empty)"}`);
-  }
   const col = (wanted: string[]) => {
     for (const w of wanted) {
       const at = keys.indexOf(w);
@@ -85,9 +99,9 @@ export function parseMobileRows(rows: string[][]): MobileRecord[] {
   >;
 
   const records: MobileRecord[] = [];
-  for (const row of rows.slice(1)) {
+  for (const row of rows.slice(headAt + 1)) {
     const cell = (i: number) => (i === -1 ? "" : String(row[i] ?? "").trim());
-    const imeis = imeiCols.map((i) => onlyDigits(cell(i))).filter((d) => d.length >= 14);
+    const imeis = [...new Set(imeiCols.flatMap((i) => imeisIn(cell(i))))];
     if (imeis.length === 0) continue;
     records.push({
       imei: imeis[0],
@@ -102,14 +116,17 @@ export function parseMobileRows(rows: string[][]): MobileRecord[] {
       cost: money(cell(at.cost)),
     });
   }
-  return records;
+  return { records, imeiHeadings: imeiCols.map((i) => headers[i]) };
 }
+
+// Same phone: the same number, or the same first 14 digits (the 15th digit is only a check digit).
+const sameImei = (a: string, b: string) => a === b || a.slice(0, 14) === b.slice(0, 14);
 
 /** Find a phone by any IMEI in what was scanned. */
 export function findMobile(records: MobileRecord[], scanned: string): MobileRecord | undefined {
   const wanted = imeisIn(scanned);
   if (wanted.length === 0) return undefined;
-  return records.find((r) => r.imeis.some((i) => wanted.includes(i)));
+  return records.find((r) => r.imeis.some((i) => wanted.some((w) => sameImei(i, w))));
 }
 
 /** The details saved with a mobile (shown on its page and searchable in Inventory). */
@@ -149,11 +166,16 @@ export function mobileSheetError(error: unknown): string {
   return `Could not read the mobile sheet: ${message.slice(0, 200)}`;
 }
 
-let cache: { records: MobileRecord[]; at: number; id: string } | null = null;
+let cache: { records: MobileRecord[]; info: MobileSheetInfo; at: number; id: string } | null = null;
 
 export async function loadMobileRecords(): Promise<MobileRecord[]> {
+  return (await loadMobileSheet()).records;
+}
+
+/** The phones in the mobile sheet, and where they were read from. */
+export async function loadMobileSheet(): Promise<{ records: MobileRecord[]; info: MobileSheetInfo }> {
   const spreadsheetId = mobileSheetId();
-  if (cache && cache.id === spreadsheetId && Date.now() - cache.at < TTL_MS) return cache.records;
+  if (cache && cache.id === spreadsheetId && Date.now() - cache.at < TTL_MS) return cache;
 
   const auth = new google.auth.JWT({
     email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
@@ -177,7 +199,7 @@ export async function loadMobileRecords(): Promise<MobileRecord[]> {
     valueRenderOption: "UNFORMATTED_VALUE",
   });
   const rows = (result.data.values ?? []).map((row) => row.map((v) => String(v ?? "")));
-  const records = parseMobileRows(rows);
-  cache = { records, at: Date.now(), id: spreadsheetId };
-  return records;
+  const { records, imeiHeadings } = parseMobileSheet(rows);
+  cache = { records, info: { tab, phones: records.length, imeiHeadings }, at: Date.now(), id: spreadsheetId };
+  return cache;
 }

@@ -1,18 +1,20 @@
 import type { CSSProperties } from "react";
 
 /**
- * SD card / Rig tags. Blue for SD cards, orange for rigs, each with its own
+ * SD card / Rig / Mobile tags. Blue for SD cards, orange for rigs, green for mobiles, each with its own
  * icon so they can be told apart without colour (and when printed in grey).
  * No hooks, so it works on server pages and inside client components.
  */
 
-type Kind = "sd_card" | "rig";
+type Kind = "sd_card" | "rig" | "mobile";
+const KINDS: Kind[] = ["sd_card", "rig", "mobile"];
 
-const kindOf = (type: string | undefined): Kind => (type === "rig" ? "rig" : "sd_card");
+const kindOf = (type: string | undefined): Kind => (type === "rig" ? "rig" : type === "mobile" ? "mobile" : "sd_card");
 
 const LOOK: Record<Kind, { label: string; plural: string; bg: string; fg: string; border: string }> = {
   sd_card: { label: "SD card", plural: "SD cards", bg: "#E6EEFF", fg: "#1D3FA8", border: "#B9CBF5" },
   rig: { label: "Rig", plural: "Rigs", bg: "#FFF1DC", fg: "#8A4300", border: "#F2C98F" },
+  mobile: { label: "Mobile", plural: "Mobiles", bg: "#E3F5EA", fg: "#14653A", border: "#A8DDBC" },
 };
 
 /** Light row tint so rigs stand out in long tables. */
@@ -38,6 +40,11 @@ function Icon({ kind, size }: { kind: Kind; size: number }) {
         <>
           <path d="M3 8h4l2-3h6l2 3h4v11H3z" />
           <circle cx="12" cy="13" r="3.5" />
+        </>
+      ) : kind === "mobile" ? (
+        <>
+          <rect x="6" y="2" width="12" height="20" rx="2" />
+          <path d="M11 18h2" />
         </>
       ) : (
         <>
@@ -79,10 +86,10 @@ export function TypeBadge({ type }: { type: string | undefined }) {
 
 /** Counts, e.g. "3 SD cards · 2 Rigs". Shows only the types present. */
 export function TypeCounts({ types }: { types: (string | undefined)[] }) {
-  const counts: Record<Kind, number> = { sd_card: 0, rig: 0 };
+  const counts: Record<Kind, number> = { sd_card: 0, rig: 0, mobile: 0 };
   for (const t of types) counts[kindOf(t)]++;
 
-  const shown = (["sd_card", "rig"] as Kind[]).filter((k) => counts[k] > 0);
+  const shown = KINDS.filter((k) => counts[k] > 0);
   if (shown.length === 0) return null;
 
   return (
@@ -99,9 +106,9 @@ export function TypeCounts({ types }: { types: (string | undefined)[] }) {
 
 /** Plain-text counts for buttons and messages: "3 SD cards, 2 Rigs". */
 export function typeCountText(types: (string | undefined)[]): string {
-  const counts: Record<Kind, number> = { sd_card: 0, rig: 0 };
+  const counts: Record<Kind, number> = { sd_card: 0, rig: 0, mobile: 0 };
   for (const t of types) counts[kindOf(t)]++;
-  return (["sd_card", "rig"] as Kind[])
+  return KINDS
     .filter((k) => counts[k] > 0)
     .map((k) => `${counts[k]} ${counts[k] === 1 ? LOOK[k].label : LOOK[k].plural}`)
     .join(", ");

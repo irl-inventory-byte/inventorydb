@@ -15,7 +15,7 @@ import type {
 } from "./backend";
 
 // An item's type. Older rows without a type are SD cards.
-const typeOf = (item: Row) => (item.item_type === "rig" ? "rig" : "sd_card");
+const typeOf = (item: Row) => (item.item_type === "rig" ? "rig" : item.item_type === "mobile" ? "mobile" : "sd_card");
 
 export class Store {
   /**
@@ -32,7 +32,7 @@ export class Store {
    * sees the items it is allowed to (see lib/access.ts).
    */
   forTypes(types: readonly string[]): Store {
-    const all = types.includes("sd_card") && types.includes("rig");
+    const all = types.includes("sd_card") && types.includes("rig") && types.includes("mobile");
     return all && !this.types ? this : new Store(this.backend, new Set(types));
   }
 

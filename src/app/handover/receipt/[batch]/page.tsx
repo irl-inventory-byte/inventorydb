@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { toDataURL as qrToDataURL } from "qrcode";
 import { requireRole } from "@/lib/authz";
 import { formatPrice, summarizeBatch } from "@/lib/receipt";
-import { VIEW_ROLES, storeFor } from "@/lib/access";
+import { VIEW_ROLES, storeForAll } from "@/lib/access";
 import { formatIst } from "@/lib/time";
 import styles from "../../form.module.css";
 import PrintButton from "./PrintButton";
@@ -104,7 +104,7 @@ export default async function ReceiptPage({
   const me = await requireRole(...VIEW_ROLES);
 
   const { batch } = await params;
-  const store = storeFor(me.role);
+  const store = storeForAll(me.role);
 
   const [events, items, hubs, people, users] = await Promise.all([
     store.list("events"),
@@ -178,6 +178,7 @@ export default async function ReceiptPage({
     [
       ["sd_card", "SD cards"],
       ["rig", "Rigs"],
+      ["mobile", "Mobiles"],
     ] as const
   )
     .map(([type, label]) => {
@@ -583,4 +584,4 @@ export default async function ReceiptPage({
       </div>
     </main>
   );
-} 
+}

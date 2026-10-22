@@ -5,7 +5,6 @@ import { useFormStatus } from "react-dom";
 import styles from "../admin/admin.module.css";
 import { addMobile, lookupMobile, type MobileLookup } from "./mobile-actions";
 
-type Hub = { hub_id: string; name: string };
 type Details = Omit<MobileLookup, "imei">;
 
 const EMPTY: Details = {
@@ -44,7 +43,7 @@ function SaveButton({ busy }: { busy: boolean }) {
 }
 
 /** Admin and IM: scan the phone's QR code (IMEI). Details load from the mobile sheet. */
-export default function MobileAddForm({ hubs, defaultHub }: { hubs: Hub[]; defaultHub?: string }) {
+export default function MobileAddForm({ homeHubName }: { homeHubName?: string }) {
   const [imei, setImei] = useState("");
   const [details, setDetails] = useState<Details>(EMPTY);
   const [note, setNote] = useState("");
@@ -72,9 +71,9 @@ export default function MobileAddForm({ hubs, defaultHub }: { hubs: Hub[]; defau
     try {
       const found = await lookupMobile(value);
       if (current !== requestId.current) return;
-      if (!found) {
+      if ("notFound" in found) {
         setDetails(EMPTY);
-        setNote("This IMEI is not in the mobile sheet. Enter the details by hand.");
+        setNote(found.notFound);
         return;
       }
       if ("error" in found) {
@@ -150,19 +149,10 @@ export default function MobileAddForm({ hubs, defaultHub }: { hubs: Hub[]; defau
           />
         </label>
 
-        <label style={fieldStyle}>
-          <span>Home hub *</span>
-          <select name="homeHub" defaultValue={defaultHub ?? ""} required style={inputStyle}>
-            <option value="" disabled>
-              Choose the hub
-            </option>
-            {hubs.map((h) => (
-              <option key={h.hub_id} value={h.hub_id}>
-                {h.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div style={fieldStyle}>
+          <span>Home hub</span>
+          <strong style={{ padding: "10px 0" }}>{homeHubName || "Instawork Robotics Labs"}</strong>
+        </div>
 
         {FIELDS.map(([k, label]) => (
           <label key={k} style={fieldStyle}>
@@ -183,13 +173,15 @@ export default function MobileAddForm({ hubs, defaultHub }: { hubs: Hub[]; defau
         <button type="button" disabled={busy || !imei.trim()} onClick={() => void lookup(imei)}>
           {busy ? "Fetching…" : "Fetch details"}
         </button>
-        <SaveButton busy={busy} />
+        <SaveButton busy={busy || !homeHubName} />
       </div>
 
       <p className={styles.muted} role="status" aria-live="polite" style={{ margin: 0 }}>
         {busy
           ? "Looking up the IMEI…"
-          : note || "Scan the phone's QR code (IMEI). Details load from the mobile sheet. New mobiles start in stock."}
+          : !homeHubName
+            ? "No active hub named Instawork Robotics Labs. Add it on the Hubs page first."
+            : note || "Scan the phone's QR code (IMEI). Details load from the mobile sheet. New mobiles start in stock."}
       </p>
     </form>
   );

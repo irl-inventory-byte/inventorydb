@@ -4,7 +4,7 @@ import { requireRole } from "@/lib/authz";
 import { LATE_AFTER_HOURS } from "@/lib/dashboard";
 import { QC_LABELS, STATUS_LABELS, one } from "@/lib/labels";
 import { STATUSES, type QcCheck } from "@/lib/schema";
-import { ADD_ROLES, MOBILE_ADD_ROLES, canSeeType, storeFor, typeParam } from "@/lib/access";
+import { ADD_ROLES, MOBILE_ADD_ROLES, canSeeType, storeFor, storeForAll, typeParam } from "@/lib/access";
 import { formatIst, istDate } from "@/lib/time";
 import styles from "../admin/admin.module.css";
 import { TypeBadge, rowTint } from "../ItemTypeBadge";
@@ -14,7 +14,8 @@ import MultiSelect from "./MultiSelect";
 import RigAddForm from "./RigAddForm";
 import RigBulkAddForm from "./RigBulkAddForm";
 import MobileAddForm from "./MobileAddForm";
-import { rigHomeHub } from "@/lib/rig-hub";
+import MobileBulkAddForm from "./MobileBulkAddForm";
+import { mobileHomeHub, rigHomeHub } from "@/lib/rig-hub";
 import BulkAddForm from "./BulkAddForm";
 import { applyCorrection } from "./actions";
 import CorrectionPanel from "./CorrectionPanel";
@@ -142,9 +143,9 @@ export default async function InventoryPage({
     type !== "mobile";
   const canAddRig =
     (user.role === "admin" || user.role === "im") && type !== "sd_card" && type !== "mobile";
-  // Mobiles: Admin and IM, on the Mobile tab only.
+  // Mobiles: Admin and IM, on the Mobile tab and under All items.
   const mobileView = type === "mobile";
-  const canAddMobile = mobileView && MOBILE_ADD_ROLES.includes(user.role);
+  const canAddMobile = (mobileView || type === "") && MOBILE_ADD_ROLES.includes(user.role) && canSeeType(user.role, "mobile");
 
   const q = one(sp.q).trim().toLowerCase();
 
@@ -176,7 +177,8 @@ export default async function InventoryPage({
       ? requestedPage
       : 1;
 
-  const store = storeFor(user.role, type);
+  // All items: SD cards, rigs and mobiles together. A switch choice: that type only.
+  const store = type ? storeFor(user.role, type) : storeForAll(user.role);
 
   const [items, hubs, people, events, qcChecks] = await Promise.all([
     store.list("items"),
@@ -377,9 +379,11 @@ export default async function InventoryPage({
             </tr>
           ) : (
             shown.map((item) => {
-              const { storage, cardType } = readCardDetails(
-                item.attributes
-              );
+              const isMobile = item.item_type === "mobile";
+              const card = readCardDetails(item.attributes);
+              // Mobiles under All items: storage from their own details, no prism or card colour.
+              const storage = isMobile ? mobileDetails(item.attributes)["Storage"] || "Not set" : card.storage;
+              const cardType = isMobile ? "—" : card.cardType;
 
               const itemUrl =
                 `/inventory/${encodeURIComponent(item.item_id)}`;
@@ -537,7 +541,7 @@ export default async function InventoryPage({
                     )}
                   </td>
 
-                  <td>{item.prism_no}</td>
+                  <td>{isMobile ? "—" : item.prism_no}</td>
                   <td>{item.brand}</td>
                   <td>{item.model}</td>
 
@@ -758,15 +762,15 @@ export default async function InventoryPage({
 
       {/* Add a mobile: Admin and IM. Scan the IMEI; details load from the mobile sheet. */}
       {canAddMobile && (
-        <details className={styles.details} open={one(sp.added) || one(sp.addError) ? true : undefined}>
+        <details className={styles.details} open={mobileView && (one(sp.added) || one(sp.addError)) ? true : undefined}>
           <summary>+ Add a mobile</summary>
 
           <p className={styles.muted}>
             Scan the QR code on the phone (IMEI). Asset Tag, Serial, Model, Model No., Category, Manufacturer,
-            Storage and Cost load from the mobile sheet. The mobile starts in stock at the hub you choose.
+            Storage and Cost load from the mobile sheet. Every mobile starts in stock at Instawork Robotics Labs.
           </p>
 
-          {one(sp.added) && (
+          {mobileView && one(sp.added) && (
             <p className={styles.ok}>
               Added mobile {one(sp.added)}.{" "}
               <Link href={`/inventory/${encodeURIComponent(one(sp.added))}`}>View it</Link>
@@ -774,12 +778,21 @@ export default async function InventoryPage({
             </p>
           )}
 
-          {one(sp.addError) && <p className={styles.error}>{one(sp.addError)}</p>}
+          {mobileView && one(sp.addError) && <p className={styles.error}>{one(sp.addError)}</p>}
 
-          <MobileAddForm
-            hubs={activeHubs}
-            defaultHub={people.find((p) => p.person_id === user.personId)?.hub || undefined}
-          />
+          <MobileAddForm homeHubName={mobileHomeHub(hubs)?.name} />
+        </details>
+      )}
+
+      {/* Add many mobiles at once: Admin and IM. Scan QR codes one after another. */}
+      {canAddMobile && (
+        <details className={styles.details}>
+          <summary>+ Add multiple mobiles</summary>
+          <p className={styles.muted}>
+            Scan the QR codes one after another (one per line), or paste IMEIs. Details load from the mobile sheet.
+            Every mobile starts in stock at Instawork Robotics Labs.
+          </p>
+          <MobileBulkAddForm homeHubName={mobileHomeHub(hubs)?.name} />
         </details>
       )}
 

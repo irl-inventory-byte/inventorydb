@@ -346,13 +346,15 @@ export async function buildReceiptPdf(
 
   y -= 8;
   // e.g. "5 items" then, when rigs are present, "3 SD cards · 2 Rigs" beside it.
-  const sdCount = summary.items.filter((i) => i.itemType !== "rig").length;
-  const rigCount = summary.items.length - sdCount;
+  const rigCount = summary.items.filter((i) => i.itemType === "rig").length;
+  const mobileCount = summary.items.filter((i) => i.itemType === "mobile").length;
+  const sdCount = summary.items.length - rigCount - mobileCount;
   text(itemCountLabel, margin, 13, bold);
-  if (rigCount > 0) {
+  if (rigCount > 0 || mobileCount > 0) {
     const parts = [
       sdCount ? `${sdCount} SD card${sdCount === 1 ? "" : "s"}` : "",
-      `${rigCount} Rig${rigCount === 1 ? "" : "s"}`,
+      rigCount ? `${rigCount} Rig${rigCount === 1 ? "" : "s"}` : "",
+      mobileCount ? `${mobileCount} Mobile${mobileCount === 1 ? "" : "s"}` : "",
     ].filter(Boolean);
     text(parts.join("  ·  "), margin + bold.widthOfTextAtSize(itemCountLabel, 13) + 14, 10.5, regular, grey);
   }
@@ -406,7 +408,7 @@ export async function buildReceiptPdf(
     drawRow(
       [
         String(index + 1),
-        item.itemType === "rig" ? "Rig" : "SD card",
+        item.itemType === "rig" ? "Rig" : item.itemType === "mobile" ? "Mobile" : "SD card",
         item.itemId,
         item.prismNo || "—",
         item.model || item.brand || "—",
