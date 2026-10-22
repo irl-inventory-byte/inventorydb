@@ -1,6 +1,6 @@
 import { ROLE_LABELS } from "@/lib/labels";
 import type { Role } from "@/lib/schema";
-import { switchRole } from "./role-actions";
+import { switchRole } from "./roleactions";
 
 /**
  * "Acting as: Admin · Switch to QC team". Shown only to logins that have a secondary role.
