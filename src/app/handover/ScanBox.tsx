@@ -74,7 +74,9 @@ export default function ScanBox({
   const results = useMemo(() => {
     const placeOf = new Map(items.map((i) => [i.id, i.hub]));
     const accepts = allowed ? new Set<string>(allowed) : ALLOWED[mode];
-    return classifyScans(text, statuses, accepts).map((r) => {
+    // Mobiles: a phone QR code ("IMEI1 - IMEI2") finds the phone by its IMEI.
+    const phones = new Set(items.filter((i) => i.type === "mobile").map((i) => i.id));
+    return classifyScans(text, statuses, accepts, phones).map((r) => {
       // Say so before submitting when a card is at a different hub than the one chosen: a card sent to a
       // hub must be received there, and cards must be in stock at the hub they are sent from.
       const sentTo = r.id ? placeOf.get(r.id) : undefined;

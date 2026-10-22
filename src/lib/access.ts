@@ -7,15 +7,16 @@ import { getStore } from "./store";
  *              SD cards   Rigs   Mobiles   Send/receive   Add items   Hardware   QC
  *   Admin        yes      yes     yes         yes           yes        yes      yes
  *   IM           yes      yes     yes         yes           yes        yes      yes
- *   FO           yes      yes     view         -             -          -        -
+ *   FO           yes      yes     yes          -             -          -        -
  *   Rig team     yes       -       -          yes           yes         -        -
- *   IFO          yes       -      view         -             -          -        -
+ *   IFO          yes       -      yes          -             -          -        -
  *   Hardware      -       yes      -        send only       -         yes       -
  *   QC            -       yes      -        send only       -          -       yes
  *   Internal     yes      yes      -          yes           -          -        -   (works like an IM for send / receive)
  *
- * Mobiles: Admin and IM add them (scan the IMEI; details load from the mobile sheet). They are kept in the
- * inventory only: they are not sent or received, and they never show in SD card or rig lists and counts.
+ * Mobiles: Admin and IM add them (scan the IMEI; details load from the mobile sheet). They are sent and
+ * received like SD cards, but only between IMs, FOs and IFOs (the rig, internal, QC and hardware teams don't
+ * handle mobiles). They never show in SD card or rig counts.
  *
  * Rig route: IM → QC team. QC pass → IM; QC fail → hardware team → IM → QC again.
  * An IM can send a rig to an FO or IFO only when its latest QC result is Pass.
@@ -24,7 +25,7 @@ import { getStore } from "./store";
 export const ITEM_TYPES = ["sd_card", "rig", "mobile"] as const;
 export type ItemType = (typeof ITEM_TYPES)[number];
 
-/** The types that are sent and received, and shown under "All items". Mobiles are kept apart. */
+/** SD cards and rigs (e.g. for views that are only about them). */
 export const CORE_TYPES: readonly ItemType[] = ["sd_card", "rig"];
 
 /** Can add mobiles. */
@@ -79,19 +80,18 @@ export function canSeeType(role: Role | undefined, type: ItemType): boolean {
  * hidden everywhere (lists, lookups, scans, history).
  *
  * `only` narrows further to one type (the "SD cards / Rigs / Mobiles" switch),
- * and is ignored if the role may not see that type. Without `only`, mobiles are left out, so
- * send / receive, receipts, My dashboard and "All items" only ever see SD cards and rigs.
+ * and is ignored if the role may not see that type.
  */
 export function storeFor(role: Role | undefined, only?: string) {
   const allowed = allowedTypes(role);
   const narrowed =
     only && (allowed as readonly string[]).includes(only)
       ? [only as ItemType]
-      : allowed.filter((t) => CORE_TYPES.includes(t));
+      : allowed;
   return getStore().forTypes(narrowed);
 }
 
-/** Every type this role may see, mobiles included (the page of one item). */
+/** Every type this role may see (same as storeFor without a type). */
 export function storeForAll(role: Role | undefined) {
   return getStore().forTypes(allowedTypes(role));
 }

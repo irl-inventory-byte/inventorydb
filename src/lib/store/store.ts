@@ -13,6 +13,7 @@ import type {
   DeleteItemResult,
   TableBackend,
 } from "./backend";
+import { matchScan, scanIndex } from "../scan";
 
 // An item's type. Older rows without a type are SD cards.
 const typeOf = (item: Row) => (item.item_type === "rig" ? "rig" : item.item_type === "mobile" ? "mobile" : "sd_card");
@@ -101,8 +102,8 @@ export class Store {
   }
 
   /**
-   * Look up scanned/typed IDs, ignoring letter case.
-   * Return a map keyed by the requested IDs.
+   * Look up scanned/typed IDs, ignoring letter case. A phone QR code ("IMEI1 - IMEI2") finds the phone
+   * by the IMEI in it. Return a map keyed by the requested IDs.
    */
   async getItemsByIds(ids: string[]) {
     const items = await this.list("items");
@@ -110,22 +111,13 @@ export class Store {
     const exact = new Map(
       items.map((item) => [item.item_id, item])
     );
-
-    const byUpper = new Map<string, Item>();
-
-    for (const item of items) {
-      const upper = item.item_id.toUpperCase();
-
-      if (!byUpper.has(upper)) {
-        byUpper.set(upper, item);
-      }
-    }
+    const { byUpper, phones } = scanIndex(exact.keys(), (id) => exact.get(id)?.item_type === "mobile");
 
     const found = new Map<string, Item>();
 
     for (const id of ids) {
-      const item =
-        exact.get(id) ?? byUpper.get(id.toUpperCase());
+      const match = matchScan(id, (x) => exact.has(x), byUpper, phones);
+      const item = match === undefined ? undefined : exact.get(match);
 
       if (item) {
         found.set(id, item);

@@ -58,7 +58,7 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
     id: i.item_id,
     status: i.status,
     hub: i.current_hub,
-    type: i.item_type === "rig" ? "rig" : "sd_card",
+    type: i.item_type === "rig" || i.item_type === "mobile" ? i.item_type : "sd_card",
     // Rigs show their condition while scanning, e.g. "QC passed · Idle" or "Repaired · Ready for field".
     ...(i.item_type === "rig" && { note: rigCondition(i.status, latestQc.get(i.item_id)).label }),
   }));
