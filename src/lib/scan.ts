@@ -13,29 +13,47 @@ export function collectIds(scanned: string, ticked: string[] = []): string[] {
   return [...new Set(all)];
 }
 
+/** Text compared without letter case or spaces, e.g. "Android Phone - 0221" = "android phone-0221". */
+export const plainCode = (v: string) => String(v ?? "").trim().toLowerCase().replace(/\s+/g, "");
+
+/** A mobile's Asset Tag and Serial, from its saved details (JSON), to find it by either. */
+export function mobileAliases(attributes: string): string[] {
+  try {
+    const a = JSON.parse(attributes || "{}") as Record<string, unknown>;
+    return [a["Asset Tag"], a["Serial"]].map((v) => String(v ?? "").trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Finds the item a scanned code belongs to: the same id, or the same id in other letter case (SD cards and
- * rigs: unchanged). Only for MOBILES, a phone QR code also finds the phone by an IMEI in it (the same number,
- * or the same first 14 digits; the 15th is a check digit).
+ * rigs: unchanged). Only for MOBILES, the phone is also found by an IMEI in the code (a QR code "IMEI1 - IMEI2";
+ * same first 14 digits, the 15th is a check digit), or by its Asset Tag or Serial.
  */
 export function matchScan(code: string, has: (id: string) => boolean, byUpper: Map<string, string>, phones: Map<string, string>) {
   if (has(code)) return code;
   const upper = byUpper.get(code.toUpperCase());
   if (upper !== undefined) return upper;
   for (const run of imeiRuns(code)) {
-    const phone = phones.get(run.slice(0, 14));
+    const phone = phones.get(`imei:${run.slice(0, 14)}`);
     if (phone !== undefined) return phone;
   }
-  return undefined;
+  return phones.get(`tag:${plainCode(code)}`);
 }
 
-/** Lookup tables for matchScan. `isPhone` says which ids are mobiles. */
-export function scanIndex(ids: Iterable<string>, isPhone: (id: string) => boolean = () => false) {
+/**
+ * Lookup tables for matchScan. `phoneAliases` lists the mobiles: id → its Asset Tag and Serial.
+ */
+export function scanIndex(ids: Iterable<string>, phoneAliases: ReadonlyMap<string, string[]> = new Map()) {
   const byUpper = new Map<string, string>();
-  const phones = new Map<string, string>(); // first 14 digits of a mobile's IMEI → its id
+  const phones = new Map<string, string>(); // "imei:<first 14 digits>" or "tag:<asset tag / serial>" → mobile id
   for (const id of ids) {
     if (!byUpper.has(id.toUpperCase())) byUpper.set(id.toUpperCase(), id);
-    if (isPhone(id) && /^\d{14,17}$/.test(id) && !phones.has(id.slice(0, 14))) phones.set(id.slice(0, 14), id);
+    const aliases = phoneAliases.get(id);
+    if (!aliases) continue;
+    if (/^\d{14,17}$/.test(id) && !phones.has(`imei:${id.slice(0, 14)}`)) phones.set(`imei:${id.slice(0, 14)}`, id);
+    for (const a of aliases) if (plainCode(a) && !phones.has(`tag:${plainCode(a)}`)) phones.set(`tag:${plainCode(a)}`, id);
   }
   return { byUpper, phones };
 }
@@ -58,9 +76,9 @@ export function classifyScans(
   text: string,
   statuses: Map<string, string>,
   allowed: ReadonlySet<string>,
-  phones: ReadonlySet<string> = new Set(),
+  phoneAliases: ReadonlyMap<string, string[]> = new Map(),
 ): ScanRow[] {
-  const { byUpper, phones: byImei } = scanIndex(statuses.keys(), (id) => phones.has(id));
+  const { byUpper, phones: byImei } = scanIndex(statuses.keys(), phoneAliases);
 
   const seen = new Set<string>();
   return text

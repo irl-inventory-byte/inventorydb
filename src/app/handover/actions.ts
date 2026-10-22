@@ -44,11 +44,24 @@ async function run(
   access: { roles: Role[]; actorRoles: Role[] } = { roles: HANDLER_ROLES, actorRoles: ["im", "rig", "internal"] },
 ) {
   const user = await requireRole(...access.roles);
-  const ids = collectIds(String(formData.get("scanned") ?? ""), formData.getAll("ids").map(String));
-  if (!ids.length) redirect(go(path, { error: "Scan or tick at least one item." }));
-
   // Scoped: the rig team can't scan rigs, and nobody can scan a type they can't see.
   const store = storeFor(user.role);
+
+  // A whole scanned line that is a known code stays one code, even with spaces in it (a mobile's Asset Tag,
+  // e.g. "Android Phone - 0221"). Every other line is split into codes as before.
+  const lines = String(formData.get("scanned") ?? "")
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const wholeLines = await store.getItemsByIds(lines);
+  const ids = [
+    ...new Set([
+      ...lines.filter((l) => wholeLines.has(l)),
+      ...collectIds(lines.filter((l) => !wholeLines.has(l)).join("\n"), formData.getAll("ids").map(String)),
+    ]),
+  ];
+  if (!ids.length) redirect(go(path, { error: "Scan or tick at least one item." }));
+
   const [found, hubs, sheetPeople, users] = await Promise.all([
     store.getItemsByIds(ids),
     store.list("hubs"),

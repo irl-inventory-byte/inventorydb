@@ -13,6 +13,7 @@ import HardwareSendFields from "./HardwareSendFields";
 import QcSendFields from "./QcSendFields";
 import SendToFields from "./SendToFields";
 import { personHasRole, secondaryByPerson } from "@/lib/roles";
+import { mobileAliases } from "@/lib/scan";
 
 // The Send to list, grouped so it is easy to scan. What each group means is in the hint under the field.
 const GROUP_LABELS: Record<string, string> = {
@@ -59,6 +60,8 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
     status: i.status,
     hub: i.current_hub,
     type: i.item_type === "rig" || i.item_type === "mobile" ? i.item_type : "sd_card",
+    // Mobiles can be scanned by IMEI, Asset Tag or Serial.
+    ...(i.item_type === "mobile" && { aliases: mobileAliases(i.attributes) }),
     // Rigs show their condition while scanning, e.g. "QC passed · Idle" or "Repaired · Ready for field".
     ...(i.item_type === "rig" && { note: rigCondition(i.status, latestQc.get(i.item_id)).label }),
   }));

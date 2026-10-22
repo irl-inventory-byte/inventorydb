@@ -5,9 +5,8 @@ import { useFormStatus } from "react-dom";
 import styles from "../admin/admin.module.css";
 import { addMobile, lookupMobile, type MobileLookup } from "./mobile-actions";
 
-type Details = Omit<MobileLookup, "imei">;
-
-const EMPTY: Details = {
+const EMPTY: MobileLookup = {
+  imei: "",
   assetTag: "",
   serial: "",
   model: "",
@@ -19,7 +18,8 @@ const EMPTY: Details = {
 };
 
 // The details from the mobile sheet, in the order they are shown.
-const FIELDS: [keyof Details, string][] = [
+const FIELDS: [keyof MobileLookup, string][] = [
+  ["imei", "IMEI"],
   ["assetTag", "Asset Tag"],
   ["serial", "Serial"],
   ["model", "Model"],
@@ -42,13 +42,14 @@ function SaveButton({ busy }: { busy: boolean }) {
   );
 }
 
-// Typing or scanning any of these finds the phone in the mobile sheet and fills in everything else.
-const KEYS = new Set<keyof Details>(["assetTag", "serial"]);
-
-/** Admin and IM: scan the phone's QR code (IMEI), or type its Asset Tag or Serial. Details load from the sheet. */
+/**
+ * Admin and IM. One box (required): scan the phone's QR code, or type its IMEI, Asset Tag or Serial. The
+ * phone is found in the mobile sheet and every other field fills in by itself.
+ */
 export default function MobileAddForm({ homeHubName }: { homeHubName?: string }) {
-  const [imei, setImei] = useState("");
-  const [details, setDetails] = useState<Details>(EMPTY);
+  const [find, setFind] = useState("");
+  const [details, setDetails] = useState<MobileLookup>(EMPTY);
+  const [found, setFound] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const requestId = useRef(0);
@@ -72,20 +73,21 @@ export default function MobileAddForm({ homeHubName }: { homeHubName?: string })
     setBusy(true);
     setNote("");
     try {
-      const found = await lookupMobile(value);
+      const result = await lookupMobile(value);
       if (current !== requestId.current) return;
-      if ("notFound" in found) {
-        setNote(found.notFound);
+      if ("notFound" in result) {
+        setFound(false);
+        setNote(result.notFound);
         return;
       }
-      if ("error" in found) {
-        setNote(found.error);
+      if ("error" in result) {
+        setFound(false);
+        setNote(result.error);
         return;
       }
-      const { imei: clean, ...rest } = found;
-      setImei(clean); // the QR code may hold more than the number: keep just the IMEI
-      setDetails(rest);
-      setNote("Details loaded from the mobile sheet. Review before saving.");
+      setDetails(result);
+      setFound(true);
+      setNote("Details loaded from the mobile sheet. Review, then press Add mobile.");
     } catch {
       if (current !== requestId.current) return;
       setNote("Could not read the mobile sheet. Check it is shared with the service account, or enter details by hand.");
@@ -94,15 +96,11 @@ export default function MobileAddForm({ homeHubName }: { homeHubName?: string })
     }
   }
 
-  // Start a lookup shortly after typing stops (a scanner types fast, so this runs once per scan).
-  function changeKey(from: "imei" | keyof Details, value: string) {
-    if (from === "imei") {
-      setImei(value);
-      setDetails(EMPTY);
-    } else {
-      setImei("");
-      setDetails({ ...EMPTY, [from]: value });
-    }
+  // Look up shortly after typing stops (a scanner types fast, so this runs once per scan).
+  function changeFind(value: string) {
+    setFind(value);
+    setDetails(EMPTY);
+    setFound(false);
     setNote("");
     requestId.current += 1;
     if (timer.current) clearTimeout(timer.current);
@@ -136,43 +134,50 @@ export default function MobileAddForm({ homeHubName }: { homeHubName?: string })
       <div
         style={{
           display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))",
+          gap: 16,
+          alignItems: "end",
+        }}
+      >
+        <label style={{ ...fieldStyle, gridColumn: "span 2" }}>
+          <span>
+            <strong>IMEI, Asset Tag or Serial *</strong>
+          </span>
+          <input
+            name="find"
+            value={find}
+            onChange={(e) => changeFind(e.target.value)}
+            onKeyDown={onEnter}
+            placeholder="Scan the QR code, or type the IMEI, Asset Tag or Serial"
+            autoComplete="off"
+            spellCheck={false}
+            required
+            style={{ ...inputStyle, fontSize: "1.05rem", padding: "12px 14px" }}
+          />
+        </label>
+        <div style={fieldStyle}>
+          <span>Home hub</span>
+          <strong style={{ padding: "10px 0" }}>{homeHubName || "Instawork Robotics Labs"}</strong>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
           gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))",
           gap: 16,
           alignItems: "start",
         }}
       >
-        <label style={fieldStyle}>
-          <span>IMEI</span>
-          <input
-            name="imei"
-            value={imei}
-            onChange={(e) => changeKey("imei", e.target.value)}
-            onKeyDown={onEnter}
-            placeholder="Scan the QR code, or type"
-            autoComplete="off"
-            spellCheck={false}
-            inputMode="numeric"
-            style={inputStyle}
-          />
-        </label>
-
-        <div style={fieldStyle}>
-          <span>Home hub</span>
-          <strong style={{ padding: "10px 0" }}>{homeHubName || "Instawork Robotics Labs"}</strong>
-        </div>
-
         {FIELDS.map(([k, label]) => (
           <label key={k} style={fieldStyle}>
             <span>{label}</span>
             <input
               name={k}
               value={details[k]}
-              onChange={(e) =>
-                KEYS.has(k) ? changeKey(k, e.target.value) : setDetails((d) => ({ ...d, [k]: e.target.value }))
-              }
-              onKeyDown={KEYS.has(k) ? onEnter : undefined}
-              placeholder={KEYS.has(k) ? `Type ${label} to find the phone` : label.replace(" (₹)", "")}
-              inputMode={k === "cost" ? "numeric" : undefined}
+              onChange={(e) => setDetails((d) => ({ ...d, [k]: e.target.value }))}
+              placeholder={found ? "—" : "Fills in from the sheet"}
+              inputMode={k === "cost" || k === "imei" ? "numeric" : undefined}
               style={inputStyle}
             />
           </label>
@@ -180,13 +185,7 @@ export default function MobileAddForm({ homeHubName }: { homeHubName?: string })
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
-        <button
-          type="button"
-          disabled={busy || !(imei.trim() || details.assetTag.trim() || details.serial.trim())}
-          onClick={() =>
-            void lookup(imei.trim() || details.assetTag.trim() || details.serial.trim())
-          }
-        >
+        <button type="button" disabled={busy || !find.trim()} onClick={() => void lookup(find)}>
           {busy ? "Fetching…" : "Fetch details"}
         </button>
         <SaveButton busy={busy || !homeHubName} />
@@ -194,11 +193,11 @@ export default function MobileAddForm({ homeHubName }: { homeHubName?: string })
 
       <p className={styles.muted} role="status" aria-live="polite" style={{ margin: 0 }}>
         {busy
-          ? "Looking up the IMEI…"
+          ? "Looking up the phone…"
           : !homeHubName
             ? "No active hub named Instawork Robotics Labs. Add it on the Hubs page first."
             : note ||
-              "Scan the phone's QR code (IMEI), or type its Asset Tag or Serial. Everything else loads from the mobile sheet."}
+              "Scan the QR code, or type the IMEI, Asset Tag or Serial in the first box. Everything else fills in from the mobile sheet."}
       </p>
     </form>
   );

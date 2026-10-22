@@ -17,7 +17,7 @@ export default function SendScanFields({
 }: {
   hubs: { id: string; name: string }[];
   defaultHub: string;
-  items: { id: string; status: Status; hub: string; type?: string; qc?: string }[];
+  items: { id: string; status: Status; hub: string; type?: string; qc?: string; aliases?: string[] }[];
   held?: Status; // QC / hardware team: they send the rigs they hold, so there is no "Sending from" hub
 }) {
   const [hub, setHub] = useState(defaultHub);

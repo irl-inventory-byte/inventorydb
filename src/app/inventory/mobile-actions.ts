@@ -83,30 +83,27 @@ function refresh() {
   revalidatePath("/handover/receipts");
 }
 
-/** Add one mobile: Admin and IM. Home hub Instawork Robotics Labs, in stock. Not sent or received. */
+/** Add one mobile: Admin and IM. Home hub Instawork Robotics Labs, in stock. */
 export async function addMobile(formData: FormData) {
   const user = await requireRole(...MOBILE_ADD_ROLES);
   const reject = (message: string): never =>
     redirect(`/inventory?${new URLSearchParams({ type: "mobile", addError: message })}`);
 
   const text = (name: string) => String(formData.get(name) ?? "").trim();
-  const scanned = text("imei");
-  const typed = imeisIn(scanned);
+  // The one required box: a QR code, IMEI, Asset Tag or Serial.
+  const find = text("find");
+  if (!find) reject("Scan the QR code, or type the IMEI, Asset Tag or Serial.");
+  const typed = [...imeisIn(find), ...imeisIn(text("imei"))];
 
-  // The sheet is read again on the server; what it says wins over the form. The phone is found by its
-  // IMEI, or else by the Asset Tag or Serial typed in the form.
+  // The sheet is read again on the server; what it says wins over the form.
   let found: MobileRecord | undefined;
   try {
-    const records = (await loadMobileSheet()).records;
-    found = [scanned, text("assetTag"), text("serial")]
-      .filter(Boolean)
-      .map((v) => findMobile(records, v))
-      .find(Boolean);
+    found = findMobile((await loadMobileSheet()).records, find);
   } catch {
     found = undefined;
   }
   if (!found && typed.length === 0) {
-    reject("Scan or type the IMEI (15 digits), or an Asset Tag or Serial that is in the mobile sheet.");
+    reject(`"${find.slice(0, 40)}" is not in the mobile sheet. To add it by hand, also fill in its IMEI (15 digits).`);
   }
   const imei = found?.imei ?? typed[0];
   const all = found?.imeis ?? typed;

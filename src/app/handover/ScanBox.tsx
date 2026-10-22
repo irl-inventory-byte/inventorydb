@@ -33,7 +33,7 @@ export default function ScanBox({
   injected,
 }: {
   id: string;
-  items: { id: string; status: Status; hub: string; type?: string; qc?: string; note?: string }[];
+  items: { id: string; status: Status; hub: string; type?: string; qc?: string; note?: string; aliases?: string[] }[];
   mode: "send" | "receive";
   allowed?: readonly string[]; // send only: statuses that can be sent, instead of "in stock" (QC / hardware teams)
   rows?: number;
@@ -74,8 +74,8 @@ export default function ScanBox({
   const results = useMemo(() => {
     const placeOf = new Map(items.map((i) => [i.id, i.hub]));
     const accepts = allowed ? new Set<string>(allowed) : ALLOWED[mode];
-    // Mobiles: a phone QR code ("IMEI1 - IMEI2") finds the phone by its IMEI.
-    const phones = new Set(items.filter((i) => i.type === "mobile").map((i) => i.id));
+    // Mobiles: found by an IMEI in the QR code ("IMEI1 - IMEI2"), the Asset Tag or the Serial.
+    const phones = new Map(items.filter((i) => i.type === "mobile").map((i) => [i.id, i.aliases ?? []]));
     return classifyScans(text, statuses, accepts, phones).map((r) => {
       // Say so before submitting when a card is at a different hub than the one chosen: a card sent to a
       // hub must be received there, and cards must be in stock at the hub they are sent from.

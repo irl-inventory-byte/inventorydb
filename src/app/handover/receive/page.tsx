@@ -12,6 +12,7 @@ import type { Role, Status } from "@/lib/schema";
 import styles from "../../admin/admin.module.css";
 import { receiveCards } from "../actions";
 import HubSelect from "./HubSelect";
+import { mobileAliases } from "@/lib/scan";
 import ReceiveScanArea from "./ReceiveScanArea";
 
 export default async function ReceivePage({
@@ -113,6 +114,7 @@ export default async function ReceivePage({
               status: item.status,
               hub: item.current_hub,
               type: item.item_type === "rig" || item.item_type === "mobile" ? item.item_type : "sd_card",
+              ...(item.item_type === "mobile" && { aliases: mobileAliases(item.attributes) }),
             }))}
           />
           <div className={styles.row}>
@@ -272,6 +274,7 @@ export default async function ReceivePage({
             status: item.status,
             hub: item.current_hub,
             type: item.item_type === "rig" || item.item_type === "mobile" ? item.item_type : "sd_card",
+            ...(item.item_type === "mobile" && { aliases: mobileAliases(item.attributes) }),
           }))}
         />
 

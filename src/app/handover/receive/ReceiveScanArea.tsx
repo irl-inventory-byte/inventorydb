@@ -20,7 +20,7 @@ export default function ReceiveScanArea({
 }: {
   hub: string;
   hubNames: Record<string, string>;
-  items: { id: string; status: Status; hub: string; type?: string }[];
+  items: { id: string; status: Status; hub: string; type?: string; aliases?: string[] }[];
   allowed?: readonly string[]; // QC / hardware team: only rigs sent to them
 }) {
   const [code, setCode] = useState("");
