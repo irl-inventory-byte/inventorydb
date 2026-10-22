@@ -21,8 +21,8 @@ import styles from "./dashboard.module.css";
 
 /** Thresholds used on the Rig dashboard. */
 export const HARDWARE_STAY_DAYS = 2; // with the hardware team for more than this → listed
-export const NO_HARDWARE_DAYS = 7; // no hardware-team event for more than this → listed
-export const NO_ACTIVITY_DAYS = 7; // "Unknown" tile: rigs with no activity for more than this
+export const NO_HARDWARE_DAYS = 2; // no hardware-team event for more than this → listed
+export const NO_ACTIVITY_DAYS = 2; // "Unknown" tile: rigs with no activity for more than this
 
 const GREEN = "#15803D";
 const RED = "#B42318";

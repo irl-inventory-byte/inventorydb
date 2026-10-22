@@ -18,7 +18,10 @@ const ERRORS: Record<string, string> = {
 
 export default async function UsersPage({ searchParams }: PageProps<"/admin/users">) {
   const me = await requireRole("admin");
-  const { error } = await searchParams;
+  const { error, q, frole, fstatus } = await searchParams;
+  const text = typeof q === "string" ? q.trim().toLowerCase() : "";
+  const roleFilter = typeof frole === "string" ? frole : "";
+  const statusFilter = typeof fstatus === "string" ? fstatus : "";
   const store = getStore();
   const [users, people] = await Promise.all([store.list("users"), store.list("people")]);
   users.sort((a, b) => a.email.localeCompare(b.email));
@@ -26,6 +29,19 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
   const linkable = people
     .filter((p) => ["im", "rig", "fo", "hardware", "qc", "internal"].includes(p.role) && p.active !== "false")
     .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Filter: search (email or linked person), role (primary or secondary), active / inactive.
+  const nameOf = new Map(people.map((p) => [p.person_id, p.name]));
+  const shown = users.filter((u) => {
+    const active = u.active !== "false";
+    if (statusFilter === "active" && !active) return false;
+    if (statusFilter === "inactive" && active) return false;
+    if (roleFilter === "two" && !u.secondary_role) return false;
+    if (roleFilter && roleFilter !== "two" && u.role !== roleFilter && u.secondary_role !== roleFilter) return false;
+    if (text && !`${u.email} ${nameOf.get(u.person_id) ?? ""}`.toLowerCase().includes(text)) return false;
+    return true;
+  });
+  const filtered = !!(text || roleFilter || statusFilter);
 
   const roleSelect = (value?: string) => (
     <select name="role" defaultValue={value ?? "im"}>
@@ -88,8 +104,35 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
         <button type="submit">Add user</button>
       </form>
 
+      <h2 style={{ marginTop: 24 }}>Find a user</h2>
+      <form method="get" action="/admin/users" className={styles.row}>
+        <input name="q" type="text" defaultValue={text} placeholder="Search email or name" aria-label="Search email or name" />
+        <select name="frole" defaultValue={roleFilter} aria-label="Role">
+          <option value="">All roles</option>
+          <option value="im">IM</option>
+          <option value="rig">Rig</option>
+          <option value="fo">FO</option>
+          <option value="hardware">Hardware team</option>
+          <option value="qc">QC team</option>
+          <option value="internal">Internal team</option>
+          <option value="admin">Admin</option>
+          <option value="two">Has a secondary role</option>
+        </select>
+        <select name="fstatus" defaultValue={statusFilter} aria-label="Status">
+          <option value="">Active and inactive</option>
+          <option value="active">Active only</option>
+          <option value="inactive">Inactive only</option>
+        </select>
+        <button type="submit">Filter</button>
+        {filtered && <Link href="/admin/users">Clear filter</Link>}
+      </form>
+      <p className={styles.muted}>
+        Showing {shown.length} of {users.length} users. A role matches the primary or the secondary role.
+      </p>
+
       <div className={styles.list}>
-        {users.map((u) => (
+        {shown.length === 0 && <p className={styles.muted}>No users match this filter.</p>}
+        {shown.map((u) => (
           <UserRow key={u.email} user={u} linkable={linkable} isMe={u.email.toLowerCase() === me.email?.toLowerCase()} />
         ))}
       </div>
