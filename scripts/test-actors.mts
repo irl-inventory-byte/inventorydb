@@ -5,7 +5,7 @@ import type { AppUser, Person } from "../src/lib/schema";
 const person = (id: string, name: string, role: Person["role"], active = "true"): Person => ({
   person_id: id, name, role, hub: "bangalore", linked_user: "", active,
 });
-const user = (email: string, role: AppUser["role"], person_id = "", active = ""): AppUser => ({ email, role, person_id, active });
+const user = (email: string, role: AppUser["role"], person_id = "", active = ""): AppUser => ({ email, role, person_id, active, secondary_role: "" });
 
 const people = [
   person("p-mihir", "Mihir", "im"),
