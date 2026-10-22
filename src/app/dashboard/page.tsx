@@ -411,7 +411,15 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
         <SummaryKpis d={d} items={items} rigView={rigView} />
 
-        <section className={rigView ? `${styles.kpiGrid} ${styles.kpiGridRig}` : styles.kpiGrid} aria-label="Overview">
+        {/* SD card tiles: rows that always fill the full width (4 + 3 on a laptop), labels on one line. */}
+        {!rigView && (
+          <style>{`
+.kpi-sd.kpi-sd{display:flex;flex-wrap:wrap;gap:12px}
+.kpi-sd.kpi-sd > *{flex:1 1 230px;min-width:0}
+.kpi-sd.kpi-sd > * span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+`}</style>
+        )}
+        <section className={rigView ? `${styles.kpiGrid} ${styles.kpiGridRig}` : `${styles.kpiGrid} kpi-sd`} aria-label="Overview">
           {kpis.map((k) => (
             <Link key={k.label} href={k.href} className={styles.kpi} style={{ "--kpi": k.color } as CSSProperties}>
               <span className={styles.kpiIcon}>
