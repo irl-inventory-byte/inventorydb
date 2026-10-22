@@ -4,7 +4,7 @@ import { ITEM_TYPE_LABELS } from "@/lib/labels";
 import type { Role } from "@/lib/schema";
 
 /**
- * "All · SD cards · Rigs" switch. Only shown to logins that can see more
+ * "All · SD cards · Rigs · Mobile" switch. Only shown to logins that can see more
  * than one item type. Keeps the other filters in the address bar.
  */
 export default function TypeSwitch({
@@ -13,6 +13,7 @@ export default function TypeSwitch({
   path,
   params = {},
   includeAll = true,
+  only,
 }: {
   role: Role;
   current: ItemType | "";
@@ -20,8 +21,10 @@ export default function TypeSwitch({
   params?: Record<string, string>;
   /** false: no "All items" choice (the dashboard always shows one type). */
   includeAll?: boolean;
+  /** Show only these types (e.g. Analytics has no Mobile choice). */
+  only?: readonly ItemType[];
 }) {
-  const types = allowedTypes(role);
+  const types = allowedTypes(role).filter((t) => !only || only.includes(t));
   if (types.length < 2) return null;
 
   const href = (type: string) => {

@@ -4,7 +4,7 @@ import { requireRole } from "@/lib/authz";
 import { LATE_AFTER_HOURS } from "@/lib/dashboard";
 import { QC_LABELS, STATUS_LABELS, one } from "@/lib/labels";
 import { STATUSES, type QcCheck } from "@/lib/schema";
-import { ADD_ROLES, canSeeType, storeFor, typeParam } from "@/lib/access";
+import { ADD_ROLES, MOBILE_ADD_ROLES, canSeeType, storeFor, typeParam } from "@/lib/access";
 import { formatIst, istDate } from "@/lib/time";
 import styles from "../admin/admin.module.css";
 import { TypeBadge, rowTint } from "../ItemTypeBadge";
@@ -13,6 +13,7 @@ import AddCardForm from "./AddCardForm";
 import MultiSelect from "./MultiSelect";
 import RigAddForm from "./RigAddForm";
 import RigBulkAddForm from "./RigBulkAddForm";
+import MobileAddForm from "./MobileAddForm";
 import { rigHomeHub } from "@/lib/rig-hub";
 import BulkAddForm from "./BulkAddForm";
 import { applyCorrection } from "./actions";
@@ -81,6 +82,19 @@ function readCardDetails(raw: string) {
   return { storage, cardType };
 }
 
+/** A mobile's saved details (Asset Tag, Serial, Model No., Category, Storage). */
+function mobileDetails(raw: string): Record<string, string> {
+  try {
+    const parsed: unknown = JSON.parse(raw || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return Object.fromEntries(Object.entries(parsed).map(([k, v]) => [k, String(v ?? "")]));
+    }
+  } catch {
+    // Missing or invalid details show as "—".
+  }
+  return {};
+}
+
 /** Display the stored amount, without treating missing values as zero. */
 function displayAmount(raw: string): string {
   const cleaned = String(raw ?? "")
@@ -124,9 +138,13 @@ export default async function InventoryPage({
   const canAdd =
     ADD_ROLES.includes(user.role) &&
     canSeeType(user.role, "sd_card") &&
-    type !== "rig";
+    type !== "rig" &&
+    type !== "mobile";
   const canAddRig =
-    (user.role === "admin" || user.role === "im") && type !== "sd_card";
+    (user.role === "admin" || user.role === "im") && type !== "sd_card" && type !== "mobile";
+  // Mobiles: Admin and IM, on the Mobile tab only.
+  const mobileView = type === "mobile";
+  const canAddMobile = mobileView && MOBILE_ADD_ROLES.includes(user.role);
 
   const q = one(sp.q).trim().toLowerCase();
 
@@ -165,13 +183,13 @@ export default async function InventoryPage({
     store.list("hubs"),
     store.list("people"),
     store.list("events"),
-    canSeeType(user.role, "rig") ? store.list("qc_checks") : Promise.resolve([] as QcCheck[]),
+    canSeeType(user.role, "rig") && !mobileView ? store.list("qc_checks") : Promise.resolve([] as QcCheck[]),
   ]);
 
   // Latest QC result per rig (rows are oldest first, so the last one wins).
   const latestQc = new Map<string, string>();
   for (const c of qcChecks) latestQc.set(c.item_id, c.qc_status);
-  const showQc = canSeeType(user.role, "rig") && type !== "sd_card";
+  const showQc = canSeeType(user.role, "rig") && type !== "sd_card" && !mobileView;
   const QC_COLOR: Record<string, string> = { pass: "#15803D", repaired: "#15803D", fail: "#B42318", qc_pending: "#8A4B00" };
 
   // Each item's latest movement, used for the From / To columns.
@@ -277,7 +295,9 @@ export default async function InventoryPage({
   const rigView = type === "rig" || !canSeeType(user.role, "sd_card");
 
   // Includes optional Admin checkbox and holder-specific Since column.
-  const columnCount = rigView
+  const columnCount = mobileView
+    ? 12 + (isAdmin ? 1 : 0)
+    : rigView
     ? 6 + (isAdmin ? 1 : 0)
     : 16 + (isAdmin ? 1 : 0) + (holder ? 1 : 0) + (showQc ? 1 : 0);
 
@@ -294,7 +314,23 @@ export default async function InventoryPage({
     >
       <table className={styles.table}>
         <thead>
-          {rigView ? (
+          {mobileView ? (
+            <tr>
+              {isAdmin && <th scope="col" aria-label="Select items" />}
+              <th scope="col">Date</th>
+              <th scope="col">IMEI</th>
+              <th scope="col">Asset Tag</th>
+              <th scope="col">Serial</th>
+              <th scope="col">Model</th>
+              <th scope="col">Model No.</th>
+              <th scope="col">Category</th>
+              <th scope="col">Manufacturer</th>
+              <th scope="col">Storage</th>
+              <th scope="col">Cost</th>
+              <th scope="col">Status</th>
+              <th scope="col">Hub</th>
+            </tr>
+          ) : rigView ? (
             <tr>
               {isAdmin && <th scope="col" aria-label="Select items" />}
               <th scope="col">Date</th>
@@ -358,6 +394,54 @@ export default async function InventoryPage({
               const toHub = last?.hub
                 ? (hubName.get(last.hub) ?? last.hub)
                 : "";
+
+              if (mobileView) {
+                const when = last?.occurred_at || item.updated_at;
+                const a = mobileDetails(item.attributes);
+                return (
+                  <tr key={item.item_id}>
+                    {isAdmin && (
+                      <td>
+                        <input type="checkbox" name="ids" value={item.item_id} aria-label={`Select ${item.item_id}`} />
+                      </td>
+                    )}
+                    <td style={{ whiteSpace: "nowrap" }}>{when ? `${formatIst(when)} IST` : "—"}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      <Link href={itemUrl}>{item.item_id}</Link>
+                      {isAdmin && (
+                        <div style={{ marginTop: 8 }}>
+                          <Link
+                            href={`${itemUrl}/delete`}
+                            aria-label={`Delete item ${item.item_id}`}
+                            style={{
+                              display: "inline-block",
+                              padding: "5px 10px",
+                              border: "1px solid #b91c1c",
+                              borderRadius: 6,
+                              color: "#b91c1c",
+                              backgroundColor: "#fff7f7",
+                              fontWeight: 600,
+                              textDecoration: "none",
+                            }}
+                          >
+                            Delete
+                          </Link>
+                        </div>
+                      )}
+                    </td>
+                    <td>{a["Asset Tag"] || "—"}</td>
+                    <td>{a["Serial"] || "—"}</td>
+                    <td>{item.model || "—"}</td>
+                    <td>{a["Model No."] || "—"}</td>
+                    <td>{a["Category"] || "—"}</td>
+                    <td>{item.brand || "—"}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>{a["Storage"] || "—"}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>{displayAmount(item.price)}</td>
+                    <td>{STATUS_LABELS[item.status] ?? item.status}</td>
+                    <td>{hubName.get(item.current_hub) ?? item.current_hub}</td>
+                  </tr>
+                );
+              }
 
               if (rigView) {
                 const when = last?.occurred_at || item.updated_at;
@@ -672,6 +756,33 @@ export default async function InventoryPage({
         </details>
       )}
 
+      {/* Add a mobile: Admin and IM. Scan the IMEI; details load from the mobile sheet. */}
+      {canAddMobile && (
+        <details className={styles.details} open={one(sp.added) || one(sp.addError) ? true : undefined}>
+          <summary>+ Add a mobile</summary>
+
+          <p className={styles.muted}>
+            Scan the QR code on the phone (IMEI). Asset Tag, Serial, Model, Model No., Category, Manufacturer,
+            Storage and Cost load from the mobile sheet. The mobile starts in stock at the hub you choose.
+          </p>
+
+          {one(sp.added) && (
+            <p className={styles.ok}>
+              Added mobile {one(sp.added)}.{" "}
+              <Link href={`/inventory/${encodeURIComponent(one(sp.added))}`}>View it</Link>
+              , or add another below.
+            </p>
+          )}
+
+          {one(sp.addError) && <p className={styles.error}>{one(sp.addError)}</p>}
+
+          <MobileAddForm
+            hubs={activeHubs}
+            defaultHub={people.find((p) => p.person_id === user.personId)?.hub || undefined}
+          />
+        </details>
+      )}
+
       <form className={styles.row} method="get">
         {type && <input type="hidden" name="type" value={type} />}
         <input
@@ -751,7 +862,7 @@ export default async function InventoryPage({
         {(page - 1) * PAGE_SIZE + shown.length}.
       </p>
 
-      {!rigView && (
+      {!rigView && !mobileView && (
         <p className={styles.muted}>
           Storage and card type come from saved item attributes.
           Price / Penalty shows the saved amount, not an automatic

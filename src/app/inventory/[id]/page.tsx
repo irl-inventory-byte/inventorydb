@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { parseAttributes } from "@/lib/attributes";
 import { requireRole } from "@/lib/authz";
-import { HARDWARE_ROLES, QC_ROLES, itemType, storeFor } from "@/lib/access";
+import { HARDWARE_ROLES, QC_ROLES, itemType, storeForAll } from "@/lib/access";
 import { ITEM_TYPE_LABELS, QC_LABELS, STATUS_LABELS, one } from "@/lib/labels";
 import type { HardwareUpdate, QcCheck } from "@/lib/schema";
 import { formatIst } from "@/lib/time";
@@ -16,10 +16,11 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/inv
   const { id } = await params;
   const sp = await searchParams;
   // Only items of a type this login may see; anything else is "not found".
-  const store = storeFor(user.role);
+  const store = storeForAll(user.role);
   const item = await store.getItem(id);
   if (!item) notFound();
   const isRig = itemType(item) === "rig";
+  const isMobile = itemType(item) === "mobile";
 
   const [hubs, people, history, hardware, qc] = await Promise.all([
     store.list("hubs"),
@@ -38,7 +39,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/inv
   return (
     <main className={styles.page}>
       <p className={styles.back}>
-        <Link href="/inventory">← Inventory</Link>
+        <Link href={isMobile ? "/inventory?type=mobile" : "/inventory"}>← Inventory</Link>
       </p>
       <h1>{item.item_id}</h1>
       {one(sp.done) && <p className={styles.ok}>Saved.</p>}
@@ -59,9 +60,21 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/inv
         <dd>{personName.get(item.current_holder) ?? (item.current_holder || "—")}</dd>
         <dt>Home hub</dt>
         <dd>{hubName.get(item.home_hub) ?? item.home_hub}</dd>
-        <dt>Prism no.</dt>
-        <dd>{item.prism_no || "—"}</dd>
-        <dt>Brand</dt>
+        {!isMobile && (
+          <>
+            <dt>Prism no.</dt>
+            <dd>{item.prism_no || "—"}</dd>
+          </>
+        )}
+        {isMobile && (
+          <>
+            <dt>IMEI</dt>
+            <dd>{item.item_id}</dd>
+            <dt>Cost</dt>
+            <dd>{item.price ? `₹${Number(item.price).toLocaleString("en-IN")}` : "—"}</dd>
+          </>
+        )}
+        <dt>{isMobile ? "Manufacturer" : "Brand"}</dt>
         <dd>{item.brand || "—"}</dd>
         <dt>Model</dt>
         <dd>{item.model || "—"}</dd>

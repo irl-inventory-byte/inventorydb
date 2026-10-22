@@ -20,6 +20,7 @@ import { SummaryKpis } from "./summary-kpis";
 import { RIG_STATES, RIG_STATE_LABELS, rigState, type RigState } from "@/lib/rig-state";
 import { inactiveRigs } from "@/lib/rig-metrics";
 import { NO_ACTIVITY_DAYS, RigMetrics } from "./rig-metrics";
+import { MobileOverview } from "./mobile-overview";
 
 const inventory = (params: Record<string, string>) => `/inventory?${new URLSearchParams(params)}`;
 const days = (d: number | null) => (d === null ? "—" : d === 0 ? "today" : `${d}d`);
@@ -64,7 +65,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // Rig view: the Rigs switch is on, or this login only sees rigs (QC, hardware).
   const rigView = type === "rig" || !canSeeType(user.role, "sd_card");
   // QC team performance shows whenever rigs are in view (All or Rigs).
-  const showQc = canSeeType(user.role, "rig") && type !== "sd_card";
+  // Mobile view: tiles and breakdowns only (mobiles are not sent or received).
+  const mobileView = type === "mobile";
+  const showQc = canSeeType(user.role, "rig") && type !== "sd_card" && !mobileView;
   const [items, events, people, hubs, qcChecks, hardwareUpdates] = await Promise.all([
     store.list("items"),
     store.list("events"),
@@ -357,7 +360,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             <div>
               <h1>Inventory Dashboard</h1>
               <p className={styles.subtitle}>
-                {n(d.total)} items · {activeHubs} hubs · the latest known position of every item
+                {n(d.total)} {mobileView ? "mobiles" : "items"} · {activeHubs} hubs · the latest known position of every item
               </p>
             </div>
           </div>
@@ -412,6 +415,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
         <TypeSwitch role={user.role} current={type} path="/dashboard" includeAll={false} />
 
+        {mobileView ? (
+          <MobileOverview items={items} hubs={hubs} />
+        ) : (
+        <>
         <SummaryKpis d={d} items={items} rigView={rigView} />
 
         {/* SD card tiles: rows that always fill the full width (4 + 3 on a laptop), labels on one line. */}
@@ -710,6 +717,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           </Link>{" "}
           — hub owned vs held, longest out, data health.
         </p>
+        </>
+        )}
       </main>
     </div>
   );
