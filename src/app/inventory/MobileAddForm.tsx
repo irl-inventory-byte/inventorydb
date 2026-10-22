@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { useFormStatus } from "react-dom";
 import styles from "../admin/admin.module.css";
 import { addMobile, lookupMobile, type MobileLookup } from "./mobile-actions";
@@ -42,7 +42,10 @@ function SaveButton({ busy }: { busy: boolean }) {
   );
 }
 
-/** Admin and IM: scan the phone's QR code (IMEI). Details load from the mobile sheet. */
+// Typing or scanning any of these finds the phone in the mobile sheet and fills in everything else.
+const KEYS = new Set<keyof Details>(["assetTag", "serial"]);
+
+/** Admin and IM: scan the phone's QR code (IMEI), or type its Asset Tag or Serial. Details load from the sheet. */
 export default function MobileAddForm({ homeHubName }: { homeHubName?: string }) {
   const [imei, setImei] = useState("");
   const [details, setDetails] = useState<Details>(EMPTY);
@@ -72,12 +75,10 @@ export default function MobileAddForm({ homeHubName }: { homeHubName?: string })
       const found = await lookupMobile(value);
       if (current !== requestId.current) return;
       if ("notFound" in found) {
-        setDetails(EMPTY);
         setNote(found.notFound);
         return;
       }
       if ("error" in found) {
-        setDetails(EMPTY);
         setNote(found.error);
         return;
       }
@@ -87,16 +88,21 @@ export default function MobileAddForm({ homeHubName }: { homeHubName?: string })
       setNote("Details loaded from the mobile sheet. Review before saving.");
     } catch {
       if (current !== requestId.current) return;
-      setDetails(EMPTY);
       setNote("Could not read the mobile sheet. Check it is shared with the service account, or enter details by hand.");
     } finally {
       if (current === requestId.current) setBusy(false);
     }
   }
 
-  function changeImei(value: string) {
-    setImei(value);
-    setDetails(EMPTY);
+  // Start a lookup shortly after typing stops (a scanner types fast, so this runs once per scan).
+  function changeKey(from: "imei" | keyof Details, value: string) {
+    if (from === "imei") {
+      setImei(value);
+      setDetails(EMPTY);
+    } else {
+      setImei("");
+      setDetails({ ...EMPTY, [from]: value });
+    }
     setNote("");
     requestId.current += 1;
     if (timer.current) clearTimeout(timer.current);
@@ -110,6 +116,13 @@ export default function MobileAddForm({ homeHubName }: { homeHubName?: string })
       void lookup(value);
     }, 600);
   }
+
+  const onEnter = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      void lookup(e.currentTarget.value);
+    }
+  };
 
   return (
     <form
@@ -129,22 +142,16 @@ export default function MobileAddForm({ homeHubName }: { homeHubName?: string })
         }}
       >
         <label style={fieldStyle}>
-          <span>IMEI *</span>
+          <span>IMEI</span>
           <input
             name="imei"
             value={imei}
-            onChange={(e) => changeImei(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                void lookup(e.currentTarget.value);
-              }
-            }}
-            placeholder="Scan the QR code — details load automatically"
+            onChange={(e) => changeKey("imei", e.target.value)}
+            onKeyDown={onEnter}
+            placeholder="Scan the QR code, or type"
             autoComplete="off"
             spellCheck={false}
             inputMode="numeric"
-            required
             style={inputStyle}
           />
         </label>
@@ -160,8 +167,11 @@ export default function MobileAddForm({ homeHubName }: { homeHubName?: string })
             <input
               name={k}
               value={details[k]}
-              onChange={(e) => setDetails((d) => ({ ...d, [k]: e.target.value }))}
-              placeholder={label.replace(" (₹)", "")}
+              onChange={(e) =>
+                KEYS.has(k) ? changeKey(k, e.target.value) : setDetails((d) => ({ ...d, [k]: e.target.value }))
+              }
+              onKeyDown={KEYS.has(k) ? onEnter : undefined}
+              placeholder={KEYS.has(k) ? `Type ${label} to find the phone` : label.replace(" (₹)", "")}
               inputMode={k === "cost" ? "numeric" : undefined}
               style={inputStyle}
             />
@@ -170,7 +180,13 @@ export default function MobileAddForm({ homeHubName }: { homeHubName?: string })
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
-        <button type="button" disabled={busy || !imei.trim()} onClick={() => void lookup(imei)}>
+        <button
+          type="button"
+          disabled={busy || !(imei.trim() || details.assetTag.trim() || details.serial.trim())}
+          onClick={() =>
+            void lookup(imei.trim() || details.assetTag.trim() || details.serial.trim())
+          }
+        >
           {busy ? "Fetching…" : "Fetch details"}
         </button>
         <SaveButton busy={busy || !homeHubName} />
@@ -181,7 +197,8 @@ export default function MobileAddForm({ homeHubName }: { homeHubName?: string })
           ? "Looking up the IMEI…"
           : !homeHubName
             ? "No active hub named Instawork Robotics Labs. Add it on the Hubs page first."
-            : note || "Scan the phone's QR code (IMEI). Details load from the mobile sheet. New mobiles start in stock."}
+            : note ||
+              "Scan the phone's QR code (IMEI), or type its Asset Tag or Serial. Everything else loads from the mobile sheet."}
       </p>
     </form>
   );

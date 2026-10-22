@@ -24,7 +24,7 @@ function checkLabel(row: Row): { text: string; color: string } {
   if (row.status === "exists") return { text: "Already in inventory", color: "#8A4B00" };
   if (row.status === "repeated") return { text: "Repeated in list", color: "#8A4B00" };
   if (row.status === "notfound") return { text: "Not in mobile sheet – use Add a mobile", color: "#B42318" };
-  if (row.status === "noimei") return { text: "No IMEI in this scan", color: "#B42318" };
+  if (row.status === "noimei") return { text: "No IMEI for this phone in the sheet", color: "#B42318" };
   return { text: "Ready", color: "#15803D" };
 }
 
@@ -144,12 +144,12 @@ export default function MobileBulkAddForm({ homeHubName }: { homeHubName?: strin
         </div>
 
         <label style={{ ...fieldStyle, gridColumn: "span 2" }}>
-          <span>IMEIs *</span>
+          <span>IMEI, Asset Tag or Serial *</span>
           <textarea
             value={text}
             onChange={(e) => changeText(e.target.value)}
             rows={6}
-            placeholder="Scan the QR codes one after another, or paste IMEIs, one per line"
+            placeholder="Scan the QR codes one after another, or paste IMEIs, Asset Tags or Serials, one per line"
             autoComplete="off"
             spellCheck={false}
             style={{ ...inputStyle, fontFamily: "monospace", resize: "vertical" }}

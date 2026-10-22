@@ -122,11 +122,21 @@ export function parseMobileSheet(rows: string[][]): { records: MobileRecord[]; i
 // Same phone: the same number, or the same first 14 digits (the 15th digit is only a check digit).
 const sameImei = (a: string, b: string) => a === b || a.slice(0, 14) === b.slice(0, 14);
 
-/** Find a phone by any IMEI in what was scanned. */
+const plain = (v: string) => String(v ?? "").trim().toLowerCase().replace(/\s+/g, "");
+
+/**
+ * Find a phone by what was scanned or typed: an IMEI (any IMEI in it), or else its Asset Tag or Serial
+ * (letter case and spaces ignored).
+ */
 export function findMobile(records: MobileRecord[], scanned: string): MobileRecord | undefined {
   const wanted = imeisIn(scanned);
-  if (wanted.length === 0) return undefined;
-  return records.find((r) => r.imeis.some((i) => wanted.some((w) => sameImei(i, w))));
+  const byImei = wanted.length
+    ? records.find((r) => r.imeis.some((i) => wanted.some((w) => sameImei(i, w))))
+    : undefined;
+  if (byImei) return byImei;
+  const text = plain(scanned);
+  if (!text) return undefined;
+  return records.find((r) => (r.assetTag && plain(r.assetTag) === text) || (r.serial && plain(r.serial) === text));
 }
 
 /** The details saved with a mobile (shown on its page and searchable in Inventory). */

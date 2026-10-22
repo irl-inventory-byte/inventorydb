@@ -51,10 +51,10 @@ const toLookup = (r: MobileRecord): MobileLookup => ({
 /** Why a phone was not found, in plain words, with what was read from the sheet. */
 function notFoundText(scanned: string, info: MobileSheetInfo): string {
   const imeis = imeisIn(scanned);
-  const what = imeis.length ? `IMEI ${imeis.join(" / ")}` : `"${scanned.slice(0, 40)}" (no 15-digit IMEI in it)`;
+  const what = imeis.length ? `IMEI ${imeis.join(" / ")}` : `"${scanned.slice(0, 40)}"`;
   return (
-    `${what} is not in the mobile sheet. Checked ${info.phones} phones in the tab "${info.tab}" ` +
-    `(column ${info.imeiHeadings.map((h) => `"${h}"`).join(", ")}). Enter the details by hand, or check the IMEI in the sheet.`
+    `${what} is not in the mobile sheet (checked IMEI, Asset Tag and Serial of ${info.phones} phones in the tab "${info.tab}"). ` +
+    `Enter the details by hand, or check the sheet.`
   );
 }
 
@@ -92,14 +92,21 @@ export async function addMobile(formData: FormData) {
   const text = (name: string) => String(formData.get(name) ?? "").trim();
   const scanned = text("imei");
   const typed = imeisIn(scanned);
-  if (typed.length === 0) reject("Scan or type the IMEI (15 digits).");
 
-  // The sheet is read again on the server; what it says wins over the form.
+  // The sheet is read again on the server; what it says wins over the form. The phone is found by its
+  // IMEI, or else by the Asset Tag or Serial typed in the form.
   let found: MobileRecord | undefined;
   try {
-    found = findMobile((await loadMobileSheet()).records, scanned);
+    const records = (await loadMobileSheet()).records;
+    found = [scanned, text("assetTag"), text("serial")]
+      .filter(Boolean)
+      .map((v) => findMobile(records, v))
+      .find(Boolean);
   } catch {
     found = undefined;
+  }
+  if (!found && typed.length === 0) {
+    reject("Scan or type the IMEI (15 digits), or an Asset Tag or Serial that is in the mobile sheet.");
   }
   const imei = found?.imei ?? typed[0];
   const all = found?.imeis ?? typed;
@@ -177,7 +184,7 @@ export async function checkMobiles(scans: string[]): Promise<{ rows: MobileCheck
     const base = found ? toLookup(found) : { ...empty, imei: imeisIn(scanned)[0] ?? "" };
     const ids = found?.imeis ?? imeisIn(scanned);
     let status: MobileCheck["status"] = "ready";
-    if (!ids.length) status = "noimei";
+    if (!ids.length) status = found ? "noimei" : "notfound";
     else if (ids.some((i) => seen.has(i))) status = "repeated";
     else if (ids.some((i) => saved.has(i))) status = "exists";
     else if (!found) status = "notfound";
