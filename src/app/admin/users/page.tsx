@@ -11,6 +11,9 @@ const ERRORS: Record<string, string> = {
   exists: "That email already has access.",
   person: "An IM login must be linked to an active IM, and a Rig login to an active rig team member, from the People tab. FO, Hardware and QC logins may only be linked to a person of the same role.",
   self: "You can't change your own access. Ask another admin.",
+  same: "The secondary role must be different from the primary role.",
+  secondaryperson:
+    "A secondary role of IM, QC, Hardware, Rig, FO or Internal needs a linked person (handovers are recorded under that person). Choose the linked person first.",
 };
 
 export default async function UsersPage({ searchParams }: PageProps<"/admin/users">) {
@@ -35,6 +38,18 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
       <option value="admin">Admin</option>
     </select>
   );
+  const secondarySelect = () => (
+    <select name="secondary" defaultValue="" aria-label="Secondary role">
+      <option value="">Secondary role: none</option>
+      <option value="im">Secondary: IM</option>
+      <option value="rig">Secondary: Rig</option>
+      <option value="fo">Secondary: FO</option>
+      <option value="hardware">Secondary: Hardware team</option>
+      <option value="qc">Secondary: QC team</option>
+      <option value="internal">Secondary: Internal team</option>
+      <option value="admin">Secondary: Admin</option>
+    </select>
+  );
   const personSelect = (value?: string) => (
     <select name="person" defaultValue={value ?? ""}>
       <option value="">Linked person: none</option>
@@ -57,11 +72,18 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
         dashboard and inventory. IM and Rig logins must be linked to their entry in the People tab. Changes
         apply the next time that person signs in. Deactivate instead of deleting.
       </p>
+      <p className={styles.muted}>
+        <strong>Primary role</strong> is required. <strong>Secondary role</strong> is optional: give it only to
+        people who do two jobs (e.g. Admin + QC, or IM + QC). They can then switch between the two roles from Home
+        or the Dashboard. A secondary role of IM, QC, Hardware, Rig, FO or Internal needs a linked person. Only
+        admins can set it.
+      </p>
       {typeof error === "string" && ERRORS[error] && <p className={styles.error}>{ERRORS[error]}</p>}
 
       <form action={addUser} className={styles.row}>
         <input name="email" type="email" placeholder="Google email" required />
         {roleSelect()}
+        {secondarySelect()}
         {personSelect()}
         <button type="submit">Add user</button>
       </form>

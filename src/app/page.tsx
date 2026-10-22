@@ -1,4 +1,5 @@
 import Link from "next/link";
+import RoleSwitch from "./RoleSwitch";
 import { INVENTORY_ROLES, MY_DASHBOARD_ROLES, RECEIVE_ROLES, SEND_ROLES, VIEW_ROLES } from "@/lib/access";
 import { signOut } from "@/auth";
 import { requireRole } from "@/lib/authz";
@@ -192,7 +193,12 @@ export default async function Home({
 
               <span className={styles.userMeta}>
                 <strong>{email}</strong>
-                <span>{ROLE_LABELS[user.role]}</span>
+                <span>
+                  {ROLE_LABELS[user.role]}
+                  {user.secondaryRole && user.secondaryRole !== user.primaryRole && (
+                    <> · also {ROLE_LABELS[user.role === user.secondaryRole ? user.primaryRole : user.secondaryRole]}</>
+                  )}
+                </span>
               </span>
             </div>
 
@@ -212,6 +218,9 @@ export default async function Home({
             </form>
           </div>
         </div>
+
+        {/* Logins with a secondary role can switch between their two roles. */}
+        <RoleSwitch role={user.role} primaryRole={user.primaryRole} secondaryRole={user.secondaryRole} back="/" />
 
         {/* No tiles at all means the login's role is not one the app knows. Say so instead of a blank page. */}
         {!ROLE_LABELS[user.role] && (

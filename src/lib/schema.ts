@@ -37,7 +37,7 @@ export const TABS = {
   people: ["person_id", "name", "role", "hub", "linked_user", "active", "mobile"], // mobile: 10 digits, required for new/edited people
   hubs: ["hub_id", "name", "city", "is_central", "active", "parent_hub"], // parent_hub: the hub this one sits under, blank for a top-level hub
   item_types: ["type", "fields"],
-  users: ["email", "role", "person_id", "active"],
+  users: ["email", "role", "person_id", "active", "secondary_role"], // secondary_role: optional 2nd role the login can switch to
   status_limits: ["status", "max_days"],
   deletions: [
     "deletion_id",
@@ -188,9 +188,10 @@ export interface Hub extends Row {
 
 export interface AppUser extends Row {
   email: string;
-  role: Role;
+  role: Role; // primary role, required
   person_id: string;
   active: string; // blank counts as active
+  secondary_role: string; // optional second role (blank = none); the person can switch to it
 }
 
 export interface Deletion extends Row {

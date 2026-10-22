@@ -66,6 +66,8 @@ export default function SendToFields({
               ))}
               {allowInternal && <option value={INTERNAL}>Other internal person (type a name)</option>}
             </select>
+            {/* The category the person was chosen under (e.g. "qc"), for people who also have a secondary role. */}
+            {!isInternal && role && <input type="hidden" name="recipientRole" value={role} />}
             {isInternal ? (
               <input
                 id="internalName"

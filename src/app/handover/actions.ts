@@ -20,6 +20,7 @@ import { collectIds } from "@/lib/scan";
 import { archiveReceipt } from "@/lib/receipt-archive";
 import { HANDLER_ROLES, RECEIVE_ROLES, SEND_ROLES, storeFor } from "@/lib/access";
 import { getStore } from "@/lib/store";
+import { peopleActingAs } from "@/lib/roles";
 import { istTimestamp } from "@/lib/time";
 
 // The site's own address, used for the QR code link inside the archived PDF.
@@ -48,12 +49,21 @@ async function run(
 
   // Scoped: the rig team can't scan rigs, and nobody can scan a type they can't see.
   const store = storeFor(user.role);
-  const [found, hubs, people, users] = await Promise.all([
+  const [found, hubs, sheetPeople, users] = await Promise.all([
     store.getItemsByIds(ids),
     store.list("hubs"),
     store.list("people"),
     store.list("users"),
   ]);
+
+  // Primary / secondary role: the signed-in person acts in the role they switched to, and the person it is
+  // sent to counts in the category it was chosen under (e.g. an IM who is also QC, chosen under "QC team").
+  const people = peopleActingAs(sheetPeople, users, {
+    actor: defaultActor(user),
+    actorRole: user.role,
+    recipient: String(formData.get("recipient") ?? ""),
+    recipientRole: String(formData.get("recipientRole") ?? ""),
+  });
 
   // Who is recording the handover (Sent by / Received by). Only an admin may name someone else; anyone
   // else is always recorded as themselves, whatever the form says. The signed-in account is saved separately.

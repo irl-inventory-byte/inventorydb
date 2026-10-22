@@ -12,6 +12,7 @@ import { rigHomeHub } from "@/lib/rig-hub";
 import HardwareSendFields from "./HardwareSendFields";
 import QcSendFields from "./QcSendFields";
 import SendToFields from "./SendToFields";
+import { personHasRole, secondaryByPerson } from "@/lib/roles";
 
 // The Send to list, grouped so it is easy to scan. What each group means is in the hint under the field.
 const GROUP_LABELS: Record<string, string> = {
@@ -84,12 +85,14 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
       ? fullest!
       : (activeHubs.find((h) => h.is_central === "true")?.hub_id ?? activeHubs[0]?.hub_id ?? "");
 
+  // A person shows under their People role AND under their login's secondary role (e.g. an IM who is also QC).
+  const secondary = secondaryByPerson(users);
   // Categories with the people in each, for the two-step picker. Empty categories are left out.
   const personGroups = (SEND_TO[user.role] ?? []).map((role) => ({
     role,
     label: GROUP_LABELS[role] ?? role,
     people: recipients
-      .filter((p) => p.role === role)
+      .filter((p) => personHasRole(p, role, secondary))
       // A QC or hardware person transfers to ANOTHER person of their team, never to themselves.
       .filter((p) => !((user.role === "qc" || user.role === "hardware") && role === user.role && p.person_id === user.personId))
       .map((p) => ({

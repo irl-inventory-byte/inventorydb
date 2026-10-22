@@ -7,6 +7,7 @@ import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
 import type { HardwareUpdate, QcCheck, Status } from "@/lib/schema";
 import { HANDLER_ROLES, INVENTORY_ROLES, allowedTypes, canSeeType, storeFor, typeParam } from "@/lib/access";
 import TypeSwitch from "../TypeSwitch";
+import RoleSwitch from "../RoleSwitch";
 import { BarList, n } from "./charts";
 import { DailyMoves } from "./daily-moves";
 import { dailyMoves, moveFilterOptions, pickRange } from "@/lib/daily-moves";
@@ -406,6 +407,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           <Icon name="search" size={18} />
           <input name="q" placeholder="Find an item by serial, prism no., brand or model" aria-label="Find an item" />
         </form>
+
+        <RoleSwitch role={user.role} primaryRole={user.primaryRole} secondaryRole={user.secondaryRole} back="/dashboard" />
 
         <TypeSwitch role={user.role} current={type} path="/dashboard" includeAll={false} />
 

@@ -6,7 +6,7 @@ import { resolveLinkedPerson, type LoginRole } from "@/lib/user-link";
 
 declare module "next-auth" {
   interface Session {
-    user: { role: Role; personId: string; roleRaw?: string } & DefaultSession["user"];
+    user: { role: Role; personId: string; roleRaw?: string; secondaryRole?: Role } & DefaultSession["user"];
   }
 }
 
@@ -15,6 +15,7 @@ declare module "@auth/core/jwt" {
     role?: Role;
     roleRaw?: string;
     personId?: string;
+    secondaryRole?: Role;
   }
 }
 
@@ -58,6 +59,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const role = normalizeRole(user?.role);
         token.role = role;
         token.roleRaw = user?.role ?? "";
+        // Optional second role the person can switch to (Home / Dashboard). Ignored if it equals the primary.
+        const secondary = normalizeRole(user?.secondary_role);
+        token.secondaryRole = secondary && secondary !== role ? secondary : undefined;
         token.personId = user && role
           ? resolveLinkedPerson({ ...user, role } as { email: string; role: LoginRole; person_id: string }, await getStore().list("people"))
           : "";
@@ -68,6 +72,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.user.role = token.role as Role;
       session.user.personId = token.personId ?? "";
       session.user.roleRaw = token.roleRaw ?? "";
+      session.user.secondaryRole = token.secondaryRole;
       return session;
     },
   },
