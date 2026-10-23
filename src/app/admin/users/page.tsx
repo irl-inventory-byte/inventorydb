@@ -9,7 +9,7 @@ import UserRow from "./UserRow";
 const ERRORS: Record<string, string> = {
   invalid: "Please enter a valid email and role.",
   exists: "That email already has access.",
-  person: "An IM login must be linked to an active IM, and a Rig login to an active rig team member, from the People tab. FO, Hardware and QC logins may only be linked to a person of the same role.",
+  person: "The linked person must be an active person of the same role as the login (e.g. an IM login → an IM). Or leave Linked person as none.",
   self: "You can't change your own access. Ask another admin.",
   same: "The secondary role must be different from the primary role.",
   secondaryperson:
@@ -85,14 +85,13 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
       <h1>Users</h1>
       <p className={styles.muted}>
         Only these Google accounts can sign in. Admins and IMs can send and receive items. Rig can view the
-        dashboard and inventory. IM and Rig logins must be linked to their entry in the People tab. Changes
-        apply the next time that person signs in. Deactivate instead of deleting.
+        dashboard and inventory. Linked person is optional; when it is set, it must be a person of the same
+        role. Changes apply the next time that person signs in. Deactivate instead of deleting.
       </p>
       <p className={styles.muted}>
         <strong>Primary role</strong> is required. <strong>Secondary role</strong> is optional: give it only to
         people who do two jobs (e.g. Admin + QC, or IM + QC). They can then switch between the two roles from Home
-        or the Dashboard. A secondary role of IM, QC, Hardware, Rig, FO or Internal needs a linked person. Only
-        admins can set it.
+        or the Dashboard. Only admins can set it.
       </p>
       {typeof error === "string" && ERRORS[error] && <p className={styles.error}>{ERRORS[error]}</p>}
 

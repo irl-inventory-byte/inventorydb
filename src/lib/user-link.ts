@@ -25,14 +25,15 @@ export function resolveLinkedPerson(
 }
 
 /**
- * Checks the person a login is linked to. An IM login must link to an active IM and a Rig login to an
- * active rig team member, so a login's name and hub always come from the right kind of person.
- * Returns the person_id to store ("" for an unlinked admin), or undefined if the link is not allowed.
+ * Checks the person a login is linked to. A linked person is optional for every role ("" = not linked; an
+ * IM or Rig login is then matched by email to their People entry when they send or receive). When one is
+ * chosen, it must be an active person of the same role (an IM login → an IM, a Rig login → a rig team member).
+ * Returns the person_id to store, or undefined if the link is not allowed.
  */
 export function checkUserLink(role: LoginRole, personId: string, people: Person[]): string | undefined {
   const need = NEEDS[role];
   const may = MAY_LINK[role];
-  if (!personId) return need ? undefined : "";
+  if (!personId) return "";
   const person = people.find((p) => p.person_id === personId && p.active !== "false");
   if (!person) return undefined;
   const required = need ?? may;

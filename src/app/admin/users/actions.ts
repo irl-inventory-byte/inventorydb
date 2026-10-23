@@ -6,7 +6,6 @@ import { z } from "zod";
 import { requireRole } from "@/lib/authz";
 import { getStore } from "@/lib/store";
 import { checkUserLink, type LoginRole } from "@/lib/user-link";
-import { ROLES_NEEDING_PERSON } from "@/lib/roles";
 import type { Role } from "@/lib/schema";
 
 const UserInput = z.object({
@@ -32,18 +31,14 @@ function parse(formData: FormData) {
   return data;
 }
 
-/**
- * A secondary role that hands items over (IM, QC, Hardware, Rig, FO, Internal) needs a linked person, because
- * every handover is recorded under a person. Saves the users tab header the first time the column is used.
- */
-async function secondaryFor(secondary: string, personId: string) {
+/** The secondary role (optional). Saves the users tab header the first time the column is used. */
+async function secondaryFor(secondary: string) {
   if (!secondary) return "";
-  if ((ROLES_NEEDING_PERSON as readonly string[]).includes(secondary) && !personId) fail("secondaryperson");
   await getStore().init(); // adds the "secondary_role" column header to the users tab if it is missing
   return secondary as Role;
 }
 
-// An IM login links to an IM in the People tab, a Rig login to a rig team member.
+// The linked person is optional. If one is chosen, an IM login links to an IM, a Rig login to a rig team member.
 async function linkedPerson(role: LoginRole, personId: string) {
   const linked = checkUserLink(role, personId, await getStore().list("people"));
   return linked === undefined ? fail("person") : linked;
@@ -56,7 +51,7 @@ export async function addUser(formData: FormData) {
   if ((await store.list("users")).some((u) => u.email.toLowerCase() === email)) fail("exists");
   const person_id = await linkedPerson(role, person);
   await store.upsert("users", [
-    { email, role, person_id, active: "true", secondary_role: await secondaryFor(secondary, person_id) },
+    { email, role, person_id, active: "true", secondary_role: await secondaryFor(secondary) },
   ]);
   revalidatePath("/admin/users");
 }
@@ -74,7 +69,7 @@ export async function saveUser(formData: FormData) {
       role,
       person_id,
       active: formData.get("active") === "on" ? "true" : "false",
-      secondary_role: await secondaryFor(secondary, person_id),
+      secondary_role: await secondaryFor(secondary),
     },
   ]);
   revalidatePath("/admin/users");
