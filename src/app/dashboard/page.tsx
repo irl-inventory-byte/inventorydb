@@ -281,21 +281,39 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     }
   }
 
-  // Rig team and IM are not part of d.late, so take them from the holders list (held for 1 day or more).
-  for (const h of d.holders) {
-    if (!h.role || (h.role !== "rig" && h.role !== "im") || seen.has(h.person_id)) continue;
-    if (h.oldestDays === null || h.oldestDays < 1) continue;
+  // Rig team and internal team: items still with them for more than LATE_AFTER_HOURS since their last
+  // movement (same rule as FO / IFO). IMs are not listed here: items sent to an IM and not received yet are
+  // already the hub's "Sent, not received" row, and items in stock with an IM are not out.
+  const lastMove = new Map<string, number>();
+  for (const e of events) {
+    const t = Date.parse(e.occurred_at);
+    if (!Number.isNaN(t) && t > (lastMove.get(e.item_id) ?? -Infinity)) lastMove.set(e.item_id, t);
+  }
+  const heldBy = new Map<string, { status: Status; count: number; hours: number }>();
+  for (const i of items) {
+    if (i.status !== "with_rig" && i.status !== "with_internal") continue;
+    if (!i.current_holder || seen.has(i.current_holder)) continue;
+    const t = lastMove.get(i.item_id) ?? Date.parse(i.updated_at);
+    const hours = Number.isNaN(t) ? 0 : Math.max(0, (now.getTime() - t) / 3_600_000);
+    if (hours <= LATE_AFTER_HOURS) continue;
+    const g = heldBy.get(i.current_holder) ?? { status: i.status, count: 0, hours: 0 };
+    g.count++;
+    g.hours = Math.max(g.hours, hours);
+    heldBy.set(i.current_holder, g);
+  }
+  for (const [personId, g] of heldBy) {
+    const person = people.find((p) => p.person_id === personId);
     attention.push({
-      key: `late-${h.role}-${h.person_id}`,
-      person: h.name,
-      role: ROLE_LABELS[h.role],
-      city: cityOfPerson(h.person_id),
-      sentBy: sentToPerson(h.person_id),
-      items: h.count,
-      hours: h.oldestDays * 24,
-      outFor: `${h.oldestDays} day${h.oldestDays === 1 ? "" : "s"}`,
+      key: `late-held-${personId}`,
+      person: person?.name ?? personId,
+      role: person ? ROLE_LABELS[person.role] : g.status === "with_rig" ? "Rig team" : "Internal",
+      city: cityOfPerson(personId),
+      sentBy: sentToPerson(personId),
+      items: g.count,
+      hours: g.hours,
+      outFor: howLong(g.hours),
       issue: "Not returned",
-      href: inventory({ holder: h.person_id, status: h.role === "rig" ? "with_rig" : "with_internal" }),
+      href: inventory({ holder: personId, status: g.status }),
       tone: "warning",
     });
   }
@@ -517,8 +535,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           <section className={styles.card} id="attention" aria-label="Needs attention" style={{ minWidth: 0 }}>
             <h2>Needs attention</h2>
             <p className={styles.muted}>
-              FO, IFO, rig team, IM or hubs holding items for more than {LATE_AFTER_HOURS} hours, plus lost and
-              damaged items, with who sent them. Longest out first.
+              FO, IFO, rig team, internal people or hubs holding items for more than {LATE_AFTER_HOURS} hours (a
+              hub row = sent to that hub and not received yet), plus lost and damaged items, with who sent them.
+              Longest out first.
             </p>
 
             {attention.length > 0 && (
