@@ -78,6 +78,17 @@ export const TABS = {
     "qc_status", // qc_pending | pass | fail | repaired
     "comment",
   ],
+  // Unknown rigs: reports of where a rig was seen, by whom, why, with a small photo. One row per report.
+  rig_reports: [
+    "report_id",
+    "item_id",
+    "recorded_at",
+    "recorded_by", // login email
+    "recorded_by_name",
+    "location",
+    "reason",
+    "photo", // small JPEG as a data: URL (shrunk on the phone to fit one sheet cell), or blank
+  ],
   // Audit log of admin edits to past receipts: who changed what, and when.
   receipt_edits: [
     "edit_id",
@@ -249,6 +260,17 @@ export interface QcCheck extends Row {
   comment: string;
 }
 
+export interface RigReport extends Row {
+  report_id: string;
+  item_id: string;
+  recorded_at: string;
+  recorded_by: string;
+  recorded_by_name: string;
+  location: string;
+  reason: string;
+  photo: string;
+}
+
 export interface TabRows {
   items: Item;
   events: ItemEvent;
@@ -261,4 +283,5 @@ export interface TabRows {
   receipt_edits: ReceiptEdit;
   hardware_updates: HardwareUpdate;
   qc_checks: QcCheck;
+  rig_reports: RigReport;
 }

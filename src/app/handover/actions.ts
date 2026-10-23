@@ -146,8 +146,19 @@ export async function sendCards(formData: FormData) {
   const qcComment = String(formData.get("qcComment") ?? "").trim().slice(0, 1000);
   let qcRows: TabRows["qc_checks"][] = [];
   // Hardware team → IM (Repaired): was the rig sanitized? Yes / No, saved on the receipt and the rig's history.
+  // Chosen per rig ({"IC-6":"yes","IC-7":"no"}); an older page sends one answer for all rigs.
   const sanitized = String(formData.get("sanitized") ?? "");
-  const sanitizedText = sanitized === "yes" ? "Yes" : sanitized === "no" ? "No" : "";
+  const allText = sanitized === "yes" ? "Yes" : sanitized === "no" ? "No" : "";
+  const sanitizedMap = new Map<string, string>();
+  try {
+    const raw: unknown = JSON.parse(String(formData.get("sanitizedMap") ?? "") || "{}");
+    if (raw && typeof raw === "object") {
+      for (const [k, v] of Object.entries(raw)) if (v === "yes" || v === "no") sanitizedMap.set(k.trim().toUpperCase(), v === "yes" ? "Yes" : "No");
+    }
+  } catch {
+    // ignore a broken value; the check below asks for the answers again
+  }
+  const sanitizedOf = (id: string) => sanitizedMap.get(id.trim().toUpperCase()) ?? allText;
   let hwRows: TabRows["hardware_updates"][] = [];
 
   await run(
@@ -203,8 +214,9 @@ export async function sendCards(formData: FormData) {
             }
           } else if (hwOutcome === "repaired" && to && to.role !== "im") {
             return { events: [], items: [], errors: ["A repaired rig goes to an IM. To hand it to another hardware person, choose \"Send to hardware\"."] };
-          } else if (hwOutcome === "repaired" && !sanitizedText) {
-            return { events: [], items: [], errors: ["Choose the Sanitization status: Yes or No."] };
+          } else if (hwOutcome === "repaired" && targets.some((t) => t.item_type === "rig" && !sanitizedOf(t.item_id))) {
+            const left = targets.filter((t) => t.item_type === "rig" && !sanitizedOf(t.item_id)).map((t) => t.item_id);
+            return { events: [], items: [], errors: [`Choose the Sanitization status (Yes or No) for: ${left.join(", ")}.`] };
           } else if (!hwOutcome) {
             return { events: [], items: [], errors: ["Choose the rig status."] };
           }
@@ -216,16 +228,18 @@ export async function sendCards(formData: FormData) {
           toRole === "qc" && ctx.senderRole !== "hardware"
             ? { status: "qc_pending" as const, comment: "Sent to QC for checking" }
             : ctx.senderRole === "hardware" && toRole === "im"
-              ? {
-                  status: "repaired" as const,
-                  comment: `Repaired by hardware team${sanitizedText ? ` · Sanitization: ${sanitizedText}` : ""}`,
-                }
+              ? { status: "repaired" as const, comment: "Repaired by hardware team" }
               : undefined;
-        if (ctx.senderRole === "hardware" && toRole === "im" && sanitizedText) {
-          // On the receipt (the send note) and in the rig's hardware updates.
-          input.note = [`Sanitization: ${sanitizedText}`, input.note.trim()].filter(Boolean).join(" · ");
-          hwRows = targets
-            .filter((t) => t.item_type === "rig")
+        if (ctx.senderRole === "hardware" && toRole === "im") {
+          // On the receipt (the send note) and in each rig's hardware updates.
+          const rigsSent = targets.filter((t) => t.item_type === "rig" && sanitizedOf(t.item_id));
+          const answers = new Set(rigsSent.map((t) => sanitizedOf(t.item_id)));
+          const summary =
+            answers.size === 1
+              ? `Sanitization: ${[...answers][0]}`
+              : `Sanitization: ${rigsSent.map((t) => `${t.item_id} ${sanitizedOf(t.item_id)}`).join(", ")}`;
+          if (rigsSent.length) input.note = [summary, input.note.trim()].filter(Boolean).join(" · ");
+          hwRows = rigsSent
             .map((t) => ({
               update_id: ctx.newId("hw"),
               item_id: t.item_id,
@@ -233,11 +247,11 @@ export async function sendCards(formData: FormData) {
               recorded_by: ctx.by,
               recorded_by_name: displayName(ctx.people, ctx.actorPersonId),
               update_type: "Sanitization",
-              comment: sanitizedText,
+              comment: sanitizedOf(t.item_id),
             }));
         }
         // IM → FO / IFO / internal with a rig the hardware team repaired: it goes out as "QC passed".
-        if (!mark &&ctx.senderRole !== "hardware" && (toRole === "fo" || toRole === "ifo" || toRole === "internal" || (!toRole && input.internalName.trim()))) {
+        if (!mark && ctx.senderRole !== "hardware" && (toRole === "fo" || toRole === "ifo" || toRole === "internal" || (!toRole && input.internalName.trim()))) {
           qcRows = targets
             .filter((t) => t.item_type === "rig" && qcStatus.get(t.item_id) === "repaired")
             .map((t) => ({
@@ -260,7 +274,10 @@ export async function sendCards(formData: FormData) {
               recorded_by: ctx.by,
               recorded_by_name: displayName(ctx.people, ctx.actorPersonId),
               qc_status: mark.status,
-              comment: mark.comment,
+              comment:
+                mark.status === "repaired" && sanitizedOf(t.item_id)
+                  ? `${mark.comment} · Sanitization: ${sanitizedOf(t.item_id)}`
+                  : mark.comment,
             }));
         }
       }

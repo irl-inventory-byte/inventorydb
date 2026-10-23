@@ -56,6 +56,13 @@ const WORK: Tile[] = [
     roles: ["admin", "im", "hardware", "qc"],
   },
   {
+    href: "/rigs/unknown",
+    title: "Unknown rigs",
+    desc: "Rigs with no activity for 2+ days: who saw them, where, why, with a photo.",
+    icon: "alert",
+    roles: ["admin", "im", "hardware"],
+  },
+  {
     href: "/handover/send",
     title: "Send items",
     desc: "Hand items to an IM, IFO, FO, the rig team, QC or hardware team.",

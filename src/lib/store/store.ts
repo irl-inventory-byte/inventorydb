@@ -53,7 +53,7 @@ export class Store {
   async list<T extends TabName>(
     tab: T
   ): Promise<TabRows[T][]> {
-    const optional = tab === "hardware_updates" || tab === "qc_checks";
+    const optional = tab === "hardware_updates" || tab === "qc_checks" || tab === "rig_reports";
     const rows = optional
       ? await this.readOptional(tab)
       : await this.backend.readAll(tab);

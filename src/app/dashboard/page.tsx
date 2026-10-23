@@ -11,19 +11,21 @@ import RoleSwitch from "../RoleSwitch";
 import { BarList, n, type BarRow } from "./charts";
 import { DailyMoves } from "./daily-moves";
 import { dailyMoves, moveFilterOptions, pickRange } from "@/lib/daily-moves";
-import { formatIst, istDate } from "@/lib/time";
+import { istDate } from "@/lib/time";
 import styles from "./dashboard.module.css";
 import { HubOrgChart, countHidden } from "./hub-tree-view";
 import AttentionFilter from "./attentionfilter";
 import { Icon, type IconName } from "./icons";
 import { SummaryKpis } from "./summary-kpis";
 import { RIG_STATES, RIG_STATE_LABELS, rigState, type RigState } from "@/lib/rig-state";
-import { inactiveRigs } from "@/lib/rig-metrics";
-import { NO_ACTIVITY_DAYS, RigMetrics } from "./rig-metrics";
+import { RigMetrics } from "./rig-metrics";
 import type { Item } from "@/lib/schema";
 
 const inventory = (params: Record<string, string>) => `/inventory?${new URLSearchParams(params)}`;
 const days = (d: number | null) => (d === null ? "—" : d === 0 ? "today" : `${d}d`);
+
+/** A time as an IST date, e.g. "8 Oct 2026". */
+const istDay = (t: number) => new Date(t).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" });
 
 // One row in the "Needs attention" table.
 interface Attention {
@@ -189,7 +191,28 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const latestQc = new Map<string, string>();
   for (const c of qcChecks) latestQc.set(c.item_id, c.qc_status);
 
-  type Kpi = { label: string; value: number; hint: string; href: string; icon: IconName; color: string };
+  type Kpi = {
+    label: string;
+    value: number;
+    hint: string;
+    href: string;
+    icon: IconName;
+    color: string;
+    cities?: { city: string; count: number; href: string }[]; // city-wise list, opened from the tile
+  };
+  // City-wise count of items with a status (city of the hub the item is at), biggest first.
+  const cityOfHub = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
+  const citiesFor = (status: Status) => {
+    const count = new Map<string, number>();
+    for (const i of items) {
+      if (i.status !== status) continue;
+      const c = cityOfHub.get(i.current_hub) || i.current_hub || "Not set";
+      count.set(c, (count.get(c) ?? 0) + 1);
+    }
+    return [...count.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([city, c]) => ({ city, count: c, href: inventory({ status, city: city.toLowerCase() }) }));
+  };
 
   // RIGS: one tile per rig state (see RIG_STATES in lib/rig-state.ts). Each opens Rig checks filtered to it.
   const rigCount = Object.fromEntries(RIG_STATES.map((k) => [k, 0])) as Record<RigState, number>;
@@ -233,9 +256,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     icon: RIG_TILE[k].icon,
     color: RIG_TILE[k].color,
   }));
-  // Unknown: rigs with no handover, QC result or hardware update for more than NO_ACTIVITY_DAYS days
-  // (with hardware, dead, R&D, lost and damaged rigs are left out). It overlaps the tiles above.
-  const unknownRigs = showQc ? inactiveRigs(items, events, qcChecks, hardwareUpdates, now, NO_ACTIVITY_DAYS) : [];
   // Admin only: every rig sent and not received yet (to IMs, QC or hardware), and every rig the hardware team
   // has (received or still on its way to them).
   if (user.role === "admin") {
@@ -263,19 +283,19 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       },
     );
   }
-  rigKpis.push({
-    label: "Unknown",
-    value: unknownRigs.length,
-    hint: `No activity for ${NO_ACTIVITY_DAYS}+ days`,
-    href: "/rigs?state=unknown",
-    icon: "alert",
-    color: "var(--critical)",
-  });
 
   // SD CARDS (and the "All" view): unchanged.
   const sdKpis: Kpi[] = [
     { label: "In stock", value: s.in_stock, hint: share(s.in_stock), href: inventory({ status: "in_stock" }), icon: "check", color: "var(--series-3)" },
-    { label: "With field officers", value: s.with_fo, hint: share(s.with_fo), href: inventory({ status: "with_fo" }), icon: "user", color: "var(--series-2)" },
+    {
+      label: "With field officers",
+      value: s.with_fo,
+      hint: share(s.with_fo),
+      href: inventory({ status: "with_fo" }),
+      icon: "user",
+      color: "var(--series-2)",
+      cities: citiesFor("with_fo"),
+    },
     { label: "With rig team", value: s.with_rig, hint: share(s.with_rig), href: inventory({ status: "with_rig" }), icon: "database", color: "var(--series-7)" },
     { label: "Internal", value: s.with_internal, hint: share(s.with_internal), href: inventory({ status: "with_internal" }), icon: "user", color: "var(--series-1)" },
     {
@@ -318,7 +338,12 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     },
     ...sdKpis
       .filter((k) => k.label !== "With rig team" && k.label !== "Internal")
-      .map((k) => ({ ...k, href: `${k.href}&type=mobile`, hint: k.hint.replace("of all items", "of all mobiles") })),
+      .map((k) => ({
+        ...k,
+        href: `${k.href}&type=mobile`,
+        hint: k.hint.replace("of all items", "of all mobiles"),
+        cities: k.cities?.map((c) => ({ ...c, href: `${c.href}&type=mobile` })),
+      })),
   ];
   const kpis = rigView ? rigKpis : mobileView ? mobileKpis : sdKpis;
 
@@ -488,7 +513,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           role: a.role,
           city: hubCity.get(i.current_hub) ?? i.current_hub,
           sentBy: (e?.from_person || personName.get(e?.from_id ?? "") || e?.from_id || "—").trim() || "—",
-          sentOn: Number.isNaN(sentAt) ? "—" : formatIst(new Date(sentAt).toISOString()),
+          sentOn: Number.isNaN(sentAt) ? "—" : istDay(sentAt),
           hours: hoursOut(i),
           issue: a.issue,
           href: a.href,
@@ -503,9 +528,18 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const listParam = (v: string) => v.split(",").map((x) => x.trim()).filter(Boolean);
   const cityFilter = listParam(one(sp.acity));
   const roleFilter = listParam(one(sp.arole));
-  const shownDelayed = delayed.filter(
-    (r) => (cityFilter.length === 0 || cityFilter.includes(r.city)) && (roleFilter.length === 0 || roleFilter.includes(r.role)),
-  );
+  // Same type, person, role, city, sender and send date → one row with a Count. Oldest first.
+  const groups = new Map<string, (typeof delayed)[number] & { count: number }>();
+  for (const r of delayed) {
+    if (!((cityFilter.length === 0 || cityFilter.includes(r.city)) && (roleFilter.length === 0 || roleFilter.includes(r.role)))) continue;
+    const k = [r.type, r.person, r.role, r.city, r.sentBy, r.sentOn, r.issue].join("|");
+    const g = groups.get(k);
+    if (g) {
+      g.count++;
+      g.hours = Math.max(g.hours, r.hours);
+    } else groups.set(k, { ...r, count: 1 });
+  }
+  const shownDelayed = [...groups.values()].sort((x, y) => y.hours - x.hours || y.count - x.count);
   // "Moved per day" chart: person, city and role filters (?mperson=…&mcity=…&mrole=…). Other settings are kept.
   const movePerson = one(sp.mperson);
   const moveCity = one(sp.mcity);
@@ -622,7 +656,45 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           className={rigView ? `${styles.kpiGrid} ${styles.kpiGridRig}` : mobileView ? `${styles.kpiGrid} kpi-mob` : `${styles.kpiGrid} kpi-sd`}
           aria-label="Overview"
         >
-          {kpis.map((k) => (
+          <style>{`
+.kpi-city{position:relative;margin-top:4px;font-size:.82rem}
+.kpi-city > summary{cursor:pointer;color:#1d4ed8;list-style:none;display:inline-block;padding:2px 0}
+.kpi-city > summary::-webkit-details-marker{display:none}
+.kpi-city[open] > summary{font-weight:600}
+.kpi-city > div{position:absolute;left:0;top:100%;z-index:30;min-width:220px;max-height:300px;overflow:auto;background:#fff;border:1px solid #d1d5db;border-radius:10px;box-shadow:0 10px 30px rgba(15,23,42,.15);padding:6px}
+.kpi-city a{display:flex;justify-content:space-between;gap:16px;padding:6px 8px;border-radius:6px;color:inherit;text-decoration:none;white-space:nowrap}
+.kpi-city a:hover{background:#f1f5f9}
+.kpi-tile{display:flex}
+.kpi-tile > a{flex:1;min-width:0}
+`}</style>
+          {kpis.map((k) =>
+            k.cities ? (
+              <div key={k.label} className={styles.kpi} style={{ "--kpi": k.color, overflow: "visible" } as CSSProperties}>
+                <span className={styles.kpiIcon}>
+                  <Icon name={k.icon} size={22} />
+                </span>
+                <span className={styles.kpiBody} style={{ overflow: "visible" }}>
+                  <Link href={k.href} style={{ color: "inherit", textDecoration: "none", display: "contents" }}>
+                    <span className={styles.kpiLabel}>{k.label}</span>
+                    <span className={styles.kpiValue}>{n(k.value)}</span>
+                    {k.hint && <span className={styles.kpiHint}>{k.hint}</span>}
+                  </Link>
+                  {k.cities.length > 0 && (
+                    <details className="kpi-city">
+                      <summary>City wise ({k.cities.length}) ▾</summary>
+                      <div>
+                        {k.cities.map((c) => (
+                          <Link key={c.city} href={c.href}>
+                            <span>{c.city}</span>
+                            <b>{n(c.count)}</b>
+                          </Link>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </span>
+              </div>
+            ) : (
             <Link key={k.label} href={k.href} className={styles.kpi} style={{ "--kpi": k.color } as CSSProperties}>
               <span className={styles.kpiIcon}>
                 <Icon name={k.icon} size={22} />
@@ -633,7 +705,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                 {k.hint && <span className={styles.kpiHint}>{k.hint}</span>}
               </span>
             </Link>
-          ))}
+            ),
+          )}
         </section>
 
         {showQc && (
@@ -712,7 +785,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             <h2>Needs attention</h2>
             <p className={styles.muted}>
               Only delayed cards: each item an FO, IFO, rig team or internal person has held, or that was sent to a hub
-              and not received, for more than {LATE_AFTER_HOURS} hours since its last send or receive. Oldest first.
+              and not received, for more than {LATE_AFTER_HOURS} hours since its last send or receive. Cards with the same
+              person, sender and send date are one row; Count = how many. Oldest first.
             </p>
 
             {delayed.length > 0 && (
@@ -739,7 +813,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                 <table className={styles.table} style={{ width: "100%", minWidth: "900px", borderCollapse: "separate", borderSpacing: 0 }}>
                   <thead>
                     <tr>
-                      {["Type", "Person", "Role", "City", "Sent by", "Sent on", "Out for", "Issue"].map((h) => (
+                      {["Type", "Person", "Role", "City", "Sent by", "Sent on", "Count", "Out for", "Issue"].map((h) => (
                         <th key={h} scope="col" style={TH_STYLE}>
                           {h}
                         </th>
@@ -748,7 +822,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                   </thead>
                   <tbody>
                     {shownDelayed.map((r) => (
-                      <tr key={r.id}>
+                      <tr key={[r.type, r.person, r.city, r.sentBy, r.sentOn, r.issue].join("|")}>
                         <td>{r.type}</td>
                         <td style={{ whiteSpace: "normal" }}>
                           <Link href={r.href}>{r.person}</Link>
@@ -757,6 +831,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                         <td>{r.city}</td>
                         <td style={{ whiteSpace: "normal" }}>{r.sentBy}</td>
                         <td>{r.sentOn}</td>
+                        <td className={styles.num}>{n(r.count)}</td>
                         <td>{howLong(r.hours)}</td>
                         <td>
                           <span className={`${styles.icon} ${TONE.warning}`} aria-hidden>
@@ -772,8 +847,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                       <th scope="row" colSpan={6} style={{ ...TFOOT_STYLE, textAlign: "left" }}>
                         Total delayed cards
                       </th>
+                      <td className={styles.num} style={TFOOT_STYLE}>
+                        {n(shownDelayed.reduce((t, r) => t + r.count, 0))}
+                      </td>
                       <td colSpan={2} style={TFOOT_STYLE}>
-                        {n(shownDelayed.length)}
+                        {n(shownDelayed.length)} row{shownDelayed.length === 1 ? "" : "s"}
                       </td>
                     </tr>
                   </tfoot>
