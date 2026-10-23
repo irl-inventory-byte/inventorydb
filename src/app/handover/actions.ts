@@ -236,6 +236,20 @@ export async function sendCards(formData: FormData) {
               comment: sanitizedText,
             }));
         }
+        // IM → FO / IFO / internal with a rig the hardware team repaired: it goes out as "QC passed".
+        if (!mark &&ctx.senderRole !== "hardware" && (toRole === "fo" || toRole === "ifo" || toRole === "internal" || (!toRole && input.internalName.trim()))) {
+          qcRows = targets
+            .filter((t) => t.item_type === "rig" && qcStatus.get(t.item_id) === "repaired")
+            .map((t) => ({
+              check_id: ctx.newId("qc"),
+              item_id: t.item_id,
+              recorded_at: ctx.now,
+              recorded_by: ctx.by,
+              recorded_by_name: displayName(ctx.people, ctx.actorPersonId),
+              qc_status: "pass" as const,
+              comment: "Repaired by hardware · QC passed when sent to the field",
+            }));
+        }
         if (mark) {
           qcRows = targets
             .filter((t) => t.item_type === "rig")
