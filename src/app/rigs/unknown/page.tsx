@@ -17,7 +17,7 @@ const card = { border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, backg
  * (rigs with hardware, dead, R&D, lost or damaged are left out). Admin, IM and Hardware team.
  * Click a rig to see who reported it, where it is, why, with a photo, and to add a new report.
  */
-export default async function UnknownRigsPage({ searchParams }: PageProps<"/rigs/unknown">) {
+export default async function UnknownRigsPage({ searchParams }: PageProps<"/">) {
   const user = await requireRole("admin", "im", "hardware");
   const sp = await searchParams;
   const q = one(sp.q).trim().toLowerCase();
