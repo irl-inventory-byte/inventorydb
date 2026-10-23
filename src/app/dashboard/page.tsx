@@ -11,7 +11,7 @@ import RoleSwitch from "../RoleSwitch";
 import { BarList, n, type BarRow } from "./charts";
 import { DailyMoves } from "./daily-moves";
 import { dailyMoves, moveFilterOptions, pickRange } from "@/lib/daily-moves";
-import { istDate } from "@/lib/time";
+import { formatIst, istDate } from "@/lib/time";
 import styles from "./dashboard.module.css";
 import { HubOrgChart, countHidden } from "./hub-tree-view";
 import AttentionFilter from "./attentionfilter";
@@ -544,6 +544,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           city: hubCity.get(i.current_hub) ?? i.current_hub,
           sentBy: (e?.from_person || personName.get(e?.from_id ?? "") || e?.from_id || "—").trim() || "—",
           sentOn: Number.isNaN(sentAt) ? "—" : istDay(sentAt),
+          sentAt: Number.isNaN(sentAt) ? "—" : formatIst(new Date(sentAt).toISOString()),
+          status: STATUS_LABELS[i.status] ?? i.status,
           hours: hoursOut(i),
           issue: a.issue,
           href: a.href,
@@ -559,7 +561,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const cityFilter = listParam(one(sp.acity));
   const roleFilter = listParam(one(sp.arole));
   // Same type, person, role, city, sender and send date → one row with a Count. Oldest first.
-  const groups = new Map<string, (typeof delayed)[number] & { count: number }>();
+  const groups = new Map<string, (typeof delayed)[number] & { count: number; key: string; items: (typeof delayed)[number][] }>();
   for (const r of delayed) {
     if (!((cityFilter.length === 0 || cityFilter.includes(r.city)) && (roleFilter.length === 0 || roleFilter.includes(r.role)))) continue;
     const k = [r.type, r.person, r.role, r.city, r.sentBy, r.sentOn, r.issue].join("|");
@@ -567,9 +569,17 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     if (g) {
       g.count++;
       g.hours = Math.max(g.hours, r.hours);
-    } else groups.set(k, { ...r, count: 1 });
+      g.items.push(r);
+    } else groups.set(k, { ...r, count: 1, key: k, items: [r] });
   }
   const shownDelayed = [...groups.values()].sort((x, y) => y.hours - x.hours || y.count - x.count);
+  // Click a row: only that row's delayed items, with their details (?adetail=<row>), shown under the table.
+  const detailKey = one(sp.adetail);
+  const detailRow = shownDelayed.find((g) => g.key === detailKey);
+  const attentionKeep: Record<string, string> = {};
+  for (const k of ["type", "empty", "acity", "arole", "mperson", "mcity", "mrole", "mfrom", "mto"]) if (one(sp[k])) attentionKeep[k] = one(sp[k]);
+  const detailHref = (key: string) => `/dashboard?${new URLSearchParams({ ...attentionKeep, adetail: key })}#delayed-items`;
+  const closeDetailHref = `/dashboard?${new URLSearchParams(attentionKeep)}#attention`;
   // "Moved per day" chart: person, city and role filters (?mperson=…&mcity=…&mrole=…). Other settings are kept.
   const movePerson = one(sp.mperson);
   const moveCity = one(sp.mcity);
@@ -908,7 +918,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             <p className={styles.muted}>
               Only delayed cards: each item an FO, IFO, rig team or internal person has held, or that was sent to a hub
               and not received, for more than {LATE_AFTER_HOURS} hours since its last send or receive. Cards with the same
-              person, sender and send date are one row; Count = how many. Oldest first.
+              person, sender and send date are one row; Count = how many. Oldest first. Click a name or the Count to see
+              only those delayed items.
             </p>
 
             {delayed.length > 0 && (
@@ -944,16 +955,22 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                   </thead>
                   <tbody>
                     {shownDelayed.map((r) => (
-                      <tr key={[r.type, r.person, r.city, r.sentBy, r.sentOn, r.issue].join("|")}>
+                      <tr key={r.key} style={r.key === detailKey ? { background: "#eff6ff" } : undefined}>
                         <td>{r.type}</td>
                         <td style={{ whiteSpace: "normal" }}>
-                          <Link href={r.href}>{r.person}</Link>
+                          <Link href={detailHref(r.key)} title="Show only these delayed items">
+                            {r.person}
+                          </Link>
                         </td>
                         <td>{r.role}</td>
                         <td>{r.city}</td>
                         <td style={{ whiteSpace: "normal" }}>{r.sentBy}</td>
                         <td>{r.sentOn}</td>
-                        <td className={styles.num}>{n(r.count)}</td>
+                        <td className={styles.num}>
+                          <Link href={detailHref(r.key)} className={styles.link} title="Show only these delayed items">
+                            {n(r.count)}
+                          </Link>
+                        </td>
                         <td>{howLong(r.hours)}</td>
                         <td>
                           <span className={`${styles.icon} ${TONE.warning}`} aria-hidden>
@@ -978,6 +995,59 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                     </tr>
                   </tfoot>
                 </table>
+              </div>
+            )}
+
+            {detailRow && (
+              <div id="delayed-items" style={{ marginTop: 20, scrollMarginTop: 80 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                  <h3 style={{ margin: 0 }}>
+                    Delayed items — {detailRow.person} ({detailRow.role}) · sent by {detailRow.sentBy} on {detailRow.sentOn} ·{" "}
+                    {n(detailRow.items.length)}
+                  </h3>
+                  <Link href={closeDetailHref} className={styles.link}>
+                    Close
+                  </Link>
+                </div>
+                <p className={styles.muted} style={{ margin: "4px 0 10px" }}>
+                  Only these items: out for more than {LATE_AFTER_HOURS} hours since their last send or receive. Oldest first.
+                </p>
+                <div
+                  className={styles.tableScroll}
+                  role="region"
+                  aria-label="Delayed items — scrollable table"
+                  tabIndex={0}
+                  style={{ maxHeight: "420px", maxWidth: "100%", overflowY: "auto", overflowX: "auto" }}
+                >
+                  <table className={styles.table} style={{ width: "100%", minWidth: "760px", borderCollapse: "separate", borderSpacing: 0 }}>
+                    <thead>
+                      <tr>
+                        {["Item ID", "Type", "City", "Sent by", "Sent at", "Out for", "Status"].map((h) => (
+                          <th key={h} scope="col" style={TH_STYLE}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detailRow.items.map((it) => (
+                        <tr key={it.id}>
+                          <td>
+                            <Link href={`/inventory/${encodeURIComponent(it.id)}`} className={styles.link}>
+                              {it.id}
+                            </Link>
+                          </td>
+                          <td>{it.type}</td>
+                          <td>{it.city}</td>
+                          <td>{it.sentBy}</td>
+                          <td>{it.sentAt}</td>
+                          <td>{howLong(it.hours)}</td>
+                          <td>{it.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </section>
