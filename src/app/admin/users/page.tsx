@@ -11,7 +11,7 @@ const ERRORS: Record<string, string> = {
   invalid: "Please enter a valid email and role.",
   exists: "That email already has access.",
   person: "The linked person must be an active person of the same role as the login (e.g. an IM login → an IM). Or leave Linked person as none.",
-  self: "You can't change your own access. Ask another admin.",
+  self: "You can't change your own primary role or turn yourself off. Ask another admin. (Your secondary role and linked person you can set.)",
   same: "The secondary role must be different from the primary role.",
   secondaryperson:
     "A secondary role of IM, QC, Hardware, Rig, FO or Internal needs a linked person (handovers are recorded under that person). Choose the linked person first.",
@@ -100,7 +100,8 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
       <p className={styles.muted}>
         <strong>Primary role</strong> is required. <strong>Secondary role</strong> is optional: give it only to
         people who do two jobs (e.g. Admin + QC, or IM + QC). They can then switch between the two roles from Home
-        or the Dashboard. Only admins can set it.
+        or the Dashboard (role buttons next to the name). Only admins can set it, and an admin can also set their own
+        secondary role and linked person (not their own primary role or Active).
       </p>
       {/* Stays at the top of the screen while scrolling, so a save or a problem is always seen. */}
       <div id="saved" />

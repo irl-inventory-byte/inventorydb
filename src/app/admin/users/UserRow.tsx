@@ -25,11 +25,21 @@ export default function UserRow({
     <form ref={formRef} action={saveUser} className={styles.row}>
       <input type="hidden" name="email" value={user.email} />
       <input type="hidden" name="back" value={back} />
+      {/* Your own row: primary role and Active can't be changed (they are sent as they are). */}
+      {isMe && <input type="hidden" name="role" value={user.role} />}
+      {isMe && <input type="hidden" name="active" value="on" />}
       <span style={{ flex: "1 1 220px" }}>
         {user.email}
         {isMe && " (you)"}
       </span>
-      <select name="role" defaultValue={user.role} onChange={submit} disabled={isMe} aria-label="Primary role" title="Primary role (required)">
+      <select
+        name={isMe ? undefined : "role"}
+        defaultValue={user.role}
+        onChange={submit}
+        disabled={isMe}
+        aria-label="Primary role"
+        title={isMe ? "Your own primary role can't be changed. Ask another admin." : "Primary role (required)"}
+      >
         <option value="im">IM</option>
         <option value="rig">Rig</option>
         <option value="fo">FO</option>
@@ -42,7 +52,6 @@ export default function UserRow({
         name="secondary"
         defaultValue={user.secondary_role ?? ""}
         onChange={submit}
-        disabled={isMe}
         aria-label="Secondary role"
         title="Secondary role (optional): the person can switch to it"
       >
@@ -53,9 +62,9 @@ export default function UserRow({
         <option value="hardware">Secondary: Hardware team</option>
         <option value="qc">Secondary: QC team</option>
         <option value="internal">Secondary: Internal team</option>
-        <option value="admin">Secondary: Admin</option>
+        {!isMe && <option value="admin">Secondary: Admin</option>}
       </select>
-      <select name="person" defaultValue={user.person_id} onChange={submit} disabled={isMe}>
+      <select name="person" defaultValue={user.person_id} onChange={submit}>
         <option value="">Linked person: none</option>
         {linkable.map((p) => (
           <option key={p.person_id} value={p.person_id}>
@@ -64,7 +73,7 @@ export default function UserRow({
         ))}
       </select>
       <label>
-        <input type="checkbox" name="active" defaultChecked={user.active !== "false"} disabled={isMe} onChange={submit} /> Active
+        <input type="checkbox" name={isMe ? undefined : "active"} defaultChecked={user.active !== "false"} disabled={isMe} onChange={submit} /> Active
       </label>
     </form>
   );

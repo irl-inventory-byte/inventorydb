@@ -77,17 +77,24 @@ export async function addUser(formData: FormData) {
 
 export async function saveUser(formData: FormData) {
   const me = await requireRole("admin");
-  const { email, role, secondary, person, fail } = parse(formData);
-  if (email === me.email?.toLowerCase()) fail("self"); // keeps at least one admin able to sign in
+  const parsed = parse(formData);
+  const { email, secondary, person, fail } = parsed;
   const store = getStore();
-  if (!(await store.list("users")).some((u) => u.email.toLowerCase() === email)) fail("invalid");
+  const saved = (await store.list("users")).find((u) => u.email.toLowerCase() === email);
+  if (!saved) return fail("invalid");
+  // Your own login: you may set your secondary role and linked person, but your primary role stays and you
+  // stay active, so there is always an admin who can sign in. Only a primary Admin can edit their own row.
+  const isSelf = email === me.email?.toLowerCase();
+  if (isSelf && saved.role !== "admin") fail("self");
+  const role = isSelf ? ("admin" as const) : parsed.role;
+  if (isSelf && secondary === "admin") fail("same");
   const person_id = await linkedPerson(role, person, fail);
   await store.upsert("users", [
     {
       email,
       role,
       person_id,
-      active: formData.get("active") === "on" ? "true" : "false",
+      active: isSelf || formData.get("active") === "on" ? "true" : "false",
       secondary_role: await secondaryFor(secondary),
     },
   ]);
