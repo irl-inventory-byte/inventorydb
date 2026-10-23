@@ -1,9 +1,6 @@
 import type { Action, Hub, Item, ItemEvent, Status } from "./schema";
 
 export interface ReceiptLine {
-  serial(serial: any): string;
-  category(category: any): string;
-  assetTag(assetTag: any): string;
   itemId: string;
   // "sd_card", "rig" or "mobile". Older items without a type are SD cards.
   itemType: string;
@@ -14,6 +11,11 @@ export interface ReceiptLine {
   // From the item's saved attributes, e.g. "256 GB" and "Black".
   storage: string;
   cardType: string;
+
+  // Mobiles: Asset Tag, Serial and Category from the mobile sheet ("" for other items).
+  assetTag: string;
+  serial: string;
+  category: string;
 
   // Original item price, as stored.
   price: string;
@@ -122,7 +124,7 @@ function validatePenaltyAmount(amount: number): number {
 }
 
 /** Read storage and card colour from an item's saved attributes JSON. */
-function readCardDetails(raw: string): { storage: string; cardType: string } {
+function readCardDetails(raw: string): { storage: string; cardType: string; assetTag: string; serial: string; category: string } {
   let attributes: Record<string, unknown> = {};
 
   try {
@@ -139,7 +141,8 @@ function readCardDetails(raw: string): { storage: string; cardType: string } {
       ? String(value).trim()
       : "";
 
-  const capacity = text(attributes.capacity);
+  // SD cards save "capacity"; mobiles save "Storage".
+  const capacity = text(attributes.capacity) || text(attributes.Storage);
   const compact = capacity.replace(/\s+/g, "").toUpperCase();
 
   const storage =
@@ -149,7 +152,13 @@ function readCardDetails(raw: string): { storage: string; cardType: string } {
         ? "256 GB"
         : capacity;
 
-  return { storage, cardType: text(attributes.card_type) };
+  return {
+    storage,
+    cardType: text(attributes.card_type),
+    assetTag: text(attributes["Asset Tag"]),
+    serial: text(attributes.Serial),
+    category: text(attributes.Category),
+  };
 }
 
 /**
@@ -257,6 +266,9 @@ export function summarizeBatch(
         prismNo: item?.prism_no ?? "",
         storage: details.storage,
         cardType: details.cardType,
+        assetTag: details.assetTag,
+        serial: details.serial,
+        category: details.category,
         price: item?.price ?? "",
         statusAfter: r.status_after,
         penalty,
