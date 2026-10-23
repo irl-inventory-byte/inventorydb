@@ -59,7 +59,6 @@ const TFOOT_STYLE: CSSProperties = {
 /* MOBILES: the parts only the Mobile dashboard has                     */
 /* ------------------------------------------------------------------ */
 
-const OUT_OF_USE = new Set(["lost", "damaged", "retired"]);
 const TOP = 8;
 
 /** A mobile's saved details (Asset Tag, Serial, Model No., Category, Storage). */
@@ -101,56 +100,14 @@ function bars(items: Item[], labelOf: (i: Item) => string, what: string, href: (
 }
 
 /**
- * Dashboard → Mobile, the parts only mobiles have. The rest of the page (status tiles, hub hierarchy, moved per
- * day, needs attention, who has items) is the same as for SD cards and rigs.
- *   part "summary": Total mobiles · In use (in place of the SD card storage / colour summary)
- *   part "charts":  By category, manufacturer and model
+ * Dashboard → Mobile, the charts only mobiles have: by category, manufacturer, model and storage. The rest of the
+ * page (status tiles, hub hierarchy, moved per day, needs attention, who has items) is the same as for SD cards.
  */
-function MobileOverview({ items, part }: { items: Item[]; part: "summary" | "charts" }) {
-  const inUse = items.filter((i) => !OUT_OF_USE.has(i.status));
-  const inStock = items.filter((i) => i.status === "in_stock").length;
-  const share = (v: number) => (items.length ? `${Math.round((v / items.length) * 100)}% of all mobiles` : "No mobiles yet");
-
-  const tiles: { label: string; value: string; hint: string; href: string; icon: IconName; color: string }[] = [
-    { label: "Total mobiles", value: n(items.length), hint: `${n(inStock)} in stock (${share(inStock)})`, href: mobileList(), icon: "layers", color: "var(--series-1)" },
-    {
-      label: "In use",
-      value: n(inUse.length - inStock),
-      hint: "With an FO, IFO or IM, or on the way",
-      href: mobileList({ status: "with_fo,traveling,pending" }),
-      icon: "user",
-      color: "var(--series-2)",
-    },
-  ];
-
+function MobileCharts({ items }: { items: Item[] }) {
   const byCategory = bars(items, (i) => details(i.attributes)["Category"] ?? "", "categories", (l) => mobileList({ q: l }));
   const byMaker = bars(items, (i) => i.brand, "manufacturers", (l) => mobileList({ q: l }));
   const byModel = bars(items, (i) => i.model, "models", (l) => mobileList({ q: l }));
   const byStorage = bars(items, (i) => details(i.attributes)["Storage"] ?? "", "sizes", (l) => mobileList({ q: l }));
-
-  if (part === "summary") {
-    return (
-      <section className={`${styles.kpiGrid} kpi-sd`} aria-label="Mobiles summary">
-        <style>{`
-.kpi-sd.kpi-sd{display:flex;flex-wrap:wrap;gap:12px}
-.kpi-sd.kpi-sd > *{flex:1 1 230px;min-width:0}
-.kpi-sd.kpi-sd > * span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-`}</style>
-        {tiles.map((k) => (
-          <Link key={k.label} href={k.href} className={styles.kpi} style={{ "--kpi": k.color } as CSSProperties}>
-            <span className={styles.kpiIcon}>
-              <Icon name={k.icon} size={22} />
-            </span>
-            <span className={styles.kpiBody}>
-              <span className={styles.kpiLabel}>{k.label}</span>
-              <span className={styles.kpiValue}>{k.value}</span>
-              <span className={styles.kpiHint}>{k.hint}</span>
-            </span>
-          </Link>
-        ))}
-      </section>
-    );
-  }
 
   return (
     <>
@@ -348,9 +305,20 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
   // Mobiles: the SD card tiles, without the rig team and internal ones (mobiles go only to IMs, FOs and IFOs),
   // and every tile opens the Mobile list.
-  const mobileKpis: Kpi[] = sdKpis
-    .filter((k) => k.label !== "With rig team" && k.label !== "Internal")
-    .map((k) => ({ ...k, href: `${k.href}&type=mobile`, hint: k.hint.replace("of all items", "of all mobiles") }));
+  // Six even tiles (3 + 3): Total, In stock, With field officers, In transit, Lost or damaged, Retired.
+  const mobileKpis: Kpi[] = [
+    {
+      label: "Total mobiles",
+      value: d.total,
+      hint: `${n(d.outCount)} in use · ${n(d.usable)} usable`,
+      href: mobileList(),
+      icon: "layers",
+      color: "var(--series-1)",
+    },
+    ...sdKpis
+      .filter((k) => k.label !== "With rig team" && k.label !== "Internal")
+      .map((k) => ({ ...k, href: `${k.href}&type=mobile`, hint: k.hint.replace("of all items", "of all mobiles") })),
+  ];
   const kpis = rigView ? rigKpis : mobileView ? mobileKpis : sdKpis;
 
   // Bars: one series, one colour. Every bar opens the matching list or hub.
@@ -614,22 +582,30 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
         <TypeSwitch role={user.role} current={type} path="/dashboard" includeAll={false} />
 
-        {/* Mobiles: the same dashboard as SD cards, with a mobile summary instead of the SD storage / colour one. */}
-        {mobileView ? (
-          <MobileOverview items={items} part="summary" />
-        ) : (
-          <SummaryKpis d={d} items={items} rigView={rigView} />
-        )}
+        {/* Mobiles: no SD card storage / colour summary; the tiles below start with the total. */}
+        {!mobileView && <SummaryKpis d={d} items={items} rigView={rigView} />}
 
+        {/* Mobile tiles: an even 3-column grid (3 + 3 on a laptop, 2 per row on a tablet, 1 on a phone). */}
+        {mobileView && (
+          <style>{`
+.kpi-mob.kpi-mob{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.kpi-mob.kpi-mob > * span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:820px){.kpi-mob.kpi-mob{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:480px){.kpi-mob.kpi-mob{grid-template-columns:1fr}}
+`}</style>
+        )}
         {/* SD card tiles: rows that always fill the full width (4 + 3 on a laptop), labels on one line. */}
-        {!rigView && (
+        {!rigView && !mobileView && (
           <style>{`
 .kpi-sd.kpi-sd{display:flex;flex-wrap:wrap;gap:12px}
 .kpi-sd.kpi-sd > *{flex:1 1 230px;min-width:0}
 .kpi-sd.kpi-sd > * span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 `}</style>
         )}
-        <section className={rigView ? `${styles.kpiGrid} ${styles.kpiGridRig}` : `${styles.kpiGrid} kpi-sd`} aria-label="Overview">
+        <section
+          className={rigView ? `${styles.kpiGrid} ${styles.kpiGridRig}` : mobileView ? `${styles.kpiGrid} kpi-mob` : `${styles.kpiGrid} kpi-sd`}
+          aria-label="Overview"
+        >
           {kpis.map((k) => (
             <Link key={k.label} href={k.href} className={styles.kpi} style={{ "--kpi": k.color } as CSSProperties}>
               <span className={styles.kpiIcon}>
@@ -694,7 +670,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           </section>
         </div>
 
-        {mobileView && <MobileOverview items={items} part="charts" />}
+        {mobileView && <MobileCharts items={items} />}
 
         <DailyMoves
           title={rigView ? "Rigs moved per day" : mobileView ? "Mobiles moved per day" : "SD cards moved per day"}

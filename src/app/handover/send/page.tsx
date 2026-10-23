@@ -63,7 +63,8 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
     // Mobiles can be scanned by IMEI, Asset Tag or Serial.
     ...(i.item_type === "mobile" && { aliases: mobileAliases(i.attributes) }),
     // Rigs show their condition while scanning, e.g. "QC passed · Idle" or "Repaired · Ready for field".
-    ...(i.item_type === "rig" && { note: rigCondition(i.status, latestQc.get(i.item_id)).label }),
+    // (Not for the hardware team: they only see where the rig is, e.g. "With hardware team".)
+    ...(i.item_type === "rig" && user.role !== "hardware" && { note: rigCondition(i.status, latestQc.get(i.item_id)).label }),
   }));
   const hubName = new Map(hubs.map((h) => [h.hub_id, h.name]));
   const recipients = people.filter((p) => p.active !== "false").sort((a, b) => a.name.localeCompare(b.name));
