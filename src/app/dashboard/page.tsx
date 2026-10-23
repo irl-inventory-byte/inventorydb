@@ -8,7 +8,7 @@ import type { HardwareUpdate, QcCheck, Status } from "@/lib/schema";
 import { HANDLER_ROLES, INVENTORY_ROLES, allowedTypes, canSeeType, storeFor, typeParam } from "@/lib/access";
 import TypeSwitch from "../TypeSwitch";
 import RoleSwitch from "../RoleSwitch";
-import { BarList, n } from "./charts";
+import { BarList, n, type BarRow } from "./charts";
 import { DailyMoves } from "./daily-moves";
 import { dailyMoves, moveFilterOptions, pickRange } from "@/lib/daily-moves";
 import { istDate } from "@/lib/time";
@@ -20,7 +20,7 @@ import { SummaryKpis } from "./summary-kpis";
 import { RIG_STATES, RIG_STATE_LABELS, rigState, type RigState } from "@/lib/rig-state";
 import { inactiveRigs } from "@/lib/rig-metrics";
 import { NO_ACTIVITY_DAYS, RigMetrics } from "./rig-metrics";
-import { MobileOverview } from "./mobile-overview";
+import type { Item } from "@/lib/schema";
 
 const inventory = (params: Record<string, string>) => `/inventory?${new URLSearchParams(params)}`;
 const days = (d: number | null) => (d === null ? "—" : d === 0 ? "today" : `${d}d`);
@@ -55,6 +55,156 @@ const TFOOT_STYLE: CSSProperties = {
   fontWeight: 700,
 };
 
+/* ------------------------------------------------------------------ */
+/* MOBILES: the parts only the Mobile dashboard has                     */
+/* ------------------------------------------------------------------ */
+
+const OUT_OF_USE = new Set(["lost", "damaged", "retired"]);
+const TOP = 8;
+
+/** A mobile's saved details (Asset Tag, Serial, Model No., Category, Storage). */
+function details(raw: string): Record<string, string> {
+  try {
+    const parsed: unknown = JSON.parse(raw || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return Object.fromEntries(Object.entries(parsed).map(([k, v]) => [k, String(v ?? "")]));
+    }
+  } catch {
+    // no details
+  }
+  return {};
+}
+
+const mobileList = (params: Record<string, string> = {}) => `/inventory?${new URLSearchParams({ type: "mobile", ...params })}`;
+
+/** Count mobiles by a label, biggest first; the rest are summed into one "other" bar. */
+function bars(items: Item[], labelOf: (i: Item) => string, what: string, href: (label: string) => string): BarRow[] {
+  const count = new Map<string, number>();
+  for (const i of items) {
+    const label = labelOf(i).trim() || "Not set";
+    count.set(label, (count.get(label) ?? 0) + 1);
+  }
+  const sorted = [...count.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const rows: BarRow[] = sorted.slice(0, TOP).map(([label, value]) => ({
+    key: label,
+    label,
+    value,
+    href: href(label),
+    tip: `${label}\n${n(value)} ${value === 1 ? "mobile" : "mobiles"}`,
+  }));
+  const rest = sorted.slice(TOP);
+  if (rest.length) {
+    const value = rest.reduce((s, [, v]) => s + v, 0);
+    rows.push({ key: "other", label: `${rest.length} other ${what}`, value, href: mobileList(), tip: `${rest.length} other ${what}\n${n(value)} mobiles` });
+  }
+  return rows;
+}
+
+/**
+ * Dashboard → Mobile, the parts only mobiles have. The rest of the page (status tiles, hub hierarchy, moved per
+ * day, needs attention, who has items) is the same as for SD cards and rigs.
+ *   part "summary": Total mobiles · In use · Total cost (in place of the SD card storage / colour summary)
+ *   part "charts":  By category, manufacturer and model
+ */
+function MobileOverview({ items, part }: { items: Item[]; part: "summary" | "charts" }) {
+  const inUse = items.filter((i) => !OUT_OF_USE.has(i.status));
+  const totalCost = items.reduce((s, i) => s + (Number(i.price) || 0), 0);
+  const noCost = items.filter((i) => !(Number(i.price) > 0)).length;
+  const inStock = items.filter((i) => i.status === "in_stock").length;
+  const share = (v: number) => (items.length ? `${Math.round((v / items.length) * 100)}% of all mobiles` : "No mobiles yet");
+
+  const tiles: { label: string; value: string; hint: string; href: string; icon: IconName; color: string }[] = [
+    { label: "Total mobiles", value: n(items.length), hint: `${n(inStock)} in stock (${share(inStock)})`, href: mobileList(), icon: "layers", color: "var(--series-1)" },
+    {
+      label: "In use",
+      value: n(inUse.length - inStock),
+      hint: "With an FO, IFO or IM, or on the way",
+      href: mobileList({ status: "with_fo,traveling,pending" }),
+      icon: "user",
+      color: "var(--series-2)",
+    },
+    {
+      label: "Total cost",
+      value: `₹${n(totalCost)}`,
+      hint: noCost ? `${n(noCost)} without a cost` : "All mobiles have a cost",
+      href: mobileList(),
+      icon: "chart",
+      color: "var(--series-4)",
+    },
+  ];
+
+  const byCategory = bars(items, (i) => details(i.attributes)["Category"] ?? "", "categories", (l) => mobileList({ q: l }));
+  const byMaker = bars(items, (i) => i.brand, "manufacturers", (l) => mobileList({ q: l }));
+  const byModel = bars(items, (i) => i.model, "models", (l) => mobileList({ q: l }));
+  const byStorage = bars(items, (i) => details(i.attributes)["Storage"] ?? "", "sizes", (l) => mobileList({ q: l }));
+
+  if (part === "summary") {
+    return (
+      <section className={`${styles.kpiGrid} kpi-sd`} aria-label="Mobiles summary">
+        <style>{`
+.kpi-sd.kpi-sd{display:flex;flex-wrap:wrap;gap:12px}
+.kpi-sd.kpi-sd > *{flex:1 1 230px;min-width:0}
+.kpi-sd.kpi-sd > * span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+`}</style>
+        {tiles.map((k) => (
+          <Link key={k.label} href={k.href} className={styles.kpi} style={{ "--kpi": k.color } as CSSProperties}>
+            <span className={styles.kpiIcon}>
+              <Icon name={k.icon} size={22} />
+            </span>
+            <span className={styles.kpiBody}>
+              <span className={styles.kpiLabel}>{k.label}</span>
+              <span className={styles.kpiValue}>{k.value}</span>
+              <span className={styles.kpiHint}>{k.hint}</span>
+            </span>
+          </Link>
+        ))}
+      </section>
+    );
+  }
+
+  return (
+    <>
+      {items.length === 0 ? (
+        <section className={styles.card}>
+          <p className={styles.muted}>
+            No mobiles yet. An Admin or IM adds them in Inventory → Mobile → + Add a mobile, by scanning the phone&apos;s
+            QR code (IMEI).
+          </p>
+        </section>
+      ) : (
+        <>
+          <div className={styles.chartRow}>
+            <section className={styles.card} aria-label="Mobiles by category">
+              <h2>By category</h2>
+              <BarList rows={byCategory} />
+            </section>
+            <section className={styles.card} aria-label="Mobiles by manufacturer">
+              <h2>By manufacturer</h2>
+              <BarList rows={byMaker} />
+            </section>
+          </div>
+          <div className={styles.chartRow}>
+            <section className={styles.card} aria-label="Mobiles by model">
+              <h2>By model</h2>
+              <BarList rows={byModel} />
+            </section>
+            <section className={styles.card} aria-label="Mobiles by storage">
+              <h2>By storage</h2>
+              <BarList rows={byStorage} />
+            </section>
+          </div>
+        </>
+      )}
+
+      <p className={styles.muted}>
+        <Link href={mobileList()} className={styles.link}>
+          See every mobile in Inventory
+        </Link>{" "}
+        — IMEI, Asset Tag, Serial, Model, Category, Storage and Cost.
+      </p>
+    </>
+  );
+}
 export default async function DashboardPage({ searchParams }: PageProps<"/dashboard">) {
   const user = await requireRole();
   const sp = await searchParams;
@@ -179,7 +329,12 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     },
   ];
 
-  const kpis = rigView ? rigKpis : sdKpis;
+  // Mobiles: the SD card tiles, without the rig team and internal ones (mobiles go only to IMs, FOs and IFOs),
+  // and every tile opens the Mobile list.
+  const mobileKpis: Kpi[] = sdKpis
+    .filter((k) => k.label !== "With rig team" && k.label !== "Internal")
+    .map((k) => ({ ...k, href: `${k.href}&type=mobile`, hint: k.hint.replace("of all items", "of all mobiles") }));
+  const kpis = rigView ? rigKpis : mobileView ? mobileKpis : sdKpis;
 
   // Bars: one series, one colour. Every bar opens the matching list or hub.
   const statusRows = STATUS_ORDER.filter((st) => s[st] > 0)
@@ -188,7 +343,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       key: st,
       label: STATUS_LABELS[st],
       value: s[st],
-      href: inventory({ status: st }),
+      href: inventory({ status: st, ...(mobileView && { type: "mobile" }) }),
       tip: `${STATUS_LABELS[st]}\n${n(s[st])} items (${((s[st] / Math.max(1, d.total)) * 100).toFixed(1)}%)`,
     }));
 
@@ -433,11 +588,12 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
         <TypeSwitch role={user.role} current={type} path="/dashboard" includeAll={false} />
 
+        {/* Mobiles: the same dashboard as SD cards, with a mobile summary instead of the SD storage / colour one. */}
         {mobileView ? (
-          <MobileOverview items={items} hubs={hubs} />
+          <MobileOverview items={items} part="summary" />
         ) : (
-        <>
-        <SummaryKpis d={d} items={items} rigView={rigView} />
+          <SummaryKpis d={d} items={items} rigView={rigView} />
+        )}
 
         {/* SD card tiles: rows that always fill the full width (4 + 3 on a laptop), labels on one line. */}
         {!rigView && (
@@ -512,9 +668,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           </section>
         </div>
 
+        {mobileView && <MobileOverview items={items} part="charts" />}
+
         <DailyMoves
-          title={rigView ? "Rigs moved per day" : "SD cards moved per day"}
-          unit={rigView ? "rigs" : "SD cards"}
+          title={rigView ? "Rigs moved per day" : mobileView ? "Mobiles moved per day" : "SD cards moved per day"}
+          unit={rigView ? "rigs" : mobileView ? "mobiles" : "SD cards"}
           days={movedDays}
           people={moveOptions.people}
           cities={moveOptions.cities}
@@ -736,8 +894,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           </Link>{" "}
           — hub owned vs held, longest out, data health.
         </p>
-        </>
-        )}
       </main>
     </div>
   );
