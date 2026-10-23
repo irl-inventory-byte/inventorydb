@@ -1,6 +1,9 @@
 import type { Action, Hub, Item, ItemEvent, Status } from "./schema";
 
 export interface ReceiptLine {
+  serial(serial: any): string;
+  category(category: any): string;
+  assetTag(assetTag: any): string;
   itemId: string;
   // "sd_card", "rig" or "mobile". Older items without a type are SD cards.
   itemType: string;

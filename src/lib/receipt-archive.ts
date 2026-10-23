@@ -8,6 +8,7 @@ import {
   type PDFPage,
 } from "pdf-lib";
 import { toBuffer as qrToBuffer } from "qrcode";
+import { RECEIPT_TYPE_TITLE, byReceiptType, receiptColumns } from "./receipt-columns";
 import { STATUS_LABELS } from "./labels";
 import { LOGO_HEIGHT, LOGO_PATHS, LOGO_WIDTH } from "./receipt-logo";
 import { formatPrice, summarizeBatch, type BatchSummary } from "./receipt";
@@ -360,24 +361,13 @@ export async function buildReceiptPdf(
   }
   y -= 22;
 
-  // Items table. The header repeats on each new page; the total comes once, at the end.
-  const cols = [
-    { title: "#", width: 20 },
-    { title: "Type", width: 40 },
-    { title: "Serial", width: 96 },
-    { title: "Prism no.", width: 56 },
-    { title: "Brand / Model", width: 100 },
-    { title: "Storage", width: 44 },
-    { title: "Colour", width: 38 },
-    { title: "Penalty", width: 56 },
-    { title: "Status", width: contentWidth - 450 },
-  ];
-
-  const drawRow = (cells: string[], font: PDFFont) => {
+  // Items: one table per item type, each with its own columns (lib/receipt-columns.ts), then the Status.
+  // The header repeats on each new page; the total comes once, at the end.
+  const drawRow = (cells: string[], widths: number[], font: PDFFont) => {
     let x = margin;
     cells.forEach((cell, i) => {
-      text(fit(cell, font, 8.5, cols[i].width - 5), x + 2, 8.5, font);
-      x += cols[i].width;
+      text(fit(cell, font, 8.5, widths[i] - 5), x + 2, 8.5, font);
+      x += widths[i];
     });
     page.drawLine({
       start: { x: margin, y: y - 6 },
@@ -388,38 +378,49 @@ export async function buildReceiptPdf(
     y -= 19;
   };
 
-  const header = cols.map((c) => c.title);
-  drawRow(header, bold);
+  const groups = byReceiptType(summary.items);
+  let rowNo = 0;
+  for (const { type, lines: typeLines } of groups) {
+    const { cols, penaltyTitle, pdfPenaltyTitle, penaltyWidth } = receiptColumns(type);
+    const used = 20 + cols.reduce((t, c) => t + c.pdfWidth, 0) + penaltyWidth;
+    const widths = [20, ...cols.map((c) => c.pdfWidth), penaltyWidth, Math.max(40, contentWidth - used)];
+    const header = ["#", ...cols.map((c) => c.title), pdfPenaltyTitle ?? penaltyTitle, "Status"];
 
-  summary.items.forEach((item, index) => {
-    ensureSpace(24, () => drawRow(header, bold));
-
-    // Rigs get a light orange row so they stand out from SD cards.
-    if (item.itemType === "rig") {
-      page.drawRectangle({
-        x: margin,
-        y: y - 6,
-        width: contentWidth,
-        height: 19,
-        color: rgb(1, 0.984, 0.957),
-      });
+    if (groups.length > 1) {
+      ensureSpace(60);
+      text(`${RECEIPT_TYPE_TITLE[type]} (${typeLines.length})`, margin, 10.5, bold);
+      y -= 16;
     }
+    ensureSpace(40);
+    drawRow(header, widths, bold);
 
-    drawRow(
-      [
-        String(index + 1),
-        item.itemType === "rig" ? "Rig" : item.itemType === "mobile" ? "Mobile" : "SD card",
-        item.itemId,
-        item.prismNo || "—",
-        item.model || item.brand || "—",
-        item.storage || "—",
-        item.cardType || "—",
-        rupees(item.price) || "Not set",
-        STATUS_LABELS[item.statusAfter] ?? item.statusAfter,
-      ],
-      regular
-    );
-  });
+    typeLines.forEach((item) => {
+      ensureSpace(24, () => drawRow(header, widths, bold));
+
+      // Rigs get a light orange row so they stand out from SD cards.
+      if (item.itemType === "rig") {
+        page.drawRectangle({
+          x: margin,
+          y: y - 6,
+          width: contentWidth,
+          height: 19,
+          color: rgb(1, 0.984, 0.957),
+        });
+      }
+
+      drawRow(
+        [
+          String(++rowNo),
+          ...cols.map((c) => c.value(item)),
+          rupees(item.price) || "Not set",
+          STATUS_LABELS[item.statusAfter] ?? item.statusAfter,
+        ],
+        widths,
+        regular
+      );
+    });
+    y -= 6;
+  }
 
   // Summary and total, after the last item.
   const { returnedCount, pricedCount, missingPriceCount } = penalties;

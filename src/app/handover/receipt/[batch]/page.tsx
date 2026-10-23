@@ -7,11 +7,66 @@ import { requireRole } from "@/lib/authz";
 import { formatPrice, summarizeBatch } from "@/lib/receipt";
 import { VIEW_ROLES, storeForAll } from "@/lib/access";
 import { formatIst } from "@/lib/time";
+import { RECEIPT_TYPE_TITLE, byReceiptType, receiptColumns } from "@/lib/receipt-columns";
 import styles from "../../form.module.css";
 import PrintButton from "./PrintButton";
 
 // One row on the receipt (same shape as summary.items).
 type ReceiptItem = NonNullable<ReturnType<typeof summarizeBatch>>["items"][number];
+
+/**
+ * The item list, one table per item type with that type's columns (see lib/receipt-columns.ts):
+ * SD cards: Type, Serial, Prism no., Brand / Model, Storage, Colour, Penalty.
+ * Rigs: Rig ID / Asset Tag, Brand, Model, Penalty. Mobiles: IMEI, Asset Tag, Serial, Category, Storage, Cost.
+ * The header row repeats on each printed page.
+ */
+function ItemTables({ items, penalty }: { items: ReceiptItem[]; penalty: (item: ReceiptItem) => string }) {
+  const groups = byReceiptType(items);
+  let n = 0;
+  return (
+    <>
+      {groups.map(({ type, lines }) => {
+        const { cols, penaltyTitle } = receiptColumns(type);
+        return (
+          <div key={type} style={{ marginBottom: 14 }}>
+            {groups.length > 1 && (
+              <h3 style={{ margin: "10px 0 6px", fontSize: "1rem" }}>
+                {RECEIPT_TYPE_TITLE[type]} ({lines.length})
+              </h3>
+            )}
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th scope="col">#</th>
+                  {cols.map((c) => (
+                    <th key={c.title} scope="col">
+                      {c.title}
+                    </th>
+                  ))}
+                  <th scope="col">{penaltyTitle}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((item) => (
+                  <tr key={item.itemId} style={{ breakInside: "avoid", ...rowTint(item.itemType) }}>
+                    <td>{++n}</td>
+                    {cols.map((c) => (
+                      <td key={c.title} style={{ overflowWrap: "anywhere" }}>
+                        {c.badge ? <TypeBadge type={item.itemType} /> : c.value(item)}
+                      </td>
+                    ))}
+                    {/* The amount saved in items.price. This page does not change or charge it. */}
+                    <td style={{ whiteSpace: "nowrap" }}>{penalty(item)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+    </>
+  );
+}
 
 const ACTION_TITLE: Record<string, string> = {
   check_out: "Handover receipt",
@@ -343,86 +398,14 @@ export default async function ReceiptPage({
 
         {/* Item list. The header row repeats on each printed page.
             There is no table footer, so the total prints only once, at the end. */}
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              <th scope="col">#</th>
-              <th scope="col">Type</th>
-              <th scope="col">Serial</th>
-              <th scope="col">Prism no.</th>
-              <th scope="col">Brand / Model</th>
-              <th scope="col">Storage</th>
-              <th scope="col">Colour</th>
-              <th scope="col">Penalty</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {summary.items.map((item, index) => (
-              <tr key={item.itemId} style={{ breakInside: "avoid", ...rowTint(item.itemType) }}>
-                <td>{index + 1}</td>
-                <td><TypeBadge type={item.itemType} /></td>
-                <td style={{ overflowWrap: "anywhere" }}>{item.itemId}</td>
-                <td style={{ overflowWrap: "anywhere" }}>
-                  {item.prismNo || "—"}
-                </td>
-                <td>{item.model || item.brand || "—"}</td>
-                <td style={{ whiteSpace: "nowrap" }}>{item.storage || "—"}</td>
-                <td>{item.cardType || "—"}</td>
-
-                {/* Read the amount saved in items.price.
-                    This page does not change or charge it.
-                    On a return receipt, items that came back have no penalty. */}
-                <td style={{ whiteSpace: "nowrap" }}>
-                  {ret
-                    ? formatPrice("0")
-                    : formatPrice(item.price) || "Not set"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <ItemTables items={summary.items} penalty={(item) => (ret ? formatPrice("0") : formatPrice(item.price) || "Not set")} />
 
         {/* RETURN RECEIPT: items that were sent but not received, then the summary. */}
         {ret && missingCount > 0 && (
           <>
             <h2 style={{ marginTop: 20 }}>Not returned ({missingCount})</h2>
 
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th scope="col">#</th>
-                  <th scope="col">Type</th>
-                  <th scope="col">Serial</th>
-                  <th scope="col">Prism no.</th>
-                  <th scope="col">Brand / Model</th>
-                  <th scope="col">Storage</th>
-                  <th scope="col">Colour</th>
-                  <th scope="col">Penalty</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {ret.missing.map((item: ReceiptItem, index: number) => (
-                  <tr key={item.itemId} style={{ breakInside: "avoid", ...rowTint(item.itemType) }}>
-                    <td>{index + 1}</td>
-                    <td><TypeBadge type={item.itemType} /></td>
-                    <td style={{ overflowWrap: "anywhere" }}>{item.itemId}</td>
-                    <td style={{ overflowWrap: "anywhere" }}>
-                      {item.prismNo || "—"}
-                    </td>
-                    <td>{item.model || item.brand || "—"}</td>
-                    <td style={{ whiteSpace: "nowrap" }}>
-                      {item.storage || "—"}
-                    </td>
-                    <td>{item.cardType || "—"}</td>
-                    <td style={{ whiteSpace: "nowrap" }}>
-                      {formatPrice(item.price) || "Not set"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <ItemTables items={ret.missing} penalty={(item) => formatPrice(item.price) || "Not set"} />
           </>
         )}
 
