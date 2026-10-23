@@ -25,7 +25,8 @@ export async function addRigReport(formData: FormData) {
   const photo = String(formData.get("photo") ?? "");
   if (!location) back({ error: "Write where the rig is (location)." });
   if (!reason) back({ error: "Write the reason." });
-  if (photo && (!photo.startsWith("data:image/jpeg;base64,") || photo.length > MAX_PHOTO)) {
+  if (!photo) back({ error: "Add a photo of the rig. It is required." });
+  if (!photo.startsWith("data:image/jpeg;base64,") || photo.length > MAX_PHOTO) {
     back({ error: "The photo could not be saved. Take it again." });
   }
 

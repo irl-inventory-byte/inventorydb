@@ -228,20 +228,29 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     href: string;
     icon: IconName;
     color: string;
-    cities?: { city: string; count: number; href: string }[]; // city-wise list, opened from the tile
+    cities?: { city: string; count: number; pct: number; href: string }[]; // city-wise list, opened from the tile
   };
   // City-wise count of items with a status (city of the hub the item is at), biggest first.
   const cityOfHub = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
-  const citiesFor = (status: Status) => {
+  // pct = share of that tile's items in the city (whole numbers, e.g. 42%).
+  const citiesFor = (status: Status, onlyType?: string) => {
     const count = new Map<string, number>();
     for (const i of items) {
-      if (i.status !== status) continue;
+      if (i.status !== status || (onlyType && i.item_type !== onlyType)) continue;
       const c = cityOfHub.get(i.current_hub) || i.current_hub || "Not set";
       count.set(c, (count.get(c) ?? 0) + 1);
     }
     return [...count.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([city, c]) => ({ city, count: c, href: inventory({ status, city: city.toLowerCase() }) }));
+      .map(([city, c], _, all) => {
+        const total = all.reduce((t, [, v]) => t + v, 0);
+        return {
+          city,
+          count: c,
+          pct: total ? Math.round((c / total) * 100) : 0,
+          href: inventory({ status, city: city.toLowerCase(), ...(onlyType && { type: onlyType }) }),
+        };
+      });
   };
 
   // RIGS: one tile per rig state (see RIG_STATES in lib/rig-state.ts). Each opens Rig checks filtered to it.
@@ -285,6 +294,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     href: `/rigs?state=${k}`,
     icon: RIG_TILE[k].icon,
     color: RIG_TILE[k].color,
+    // Rigs with field officers: city-wise list too, like SD cards and mobiles.
+    ...(k === "fo" && { cities: citiesFor("with_fo", "rig") }),
   }));
   // Admin only: every rig sent and not received yet (to IMs, QC or hardware), and every rig the hardware team
   // has (received or still on its way to them).
@@ -726,7 +737,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                         {k.cities.map((c) => (
                           <Link key={c.city} href={c.href}>
                             <span>{c.city}</span>
-                            <b>{n(c.count)}</b>
+                            <span style={{ display: "inline-flex", gap: 10, alignItems: "baseline" }}>
+                              <b>{n(c.count)}</b>
+                              <span style={{ minWidth: 38, textAlign: "right", color: "#64748b", fontSize: "0.8rem" }}>{c.pct}%</span>
+                            </span>
                           </Link>
                         ))}
                       </div>

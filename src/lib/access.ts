@@ -16,7 +16,7 @@ import { getStore } from "./store";
  *
  * Mobiles: Admin and IM add them (scan the IMEI; details load from the mobile sheet). They are sent and
  * received like SD cards, but only between IMs, FOs and IFOs (the rig, internal, QC and hardware teams don't
- * handle mobiles). They never show in SD card or rig counts.
+ * hand them over). The internal team can see mobiles. They never show in SD card or rig counts.
  *
  * Rig route: IM → QC team. QC pass → IM; QC fail → hardware team → IM → QC again.
  * An IM can send a rig to an FO or IFO only when its latest QC result is Pass.
@@ -39,7 +39,7 @@ const TYPES_FOR: Record<Role, readonly ItemType[]> = {
   ifo: ["sd_card", "mobile"],
   hardware: ["rig"],
   qc: ["rig"],
-  internal: ["sd_card", "rig"], // internal team: works like an IM for send / receive
+  internal: ["sd_card", "rig", "mobile"], // internal team: works like an IM for send / receive; sees mobiles too
 };
 
 /** Every role that can sign in and look around (dashboard, inventory, receipts). */
@@ -92,6 +92,15 @@ export function storeFor(role: Role | undefined, only?: string) {
 }
 
 /** Every type this role may see (same as storeFor without a type). */
+/**
+ * The store for Send and Receive: like storeFor, but the internal team can't hand over mobiles (they only
+ * see them on the dashboard and receipts).
+ */
+export function handoverStoreFor(role: Role | undefined) {
+  const types = allowedTypes(role).filter((t) => !(role === "internal" && t === "mobile"));
+  return getStore().forTypes(types);
+}
+
 export function storeForAll(role: Role | undefined) {
   return getStore().forTypes(allowedTypes(role));
 }

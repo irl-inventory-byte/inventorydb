@@ -3,7 +3,7 @@ import { actorOptions, allowedActors, defaultActor } from "@/lib/actors";
 import { requireRole } from "@/lib/authz";
 import { STATUS_LABELS, one } from "@/lib/labels";
 import type { QcCheck, Role, Status } from "@/lib/schema";
-import { SEND_ROLES, canSeeType, storeFor } from "@/lib/access";
+import { SEND_ROLES, canSeeType, handoverStoreFor } from "@/lib/access";
 import styles from "../form.module.css";
 import { sendCards } from "../actions";
 import SendScanFields from "./SendScanFields";
@@ -42,7 +42,7 @@ const HELD: Partial<Record<Role, Status>> = { qc: "with_qc", hardware: "with_har
 export default async function SendPage({ searchParams }: PageProps<"/handover/send">) {
   const user = await requireRole(...SEND_ROLES);
   const sp = await searchParams;
-  const store = storeFor(user.role);
+  const store = handoverStoreFor(user.role);
   const seesRigs = canSeeType(user.role, "rig");
   const [people, hubs, users, items, qcChecks] = await Promise.all([
     store.list("people"),

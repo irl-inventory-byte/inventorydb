@@ -2,7 +2,7 @@
 
 import { requireRole } from "@/lib/authz";
 import { extractBatchId, summarizeBatch } from "@/lib/receipt";
-import { RECEIVE_ROLES, storeFor } from "@/lib/access";
+import { RECEIVE_ROLES, handoverStoreFor } from "@/lib/access";
 import { formatIst } from "@/lib/time";
 
 export interface BatchLookupResult {
@@ -21,7 +21,7 @@ export async function lookupBatch(raw: string): Promise<BatchLookupResult> {
   const batchId = extractBatchId(raw);
   if (!batchId) return { ok: false, message: "Scan or paste a batch receipt first.", ids: [] };
 
-  const store = storeFor(me.role);
+  const store = handoverStoreFor(me.role);
   const [events, items, hubs] = await Promise.all([store.list("events"), store.list("items"), store.list("hubs")]);
   const summary = summarizeBatch(events, items, hubs, batchId);
   if (!summary) return { ok: false, message: `No batch found for "${batchId}".`, ids: [] };

@@ -63,7 +63,7 @@ export default async function UnknownRigsPage({ searchParams }: PageProps<"/">) 
       <p className={styles.muted}>
         Rigs with no handover, QC result or hardware update for more than {NO_ACTIVITY_DAYS} days. Rigs with the
         hardware team, dead, R&amp;D, lost or damaged are not counted. Click a rig to see its reports (who, where, why,
-        photo) or to add one.
+        photo) or to add one. Location, reason and photo are required.
       </p>
 
       {rig && (

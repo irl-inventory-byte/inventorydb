@@ -83,23 +83,24 @@ export default function ReportForm({ rig, who }: { rig: string; who: string }) {
       </div>
       <div className={styles.field}>
         <label className={styles.label} htmlFor="photoFile">
-          Photo
+          Photo *
         </label>
         <div className={styles.control}>
-          <input id="photoFile" type="file" accept="image/*" capture="environment" onChange={(e) => onFile(e.target.files?.[0])} />
+          <input id="photoFile" type="file" accept="image/*" capture="environment" required onChange={(e) => onFile(e.target.files?.[0])} />
           {busy && <p className={styles.hint}>Preparing the photo…</p>}
           {error && <p className={styles.error}>{error}</p>}
           {photo && (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={photo} alt="Photo to be saved" style={{ marginTop: 8, maxWidth: 220, borderRadius: 8, border: "1px solid #e5e7eb" }} />
           )}
-          <p className={styles.hint}>Take a photo of the rig. It is made smaller so it fits in the sheet.</p>
+          <p className={styles.hint}>Required. Take a photo of the rig. It is made smaller so it fits in the sheet.</p>
         </div>
       </div>
       <div className={styles.actions}>
-        <button type="submit" disabled={busy}>
+        <button type="submit" disabled={busy || !photo}>
           Save report
         </button>
+        {!photo && !busy && <span className={styles.hint}>Add the photo to save.</span>}
       </div>
     </form>
   );

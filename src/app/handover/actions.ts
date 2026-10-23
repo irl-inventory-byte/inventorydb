@@ -18,7 +18,7 @@ import {
 import type { Item, Role, TabRows } from "@/lib/schema";
 import { collectIds } from "@/lib/scan";
 import { archiveReceipt } from "@/lib/receipt-archive";
-import { HANDLER_ROLES, RECEIVE_ROLES, SEND_ROLES, storeFor } from "@/lib/access";
+import { HANDLER_ROLES, RECEIVE_ROLES, SEND_ROLES, handoverStoreFor } from "@/lib/access";
 import { getStore } from "@/lib/store";
 import { peopleActingAs } from "@/lib/roles";
 import { istTimestamp } from "@/lib/time";
@@ -45,7 +45,7 @@ async function run(
 ) {
   const user = await requireRole(...access.roles);
   // Scoped: the rig team can't scan rigs, and nobody can scan a type they can't see.
-  const store = storeFor(user.role);
+  const store = handoverStoreFor(user.role);
 
   // A whole scanned line that is a known code stays one code, even with spaces in it (a mobile's Asset Tag,
   // e.g. "Android Phone - 0221"). Every other line is split into codes as before.

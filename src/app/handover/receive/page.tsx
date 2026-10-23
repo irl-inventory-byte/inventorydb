@@ -6,7 +6,7 @@ import {
 } from "@/lib/actors";
 import { requireRole } from "@/lib/authz";
 import { one } from "@/lib/labels";
-import { RECEIVE_ROLES, storeFor } from "@/lib/access";
+import { RECEIVE_ROLES, handoverStoreFor } from "@/lib/access";
 import { STATUS_LABELS } from "@/lib/labels";
 import type { Role, Status } from "@/lib/schema";
 import styles from "../../admin/admin.module.css";
@@ -20,7 +20,7 @@ export default async function ReceivePage({
 }: PageProps<"/handover/receive">) {
   const user = await requireRole(...RECEIVE_ROLES);
   const sp = await searchParams;
-  const store = storeFor(user.role);
+  const store = handoverStoreFor(user.role);
 
   const [items, hubs, people, users] = await Promise.all([
     store.list("items"),
