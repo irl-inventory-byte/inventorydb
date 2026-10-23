@@ -18,7 +18,9 @@ import AttentionFilter from "./attentionfilter";
 import { Icon, type IconName } from "./icons";
 import { SummaryKpis } from "./summary-kpis";
 import { RIG_STATES, RIG_STATE_LABELS, rigState, type RigState } from "@/lib/rig-state";
-import { RigMetrics } from "./rig-metrics";
+import { NO_ACTIVITY_DAYS, RigMetrics } from "./rig-metrics";
+import { inactiveRigs } from "@/lib/rig-metrics";
+import { getStore } from "@/lib/store";
 import type { Item } from "@/lib/schema";
 
 const inventory = (params: Record<string, string>) => `/inventory?${new URLSearchParams(params)}`;
@@ -177,6 +179,34 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     showQc ? store.list("hardware_updates") : Promise.resolve([] as HardwareUpdate[]),
   ]);
   const now = new Date();
+
+  // Rig view: unknown rigs (no activity for more than NO_ACTIVITY_DAYS days), city-wise, with their reports.
+  const unknownRigs = rigView && showQc ? inactiveRigs(items, events, qcChecks, hardwareUpdates, now, NO_ACTIVITY_DAYS) : [];
+  const rigReports = unknownRigs.length ? await getStore().list("rig_reports").catch(() => []) : [];
+  const unknownHubCity = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
+  const unknownItem = new Map(items.map((i) => [i.item_id, i]));
+  const unknownRows = unknownRigs.map((u) => {
+    const it = unknownItem.get(u.item_id);
+    const reps = rigReports.filter((r) => r.item_id === u.item_id);
+    return {
+      ...u,
+      city: unknownHubCity.get(it?.current_hub ?? "") || it?.current_hub || "Not set",
+      hub: hubs.find((h) => h.hub_id === it?.current_hub)?.name ?? (it?.current_hub || "—"),
+      who: people.find((p) => p.person_id === u.holder)?.name ?? "",
+      reports: reps.length,
+      latest: reps.at(-1),
+    };
+  });
+  const unknownCities = [...unknownRows.reduce((m, r) => m.set(r.city, (m.get(r.city) ?? 0) + 1), new Map<string, number>())].sort(
+    (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+  );
+  const unknownCity = one(sp.ucity);
+  const unknownShown = unknownRows.filter((r) => !unknownCity || r.city === unknownCity);
+  const unknownHref = (city: string) => {
+    const q = new URLSearchParams({ type: "rig" });
+    if (city) q.set("ucity", city);
+    return `/dashboard?${q}#unknown`;
+  };
 
   const d = computeDashboard(items, events, people, hubs, { hub: "", days: 14, now });
   const tree = buildHubTree(hubs, items);
@@ -708,6 +738,98 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             ),
           )}
         </section>
+
+        {rigView && showQc && (
+          <section className={styles.card} id="unknown" aria-label="Unknown rigs" style={{ minWidth: 0, scrollMarginTop: 16 }}>
+            <div className={styles.sectionHead}>
+              <h2>Unknown rigs ({unknownRows.length})</h2>
+              <Link href="/rigs/unknown" className={styles.link}>
+                Open Unknown rigs page
+              </Link>
+            </div>
+            <p className={styles.muted}>
+              Rigs with no handover, QC result or hardware update for more than {NO_ACTIVITY_DAYS} days (not with
+              hardware, dead, R&amp;D, lost or damaged). City = city of the hub the rig is at. Click a rig for its reports.
+            </p>
+            {unknownRows.length === 0 ? (
+              <p className={styles.ok}>No unknown rigs right now.</p>
+            ) : (
+              <>
+                <nav aria-label="Unknown rigs by city" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "4px 0 12px" }}>
+                  {[["", unknownRows.length] as [string, number], ...unknownCities].map(([city, count]) => {
+                    const on = city === unknownCity;
+                    return (
+                      <Link
+                        key={city || "all"}
+                        href={unknownHref(city)}
+                        aria-current={on ? "true" : undefined}
+                        style={{
+                          padding: "6px 14px",
+                          borderRadius: 999,
+                          border: "1px solid #cbd5e1",
+                          background: on ? "#1e293b" : "#ffffff",
+                          color: on ? "#ffffff" : "#334155",
+                          textDecoration: "none",
+                          fontWeight: on ? 700 : 500,
+                          fontSize: "0.9rem",
+                        }}
+                      >
+                        {city || "All cities"} · {count}
+                      </Link>
+                    );
+                  })}
+                </nav>
+                <div
+                  className={styles.tableScroll}
+                  role="region"
+                  aria-label="Unknown rigs — scrollable table"
+                  tabIndex={0}
+                  style={{ maxHeight: "460px", maxWidth: "100%", overflowY: "auto", overflowX: "auto" }}
+                >
+                  <table className={styles.table} style={{ width: "100%", minWidth: "860px", borderCollapse: "separate", borderSpacing: 0 }}>
+                    <thead>
+                      <tr>
+                        {["Rig", "City", "Hub", "Last with", "Status", "Last activity", "No activity for", "Reports"].map((h) => (
+                          <th key={h} scope="col" style={TH_STYLE}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {unknownShown.map((r) => (
+                        <tr key={r.item_id}>
+                          <td>
+                            <Link href={`/rigs/unknown?${new URLSearchParams({ rig: r.item_id })}#report`} className={styles.link}>
+                              {r.item_id}
+                            </Link>
+                          </td>
+                          <td>{r.city}</td>
+                          <td>{r.hub}</td>
+                          <td>{r.who || "—"}</td>
+                          <td>{STATUS_LABELS[r.status as Status] ?? r.status}</td>
+                          <td>{istDay(Date.parse(r.lastActivity))}</td>
+                          <td>{r.days} days</td>
+                          <td style={{ whiteSpace: "normal" }}>
+                            {r.latest ? `${r.reports} · ${r.latest.location}` : <span className={styles.muted}>None yet</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot style={{ position: "static" }}>
+                      <tr>
+                        <th scope="row" colSpan={7} style={{ ...TFOOT_STYLE, textAlign: "left" }}>
+                          {unknownCity ? `Unknown rigs in ${unknownCity}` : "All unknown rigs"}
+                        </th>
+                        <td style={TFOOT_STYLE}>{n(unknownShown.length)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </>
+            )}
+          </section>
+        )}
 
         {showQc && (
           <RigMetrics
