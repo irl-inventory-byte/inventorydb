@@ -7,13 +7,24 @@ import styles from "../admin.module.css";
 import { saveUser } from "./actions";
 
 /** Every field applies immediately: selects and the checkbox submit on change. No Save button. */
-export default function UserRow({ user, linkable, isMe }: { user: AppUser; linkable: Person[]; isMe: boolean }) {
+export default function UserRow({
+  user,
+  linkable,
+  isMe,
+  back = "",
+}: {
+  user: AppUser;
+  linkable: Person[];
+  isMe: boolean;
+  back?: string; // the page's filters, kept after saving
+}) {
   const formRef = useRef<HTMLFormElement>(null);
   const submit = () => formRef.current?.requestSubmit();
 
   return (
     <form ref={formRef} action={saveUser} className={styles.row}>
       <input type="hidden" name="email" value={user.email} />
+      <input type="hidden" name="back" value={back} />
       <span style={{ flex: "1 1 220px" }}>
         {user.email}
         {isMe && " (you)"}

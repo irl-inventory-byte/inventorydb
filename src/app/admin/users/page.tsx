@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { requireRole } from "@/lib/authz";
 import { ROLE_LABELS } from "@/lib/labels";
 import { getStore } from "@/lib/store";
@@ -18,7 +19,7 @@ const ERRORS: Record<string, string> = {
 
 export default async function UsersPage({ searchParams }: PageProps<"/admin/users">) {
   const me = await requireRole("admin");
-  const { error, q, frole, fstatus } = await searchParams;
+  const { error, q, frole, fstatus, saved } = await searchParams;
   const text = typeof q === "string" ? q.trim().toLowerCase() : "";
   const roleFilter = typeof frole === "string" ? frole : "";
   const statusFilter = typeof fstatus === "string" ? fstatus : "";
@@ -42,6 +43,14 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
     return true;
   });
   const filtered = !!(text || roleFilter || statusFilter);
+  // Kept after each save, so the list stays filtered.
+  const back = new URLSearchParams({
+    ...(text && { q: text }),
+    ...(roleFilter && { frole: roleFilter }),
+    ...(statusFilter && { fstatus: statusFilter }),
+  }).toString();
+  const savedUser = typeof saved === "string" ? users.find((u) => u.email.toLowerCase() === saved.toLowerCase()) : undefined;
+  const banner: CSSProperties = { position: "sticky", top: 8, zIndex: 5, boxShadow: "0 2px 8px rgba(0,0,0,.12)" };
 
   const roleSelect = (value?: string) => (
     <select name="role" defaultValue={value ?? "im"}>
@@ -86,16 +95,30 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
       <p className={styles.muted}>
         Only these Google accounts can sign in. Admins and IMs can send and receive items. Rig can view the
         dashboard and inventory. Linked person is optional; when it is set, it must be a person of the same
-        role. Changes apply the next time that person signs in. Deactivate instead of deleting.
+        role. Changes apply straight away. Deactivate instead of deleting.
       </p>
       <p className={styles.muted}>
         <strong>Primary role</strong> is required. <strong>Secondary role</strong> is optional: give it only to
         people who do two jobs (e.g. Admin + QC, or IM + QC). They can then switch between the two roles from Home
         or the Dashboard. Only admins can set it.
       </p>
-      {typeof error === "string" && ERRORS[error] && <p className={styles.error}>{ERRORS[error]}</p>}
+      {/* Stays at the top of the screen while scrolling, so a save or a problem is always seen. */}
+      <div id="saved" />
+      {typeof error === "string" && ERRORS[error] && (
+        <p className={styles.error} role="alert" style={banner}>
+          Not saved: {ERRORS[error]}
+        </p>
+      )}
+      {savedUser && !error && (
+        <p className={styles.ok} role="status" style={banner}>
+          Saved {savedUser.email}: {ROLE_LABELS[savedUser.role] ?? savedUser.role}
+          {savedUser.secondary_role ? ` + ${ROLE_LABELS[savedUser.secondary_role as keyof typeof ROLE_LABELS] ?? savedUser.secondary_role}` : ""}
+          {savedUser.active === "false" ? " (inactive)" : ""}. It applies straight away.
+        </p>
+      )}
 
       <form action={addUser} className={styles.row}>
+        <input type="hidden" name="back" value={back} />
         <input name="email" type="email" placeholder="Google email" required />
         {roleSelect()}
         {secondarySelect()}
@@ -132,7 +155,14 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
       <div className={styles.list}>
         {shown.length === 0 && <p className={styles.muted}>No users match this filter.</p>}
         {shown.map((u) => (
-          <UserRow key={u.email} user={u} linkable={linkable} isMe={u.email.toLowerCase() === me.email?.toLowerCase()} />
+          <UserRow
+            // A new key after each save, so the row always shows what is really saved.
+            key={`${u.email}|${u.role}|${u.secondary_role}|${u.person_id}|${u.active}`}
+            user={u}
+            linkable={linkable}
+            isMe={u.email.toLowerCase() === me.email?.toLowerCase()}
+            back={back}
+          />
         ))}
       </div>
     </main>

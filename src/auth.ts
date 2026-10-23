@@ -35,10 +35,10 @@ const ROLE_ALIASES: Record<string, Role> = {
   internal: "internal",
   "internal team": "internal",
 };
-const normalizeRole = (raw: string | undefined): Role | undefined =>
+export const normalizeRole = (raw: string | undefined): Role | undefined =>
   ROLE_ALIASES[String(raw ?? "").trim().toLowerCase().replace(/\s+/g, " ")];
 
-// Only people listed in the `users` tab can sign in. Role changes apply at next sign-in.
+// Only people listed in the `users` tab can sign in. Role changes apply at once (see lib/authz.ts).
 async function findUser(email: string) {
   const users = await getStore().list("users");
   return users.find((u) => u.email.toLowerCase() === email.toLowerCase() && u.active !== "false");
