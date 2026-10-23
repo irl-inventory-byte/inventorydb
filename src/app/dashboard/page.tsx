@@ -103,13 +103,11 @@ function bars(items: Item[], labelOf: (i: Item) => string, what: string, href: (
 /**
  * Dashboard → Mobile, the parts only mobiles have. The rest of the page (status tiles, hub hierarchy, moved per
  * day, needs attention, who has items) is the same as for SD cards and rigs.
- *   part "summary": Total mobiles · In use · Total cost (in place of the SD card storage / colour summary)
+ *   part "summary": Total mobiles · In use (in place of the SD card storage / colour summary)
  *   part "charts":  By category, manufacturer and model
  */
 function MobileOverview({ items, part }: { items: Item[]; part: "summary" | "charts" }) {
   const inUse = items.filter((i) => !OUT_OF_USE.has(i.status));
-  const totalCost = items.reduce((s, i) => s + (Number(i.price) || 0), 0);
-  const noCost = items.filter((i) => !(Number(i.price) > 0)).length;
   const inStock = items.filter((i) => i.status === "in_stock").length;
   const share = (v: number) => (items.length ? `${Math.round((v / items.length) * 100)}% of all mobiles` : "No mobiles yet");
 
@@ -122,14 +120,6 @@ function MobileOverview({ items, part }: { items: Item[]; part: "summary" | "cha
       href: mobileList({ status: "with_fo,traveling,pending" }),
       icon: "user",
       color: "var(--series-2)",
-    },
-    {
-      label: "Total cost",
-      value: `₹${n(totalCost)}`,
-      hint: noCost ? `${n(noCost)} without a cost` : "All mobiles have a cost",
-      href: mobileList(),
-      icon: "chart",
-      color: "var(--series-4)",
     },
   ];
 
@@ -271,7 +261,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     fo: { icon: "user", color: "var(--series-2)", hint: "Checked out to an FO" },
     transit: { icon: "truck", color: "var(--series-4)", hint: "Sent by the IM to an IFO" },
     qc_pending: { icon: "shield", color: "var(--series-7)", hint: "Received by QC" },
-    qc_pass: { icon: "check", color: "var(--series-3)", hint: "Passed by QC, sent to IM, not received yet" },
+    qc_pass: { icon: "check", color: "var(--series-3)", hint: "Passed by QC or repaired by hardware, sent to IM, not received yet" },
     qc_fail: { icon: "alert", color: "var(--warning)", hint: "Hardware has not received it yet" },
     rtd: { icon: "send", color: "var(--series-3)", hint: "Repaired, received by IM" },
     dead: { icon: "archive", color: "var(--text-muted)", hint: "Declared dead by hardware" },
@@ -288,6 +278,33 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // Unknown: rigs with no handover, QC result or hardware update for more than NO_ACTIVITY_DAYS days
   // (with hardware, dead, R&D, lost and damaged rigs are left out). It overlaps the tiles above.
   const unknownRigs = showQc ? inactiveRigs(items, events, qcChecks, hardwareUpdates, now, NO_ACTIVITY_DAYS) : [];
+  // Admin only: every rig sent and not received yet (to IMs, QC or hardware), and every rig the hardware team
+  // has (received or still on its way to them).
+  if (user.role === "admin") {
+    const rigsOnly = items.filter((i) => i.item_type === "rig");
+    const toIm = rigsOnly.filter((i) => i.status === "pending").length;
+    const toQc = rigsOnly.filter((i) => i.status === "pending_qc").length;
+    const toHw = rigsOnly.filter((i) => i.status === "pending_hardware").length;
+    const atHw = rigsOnly.filter((i) => i.status === "with_hardware").length;
+    rigKpis.push(
+      {
+        label: "To be received",
+        value: toIm + toQc + toHw,
+        hint: `${toIm} to IMs · ${toQc} to QC · ${toHw} to hardware`,
+        href: inventory({ type: "rig", status: "pending,pending_qc,pending_hardware" }),
+        icon: "inbox",
+        color: "var(--series-4)",
+      },
+      {
+        label: "Hardware team (all)",
+        value: atHw + toHw,
+        hint: `${atHw} received · ${toHw} not received yet`,
+        href: inventory({ type: "rig", status: "with_hardware,pending_hardware" }),
+        icon: "wrench",
+        color: "var(--series-1)",
+      },
+    );
+  }
   rigKpis.push({
     label: "Unknown",
     value: unknownRigs.length,
@@ -394,9 +411,24 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     const shown = sorted.slice(0, 3).map(([who, c]) => `${who} (${c})`).join(", ");
     return sorted.length > 3 ? `${shown} +${sorted.length - 3} more` : shown;
   };
-  const sentToPerson = (id: string) => senders(items.filter((i) => i.current_holder === id && i.status !== "in_stock"));
-  const sentToHub = (hubId: string) => senders(items.filter((i) => i.status === "pending" && i.current_hub === hubId));
-  const cityOfPerson = (id: string) => {
+  // Hours since each item's last movement (send, receive, correction), as in the LATE_AFTER_HOURS rule.
+  const lastMove = new Map<string, number>();
+  for (const e of events) {
+    const t = Date.parse(e.occurred_at);
+    if (!Number.isNaN(t) && t > (lastMove.get(e.item_id) ?? -Infinity)) lastMove.set(e.item_id, t);
+  }
+  const hoursOut = (i: (typeof items)[number]) => {
+    const t = lastMove.get(i.item_id) ?? Date.parse(i.updated_at);
+    return Number.isNaN(t) ? 0 : Math.max(0, (now.getTime() - t) / 3_600_000);
+  };
+  const isLate = (i: (typeof items)[number]) => hoursOut(i) > LATE_AFTER_HOURS;
+  // Only the LATE items of a person or hub (out for more than LATE_AFTER_HOURS): their senders and cities.
+  const lateWith = (id: string, status: Status) => items.filter((i) => i.current_holder === id && i.status === status && isLate(i));
+  const sentToPerson = (id: string, status: Status) => senders(lateWith(id, status));
+  const sentToHub = (hubId: string) => senders(items.filter((i) => i.status === "pending" && i.current_hub === hubId && isLate(i)));
+  const cityOfPerson = (id: string, status: Status) => {
+    const late = [...new Set(lateWith(id, status).map((i) => hubCity.get(i.current_hub) ?? i.current_hub))].filter(Boolean);
+    if (late.length) return late.sort().join(", ");
     const set = holderCities.get(id);
     if (set && set.size) return [...set].filter(Boolean).sort().join(", ");
     const hub = personHub.get(id);
@@ -424,8 +456,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
         key: `late-${g.kind}-${g.key}`,
         person: g.label,
         role: g.kind === "fo" ? "FO" : "IFO",
-        city: cityOfPerson(g.key),
-        sentBy: sentToPerson(g.key),
+        city: cityOfPerson(g.key, g.kind === "fo" ? "with_fo" : "traveling"),
+        sentBy: sentToPerson(g.key, g.kind === "fo" ? "with_fo" : "traveling"),
         items: g.count,
         hours: g.oldestHours,
         outFor: howLong(g.oldestHours),
@@ -439,17 +471,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // Rig team and internal team: items still with them for more than LATE_AFTER_HOURS since their last
   // movement (same rule as FO / IFO). IMs are not listed here: items sent to an IM and not received yet are
   // already the hub's "Sent, not received" row, and items in stock with an IM are not out.
-  const lastMove = new Map<string, number>();
-  for (const e of events) {
-    const t = Date.parse(e.occurred_at);
-    if (!Number.isNaN(t) && t > (lastMove.get(e.item_id) ?? -Infinity)) lastMove.set(e.item_id, t);
-  }
   const heldBy = new Map<string, { status: Status; count: number; hours: number }>();
   for (const i of items) {
     if (i.status !== "with_rig" && i.status !== "with_internal") continue;
     if (!i.current_holder || seen.has(i.current_holder)) continue;
-    const t = lastMove.get(i.item_id) ?? Date.parse(i.updated_at);
-    const hours = Number.isNaN(t) ? 0 : Math.max(0, (now.getTime() - t) / 3_600_000);
+    const hours = hoursOut(i);
     if (hours <= LATE_AFTER_HOURS) continue;
     const g = heldBy.get(i.current_holder) ?? { status: i.status, count: 0, hours: 0 };
     g.count++;
@@ -462,8 +488,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       key: `late-held-${personId}`,
       person: person?.name ?? personId,
       role: person ? ROLE_LABELS[person.role] : g.status === "with_rig" ? "Rig team" : "Internal",
-      city: cityOfPerson(personId),
-      sentBy: sentToPerson(personId),
+      city: cityOfPerson(personId, g.status),
+      sentBy: sentToPerson(personId, g.status),
       items: g.count,
       hours: g.hours,
       outFor: howLong(g.hours),
@@ -694,8 +720,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             <h2>Needs attention</h2>
             <p className={styles.muted}>
               FO, IFO, rig team, internal people or hubs holding items for more than {LATE_AFTER_HOURS} hours (a
-              hub row = sent to that hub and not received yet), plus lost and damaged items, with who sent them.
-              Longest out first.
+              hub row = sent to that hub and not received yet), plus lost and damaged items. Items, City and Sent by
+              count only those late items. Longest out first.
             </p>
 
             {attention.length > 0 && (

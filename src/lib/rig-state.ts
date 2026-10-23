@@ -17,7 +17,7 @@ export function rigCondition(status: Status | string, qc: string | undefined): R
   const q = qc || "qc_pending";
   const inStock = status === "in_stock";
   if (q === "fail") return { label: "QC fail · Send to hardware", color: RED, ready: false };
-  if (q === "repaired") return { label: inStock ? "RTD · Ready to deploy" : "Repaired", color: GREEN, ready: true };
+  if (q === "repaired") return { label: inStock ? "QC passed · RTD · Ready to deploy" : "QC passed (repaired)", color: GREEN, ready: true };
   if (q === "pass") return { label: inStock ? "QC passed · Idle" : "QC passed", color: GREEN, ready: true };
   return { label: "QC pending", color: AMBER, ready: false };
 }
@@ -30,10 +30,10 @@ export function rigCondition(status: Status | string, qc: string | undefined): R
  *   transit     In transit          the IM sent it to an IFO (courier) — only this
  *   internal    Internal            the IM checked it out to an internal person (e.g. a demo rig)
  *   qc_pending  QC pending          sent to QC or with QC (incl. QC → QC transfers), no result yet
- *   qc_pass     QC passed           QC passed it and sent it to an IM, who has not received it yet
+ *   qc_pass     QC passed           QC passed it (or hardware repaired it) and sent it to an IM, not received yet
  *                                   (once the IM receives it, it is In stock)
  *   qc_fail     QC fail             QC marked Fail; the hardware team has not received it yet
- *   rtd         RTD                 repaired by hardware and sent to / received by the IM
+ *   rtd         RTD                 repaired by hardware and received by the IM
  *   dead        Dead / Retired      the hardware team declared it dead
  *   rnd         R&D                 the hardware team moved it to R&D (out of service)
  * Lost or damaged rigs have no tile; Rig checks still shows them as "Lost or damaged".
@@ -93,8 +93,9 @@ export function rigState(status: Status | string, qc: string | undefined): RigSt
     case "pending_qc":
       return "qc_pending"; // sent to QC (from an IM or another QC person), not received yet
     case "pending":
-      // Sent to an IM, not received yet: QC → IM (passed), hardware → IM (repaired), or IM → IM.
-      return qc === "pass" ? "qc_pass" : qc === "repaired" ? "rtd" : "in_stock";
+      // Sent to an IM, not received yet: QC → IM (passed), hardware → IM (repaired: shown as QC passed too, it
+      // becomes RTD once the IM receives it), or IM → IM.
+      return qc === "pass" || qc === "repaired" ? "qc_pass" : "in_stock";
     case "in_stock":
       return qc === "repaired" ? "rtd" : "in_stock";
     default:

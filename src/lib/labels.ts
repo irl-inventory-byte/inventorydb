@@ -38,7 +38,7 @@ export const QC_LABELS: Record<string, string> = {
   qc_pending: "QC pending",
   pass: "QC passed",
   fail: "QC failed",
-  repaired: "Repaired",
+  repaired: "QC passed (repaired)",
 };
 
 /** First value of a search param, which Next may give as string, array or undefined. */
