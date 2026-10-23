@@ -736,10 +736,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                 tabIndex={0}
                 style={{ maxHeight: "560px", maxWidth: "100%", overflowY: "auto", overflowX: "auto" }}
               >
-                <table className={styles.table} style={{ width: "100%", minWidth: "980px", borderCollapse: "separate", borderSpacing: 0 }}>
+                <table className={styles.table} style={{ width: "100%", minWidth: "900px", borderCollapse: "separate", borderSpacing: 0 }}>
                   <thead>
                     <tr>
-                      {["Item ID", "Type", "Person", "Role", "City", "Sent by", "Sent on", "Out for", "Issue"].map((h) => (
+                      {["Type", "Person", "Role", "City", "Sent by", "Sent on", "Out for", "Issue"].map((h) => (
                         <th key={h} scope="col" style={TH_STYLE}>
                           {h}
                         </th>
@@ -749,11 +749,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                   <tbody>
                     {shownDelayed.map((r) => (
                       <tr key={r.id}>
-                        <td>
-                          <Link href={`/inventory?${new URLSearchParams({ q: r.id })}`} className={styles.link}>
-                            {r.id}
-                          </Link>
-                        </td>
                         <td>{r.type}</td>
                         <td style={{ whiteSpace: "normal" }}>
                           <Link href={r.href}>{r.person}</Link>
@@ -774,7 +769,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                   </tbody>
                   <tfoot style={{ position: "static" }}>
                     <tr>
-                      <th scope="row" colSpan={7} style={{ ...TFOOT_STYLE, textAlign: "left" }}>
+                      <th scope="row" colSpan={6} style={{ ...TFOOT_STYLE, textAlign: "left" }}>
                         Total delayed cards
                       </th>
                       <td colSpan={2} style={TFOOT_STYLE}>
