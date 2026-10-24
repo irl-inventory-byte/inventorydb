@@ -180,6 +180,37 @@ create table if not exists public.receipt_edits (
 create index if not exists receipt_edits_seq_idx on public.receipt_edits (_seq);
 alter table public.receipt_edits enable row level security;
 
+-- Change counters: every write to a table adds 1 to its number here (done by the triggers below, so
+-- edits made in the Supabase Table Editor count too). The app reads these few numbers first and only
+-- downloads a table again when its number changed, so pages and the Back button do not re-download
+-- 50,000 events every time.
+create table if not exists public.table_versions (
+  tab text primary key,
+  v bigint not null default 0
+);
+alter table public.table_versions enable row level security;
+
+create or replace function public.bump_table_version() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.table_versions (tab, v) values (tg_table_name, 1)
+  on conflict (tab) do update set v = public.table_versions.v + 1;
+  return null;
+end $$;
+revoke all on function public.bump_table_version() from public, anon, authenticated;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['items','events','people','hubs','item_types','users','status_limits',
+    'deletions','hardware_updates','qc_checks','rig_reports','receipt_edits'] loop
+    execute format('drop trigger if exists bump_version on public.%I', t);
+    execute format(
+      'create trigger bump_version after insert or update or delete or truncate on public.%I '
+      'for each statement execute function public.bump_table_version()', t);
+  end loop;
+end $$;
+
 -- The app's server key (service_role) must be able to read and write every table, even on projects
 -- that do not grant table access automatically. Browser keys (anon) get nothing.
 grant usage on schema public to service_role;
