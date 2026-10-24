@@ -1,424 +1,370 @@
 import Link from "next/link";
+import {
+  actorOptions,
+  allowedActors,
+  defaultActor,
+} from "@/lib/actors";
 import { requireRole } from "@/lib/authz";
-import { ROLE_LABELS, one } from "@/lib/labels";
-import type { ItemEvent, Role } from "@/lib/schema";
-import { VIEW_ROLES, storeForAll } from "@/lib/access";
-import { formatIst, istDate } from "@/lib/time";
+import { one } from "@/lib/labels";
+import { RECEIVE_ROLES, handoverStoreFor } from "@/lib/access";
+import { STATUS_LABELS } from "@/lib/labels";
+import type { Role, Status } from "@/lib/schema";
 import styles from "../../admin/admin.module.css";
-import { deleteReceipt, restoreReceipt, updateReceiptNote } from "./actions";
+import { receiveCards } from "../actions";
+import HubSelect from "../receive/HubSelect";
+import { mobileAliases } from "@/lib/scan";
+import ReceiveScanArea from "../receive/ReceiveScanArea";
 
-const PAGE_SIZE = 50;
-
-const TYPE_LABEL: Record<string, string> = {
-  check_out: "Send",
-  receive: "Receive",
-  correct: "Correction",
-  import: "Added",
-  retire: "Dead / Retired",
-  rnd: "R&D",
-  report_lost: "Lost",
-  report_damaged: "Damaged",
-  reassign_home_hub: "Home hub changed",
-};
-
-// Fields in each filter (and the page links), in the address bar: ?q=&type=&city=&role=&person=&from=&to=
-const FILTER_KEYS = ["q", "type", "city", "role", "person", "from", "to"] as const;
-const isDay = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
-
-const actionLink = {
-  display: "inline-block",
-  padding: "4px 10px",
-  border: "1px solid #94a3b8",
-  borderRadius: 6,
-  fontSize: 13,
-  textDecoration: "none",
-  whiteSpace: "nowrap",
-} as const;
-
-/**
- * RECEIPTS
- * Everyone (admin, IM, rig team): view and download receipts.
- * Admin only: edit the note, delete (hide) and restore receipts.
- * Every admin change is logged in the "receipt_edits" tab.
- */
-export default async function ReceiptsPage({
+export default async function ReceivePage({
   searchParams,
-}: {
-  searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined>;
-}) {
-  const user = await requireRole(...VIEW_ROLES);
-  const isAdmin = user.role === "admin";
+}: PageProps<"/handover/receive">) {
+  const user = await requireRole(...RECEIVE_ROLES);
+  const sp = await searchParams;
+  const store = handoverStoreFor(user.role);
 
-  const sp = (await searchParams) ?? {};
-  const q = one(sp.q).trim().toLowerCase();
-  const type = one(sp.type);
-  // Filters: city (of the From or To hub), role and name (of the From or To person), date range, action.
-  const cityF = one(sp.city);
-  const roleF = one(sp.role);
-  const personF = one(sp.person);
-  const fromF = isDay(one(sp.from)) ? one(sp.from) : "";
-  const toF = isDay(one(sp.to)) ? one(sp.to) : "";
-  const showDeleted = isAdmin && one(sp.deletedView) === "1";
-  const requestedPage = Number(one(sp.page)) || 1;
-
-  const store = storeForAll(user.role); // SD cards, rigs and mobiles together
-  const [events, hubs, people, edits] = await Promise.all([
-    store.list("events"),
+  const [items, hubs, people, users] = await Promise.all([
+    store.list("items"),
     store.list("hubs"),
     store.list("people"),
-    // The tab is created on the first edit, so it may not exist yet.
-    store.list("receipt_edits").catch(() => []),
+    store.list("users"),
   ]);
 
-  const hubName = new Map(hubs.map((h) => [h.hub_id, h.name]));
-  const hub = (id: string) => (id ? (hubName.get(id) ?? id) : "");
-  // A hub's city: its City, or its name when City is blank.
-  const hubCity = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
-  const roleOf = new Map(people.map((p) => [p.person_id, p.role]));
+  const activeHubs = hubs
+    .filter((hub) => hub.active !== "false")
+    .sort((a, b) => a.name.localeCompare(b.name));
 
-  // One receipt per batch.
-  const byBatch = new Map<string, ItemEvent[]>();
-  for (const e of events) {
-    if (!e.batch_id) continue;
-    const list = byBatch.get(e.batch_id) ?? [];
-    list.push(e);
-    byBatch.set(e.batch_id, list);
-  }
-
-  // Edit log per batch, newest first.
-  const editsByBatch = new Map<string, typeof edits>();
-  for (const ed of [...edits].sort(
-    (a, b) => Date.parse(b.edited_at) - Date.parse(a.edited_at)
-  )) {
-    const list = editsByBatch.get(ed.batch_id) ?? [];
-    list.push(ed);
-    editsByBatch.set(ed.batch_id, list);
-  }
-
-  const all = [...byBatch.entries()].map(([batchId, rows]) => {
-    const first = rows[0];
-    const log = editsByBatch.get(batchId) ?? [];
-    const lastDelete = log.find((ed) => ed.field === "deleted");
-    const deleted = Boolean(lastDelete && lastDelete.new_value.startsWith("yes"));
-    const lastNoteEdit = log.find((ed) => ed.field === "note");
-
-    return {
-      batchId,
-      action: first.action,
-      occurredAt: first.occurred_at,
-      fromName: first.from_person,
-      fromHub: hub(first.from_hub),
-      toName: first.to_person,
-      toHub: hub(first.hub),
-      // For the filters: both cities, both roles and both names on the receipt, and its IST day.
-      cities: [hubCity.get(first.from_hub), hubCity.get(first.hub)].filter((c): c is string => !!c),
-      roles: [roleOf.get(first.from_id), roleOf.get(first.to_id)].filter((r): r is Role => !!r),
-      names: [first.from_person, first.to_person].map((n) => (n ?? "").trim()).filter(Boolean),
-      day: (() => {
-        const t = Date.parse(first.occurred_at);
-        return Number.isNaN(t) ? "" : istDate(new Date(t));
-      })(),
-      items: rows.map((r) => r.item_id),
-      recordedBy: first.recorded_by,
-      note: first.note,
-      deleted,
-      deletedBy: deleted ? lastDelete : undefined,
-      lastNoteEdit,
-    };
-  });
-
-  const deletedCount = all.filter((r) => r.deleted).length;
-
-  const receipts = all
-    // IM / rig team never see deleted receipts. Admins see them on request.
-    .filter((r) => (showDeleted ? r.deleted : !r.deleted))
-    .filter((r) => !type || r.action === type)
-    .filter((r) => !cityF || r.cities.includes(cityF))
-    .filter((r) => !roleF || r.roles.includes(roleF as Role))
-    .filter((r) => !personF || r.names.includes(personF))
-    .filter((r) => (!fromF || (r.day && r.day >= fromF)) && (!toF || (r.day && r.day <= toF)))
-    .filter(
-      (r) =>
-        !q ||
-        r.batchId.toLowerCase().includes(q) ||
-        r.fromName.toLowerCase().includes(q) ||
-        r.toName.toLowerCase().includes(q) ||
-        r.recordedBy.toLowerCase().includes(q) ||
-        r.note.toLowerCase().includes(q) ||
-        r.items.some((id) => id.toLowerCase().includes(q))
-    )
-    .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt));
-
-  const pages = Math.max(1, Math.ceil(receipts.length / PAGE_SIZE));
-  const page = Math.min(Math.max(1, requestedPage), pages);
-  const shown = receipts.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
-  // Choices for the filter lists, from the receipts that exist (deleted ones as they are being viewed).
-  const pool = all.filter((r) => (showDeleted ? r.deleted : !r.deleted));
-  const sortText = (list: Iterable<string>) => [...new Set(list)].sort((a, b) => a.localeCompare(b));
-  const cityOptions = sortText(pool.flatMap((r) => r.cities));
-  const roleOptions = sortText(pool.flatMap((r) => r.roles));
-  // With a role chosen, the name list shows only people of that role.
-  const nameOptions = sortText(
-    roleF
-      ? people.filter((p) => p.role === roleF).map((p) => p.name.trim()).filter((n) => pool.some((r) => r.names.includes(n)))
-      : pool.flatMap((r) => r.names),
+  const hubNames = new Map(
+    hubs.map((hub) => [hub.hub_id, hub.name])
   );
-  const typeOptions = sortText(pool.map((r) => r.action));
-  const filters: Record<string, string> = { q: one(sp.q).trim(), type, city: cityF, role: roleF, person: personF, from: fromF, to: toF };
-  const filtered = FILTER_KEYS.some((k) => filters[k]);
 
-  const link = (params: Record<string, string>) =>
-    `/handover/receipts?${new URLSearchParams({
-      ...Object.fromEntries(FILTER_KEYS.filter((k) => filters[k]).map((k) => [k, filters[k]])),
-      ...(showDeleted && { deletedView: "1" }),
-      ...params,
-    })}`;
+  // Existing permissions determine who may record the receipt.
+  const byOptions = allowedActors(
+    user,
+    actorOptions(
+      people,
+      users,
+      (id) => hubNames.get(id) ?? id,
+      ["im", "rig", "qc", "hardware", "internal"]
+    )
+  );
 
-  const here = link({ page: String(page) });
+  // QC team: receive ANY rig sent to the QC team. Hardware team: receive ANY rig sent to the hardware team.
+  // No hub to choose.
+  const HELD_FROM: Partial<Record<Role, Status>> = { qc: "pending_qc", hardware: "pending_hardware" };
+  const heldFrom = HELD_FROM[user.role as Role];
+  if (heldFrom) {
+    // QC and hardware: every rig sent to the team, whoever it was sent to. Received under your linked person.
+    const wholeTeam = true;
+    const team = user.role === "qc" ? "QC team" : "hardware team";
+    const notLinked = !user.personId;
+    const waiting = items.filter((i) => i.status === heldFrom);
+    const personNames = new Map(people.map((p) => [p.person_id, p.name]));
+    return (
+      <main className={styles.page}>
+        <p className={styles.back}>
+          <Link href="/">← Home</Link>
+        </p>
+        <h1>Receive rigs</h1>
+        <p className={styles.muted}>
+          Rigs sent to the {team} show here until someone receives them. Anyone in the {team} can receive them,
+          whoever they were sent to. Scan each rig you have in hand, then press Receive.
+        </p>
 
-  const saved = one(sp.saved);
-  const deletedMsg = one(sp.deleted);
-  const restored = one(sp.restored);
-  const error = one(sp.error);
+        {notLinked && (
+          <p className={styles.error}>
+            Your login is not linked to a person in the People tab, so a receive can&apos;t be recorded under your
+            name. Ask an admin to set your Linked person on Manage users (an admin can set their own).
+          </p>
+        )}
+        <h2>
+          Waiting for the {team} ({waiting.length})
+        </h2>
+        {waiting.length === 0 ? (
+          <p className={styles.muted}>No rigs are waiting for the {team}.</p>
+        ) : (
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th scope="col">Rig ID / Asset Tag</th>
+                <th scope="col">Brand</th>
+                <th scope="col">Model</th>
+                <th scope="col">Hub</th>
+                <th scope="col">Status</th>
+                {wholeTeam && <th scope="col">Sent to</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {waiting.map((i) => (
+                <tr key={i.item_id}>
+                  <td>
+                    <Link href={`/inventory/${encodeURIComponent(i.item_id)}`}>{i.item_id}</Link>
+                  </td>
+                  <td>{i.brand || "—"}</td>
+                  <td>{i.model || "—"}</td>
+                  <td>{hubNames.get(i.current_hub) ?? i.current_hub}</td>
+                  <td>{STATUS_LABELS[i.status] ?? i.status}</td>
+                  {wholeTeam && <td>{personNames.get(i.current_holder) ?? (i.current_holder || "—")}</td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        <form action={receiveCards} className={styles.list} style={{ marginTop: 16 }}>
+          <input type="hidden" name="hub" value="" />
+          <ReceiveScanArea
+            hub=""
+            hubNames={Object.fromEntries(hubNames)}
+            allowed={[heldFrom]}
+            items={items.map((item) => ({
+              id: item.item_id,
+              status: item.status,
+              hub: item.current_hub,
+              type: item.item_type === "rig" || item.item_type === "mobile" ? item.item_type : "sd_card",
+              ...(item.item_type === "mobile" && { aliases: mobileAliases(item.attributes) }),
+            }))}
+          />
+          <div className={styles.row}>
+            {byOptions.length ? (
+              <span>
+                Received by: <strong>{byOptions[0].label}</strong>
+              </span>
+            ) : (
+              <span className={styles.error}>
+                Your login is not linked to an active person in People. Ask an admin to link you.
+              </span>
+            )}
+            <input name="note" placeholder="Note (optional)" aria-label="Note" />
+            <button type="submit" disabled={!byOptions.length}>
+              Receive rigs
+            </button>
+          </div>
+
+          {one(sp.done) && (
+            <p className={styles.ok} role="status">
+              Received {one(sp.done)} rig(s). They are now with you.
+            </p>
+          )}
+          {one(sp.error) && (
+            <p className={styles.error} role="alert">
+              {one(sp.error)}
+            </p>
+          )}
+          <Link href="/handover/send">Send rigs instead →</Link>
+        </form>
+      </main>
+    );
+  }
+
+  // Count items waiting to be received at each hub.
+  const pendingByHub = new Map<string, number>();
+
+  for (const item of items) {
+    if (item.status === "pending") {
+      pendingByHub.set(
+        item.current_hub,
+        (pendingByHub.get(item.current_hub) ?? 0) + 1
+      );
+    }
+  }
+
+  const busiest = [...pendingByHub.entries()]
+    .sort((a, b) => b[1] - a[1])[0]?.[0];
+
+  // Preserve the existing receiving-hub selection logic.
+  const isActive = (id?: string) =>
+    Boolean(id) &&
+    activeHubs.some((hub) => hub.hub_id === id);
+
+  const myHub = people.find(
+    (person) => person.person_id === user.personId
+  )?.hub;
+
+  const requestedHub = one(sp.hub);
+
+  const hub = isActive(requestedHub)
+    ? requestedHub
+    : isActive(myHub)
+      ? myHub!
+      : isActive(busiest)
+        ? busiest!
+        : (
+            activeHubs.find(
+              (candidate) => candidate.is_central === "true"
+            )?.hub_id ??
+            activeHubs[0]?.hub_id ??
+            ""
+          );
+
+  const waitingElsewhere = [...pendingByHub.entries()]
+    .filter(([id]) => id !== hub);
+
+  const preferredActor = defaultActor(user);
+
+  const selectedActor = byOptions.some(
+    (option) => option.value === preferredActor
+  )
+    ? preferredActor
+    : (byOptions[0]?.value ?? "");
+
+  const canReceive = Boolean(hub) && byOptions.length > 0;
 
   return (
-    <main className={styles.pageWide}>
+    <main className={styles.page}>
       <p className={styles.back}>
-        <Link href="/dashboard">← Dashboard</Link>
+        <Link href="/">← Home</Link>
       </p>
 
-      <h1>Receipts</h1>
+      <h1>Receive items</h1>
 
       <p className={styles.muted}>
-        Every send, receive and correction receipt, newest first. Anyone can
-        view or download a receipt.
-        {isAdmin
-          ? " As an admin you can also edit the note or delete a receipt; every change is recorded with your name."
-          : " Ask an admin if a receipt needs to be changed."}
+        Take items into stock at a hub: items sent to it, or
+        items coming back from an IFO, FO or the rig team.
+        Scan the QR codes into the box.
       </p>
 
-      {saved && <p className={styles.ok} role="status">Receipt {saved} saved.</p>}
-      {deletedMsg && (
-        <p className={styles.ok} role="status">
-          Receipt {deletedMsg} deleted. Item history is unchanged; an admin can restore it from “Deleted receipts”.
-        </p>
-      )}
-      {restored && <p className={styles.ok} role="status">Receipt {restored} restored.</p>}
-      {error && <p className={styles.error} role="alert">{error}</p>}
-
-      <form method="get" className={styles.row} style={{ alignItems: "center" }}>
-        <input
-          name="q"
-          defaultValue={one(sp.q)}
-          placeholder="Search batch, serial, person, note or email"
-          aria-label="Search receipts"
+      {/* Receiving hub selection. */}
+      <form method="get" className={styles.row}>
+        <HubSelect
+          hubs={activeHubs.map((candidate) => ({
+            id: candidate.hub_id,
+            name: candidate.name,
+          }))}
+          value={hub}
         />
-        <select name="type" defaultValue={type} aria-label="Action">
-          <option value="">All actions</option>
-          {typeOptions.map((t) => (
-            <option key={t} value={t}>
-              {TYPE_LABEL[t] ?? t}
-            </option>
-          ))}
-        </select>
-        <select name="city" defaultValue={cityF} aria-label="City">
-          <option value="">All cities</option>
-          {cityOptions.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-        <select name="role" defaultValue={roleF} aria-label="Role">
-          <option value="">All roles</option>
-          {roleOptions.map((r) => (
-            <option key={r} value={r}>
-              {ROLE_LABELS[r as Role] ?? r}
-            </option>
-          ))}
-        </select>
-        <select name="person" defaultValue={personF} aria-label="Name" style={{ maxWidth: 240 }}>
-          <option value="">All names</option>
-          {nameOptions.map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
-          ))}
-        </select>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          From
-          <input type="date" name="from" defaultValue={fromF} max={toF || undefined} aria-label="From date" />
-        </label>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          To
-          <input type="date" name="to" defaultValue={toF} min={fromF || undefined} aria-label="To date" />
-        </label>
-        {showDeleted && <input type="hidden" name="deletedView" value="1" />}
-        <button type="submit">Filter</button>
-        {filtered && (
-          <Link href={showDeleted ? "/handover/receipts?deletedView=1" : "/handover/receipts"}>Clear filters</Link>
-        )}
-      </form>
-      <p className={styles.muted} style={{ marginTop: 0 }}>
-        City, role and name match either side of the receipt (From or To). Pick a role first to shorten the name list,
-        then press Filter.
-      </p>
 
-      {isAdmin && (
-        <p className={styles.row}>
-          {showDeleted ? (
-            <Link href="/handover/receipts">← Back to receipts</Link>
-          ) : (
-            <Link href="/handover/receipts?deletedView=1">
-              Deleted receipts ({deletedCount})
-            </Link>
-          )}
-        </p>
-      )}
+        <noscript>
+          <button type="submit">Change hub</button>
+        </noscript>
+      </form>
 
       <p className={styles.muted}>
-        {showDeleted ? "Deleted receipts: " : ""}
-        {receipts.length} receipt{receipts.length === 1 ? "" : "s"}.
-        {pages > 1 && ` Page ${page} of ${pages}.`}
+        Choose the hub first, then scan. Items sent to a hub
+        can only be received there.
       </p>
 
-      <div style={{ width: "100%", overflowX: "auto" }}>
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              <th scope="col">Date &amp; time (IST)</th>
-              <th scope="col">Type</th>
-              <th scope="col">Batch</th>
-              <th scope="col">From</th>
-              <th scope="col">To</th>
-              <th scope="col">Items</th>
-              <th scope="col">Recorded by</th>
-              <th scope="col">Note</th>
-              <th scope="col">Actions</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {shown.length === 0 ? (
-              <tr>
-                <td colSpan={9} className={styles.muted}>
-                  No receipts match.
-                </td>
-              </tr>
-            ) : (
-              shown.map((r) => {
-                const enc = encodeURIComponent(r.batchId);
-                return (
-                  <tr key={r.batchId}>
-                    <td style={{ whiteSpace: "nowrap" }}>{formatIst(r.occurredAt)}</td>
-                    <td>{TYPE_LABEL[r.action] ?? r.action}</td>
-                    <td style={{ whiteSpace: "nowrap" }}>{r.batchId}</td>
-                    <td>
-                      {r.fromName || "—"}
-                      {r.fromHub && <div className={styles.muted}>{r.fromHub}</div>}
-                    </td>
-                    <td>
-                      {r.toName || "—"}
-                      {r.toHub && <div className={styles.muted}>{r.toHub}</div>}
-                    </td>
-                    <td>{r.items.length}</td>
-                    <td style={{ overflowWrap: "anywhere" }}>{r.recordedBy || "—"}</td>
-                    <td style={{ minWidth: 180 }}>
-                      {r.note || <span className={styles.muted}>—</span>}
-                      {r.lastNoteEdit && (
-                        <div className={styles.muted} style={{ marginTop: 4 }}>
-                          Note edited by {r.lastNoteEdit.edited_by_name || r.lastNoteEdit.edited_by_email},{" "}
-                          {formatIst(r.lastNoteEdit.edited_at)}
-                        </div>
-                      )}
-                      {r.deletedBy && (
-                        <div className={styles.error} style={{ marginTop: 4 }}>
-                          Deleted by {r.deletedBy.edited_by_name || r.deletedBy.edited_by_email},{" "}
-                          {formatIst(r.deletedBy.edited_at)}
-                          {r.deletedBy.new_value.length > 3 && ` (${r.deletedBy.new_value.slice(6)})`}
-                        </div>
-                      )}
-                    </td>
-
-                    <td>
-                      {/* Everyone: view and download. */}
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                        <Link href={`/handover/receipt/${enc}`} style={actionLink}>
-                          View
-                        </Link>
-                        <a href={`/api/receipt-pdf/${enc}`} style={actionLink} download>
-                          Download PDF
-                        </a>
-                      </div>
-
-                      {/* Admin only: edit, delete, restore. */}
-                      {isAdmin && !r.deleted && (
-                        <>
-                          <details style={{ marginTop: 6 }}>
-                            <summary style={{ cursor: "pointer" }}>Edit note</summary>
-                            <form action={updateReceiptNote} style={{ display: "grid", gap: 6, marginTop: 6 }}>
-                              <input type="hidden" name="batch" value={r.batchId} />
-                              <input type="hidden" name="back" value={here} />
-                              <textarea
-                                name="note"
-                                defaultValue={r.note}
-                                maxLength={1000}
-                                rows={3}
-                                aria-label={`Note for receipt ${r.batchId}`}
-                                style={{ width: "100%", minWidth: 200, padding: 6 }}
-                              />
-                              <button type="submit">Save note</button>
-                            </form>
-                          </details>
-
-                          <details style={{ marginTop: 6 }}>
-                            <summary style={{ cursor: "pointer", color: "#b91c1c" }}>Delete</summary>
-                            <form action={deleteReceipt} style={{ display: "grid", gap: 6, marginTop: 6 }}>
-                              <input type="hidden" name="batch" value={r.batchId} />
-                              <input type="hidden" name="back" value={here} />
-                              <input
-                                name="reason"
-                                placeholder="Reason (optional)"
-                                maxLength={500}
-                                aria-label={`Reason for deleting ${r.batchId}`}
-                              />
-                              <button
-                                type="submit"
-                                style={{ background: "#b91c1c", borderColor: "#b91c1c", color: "#fff" }}
-                              >
-                                Delete receipt
-                              </button>
-                              <span className={styles.muted} style={{ fontSize: 12 }}>
-                                Hides it for everyone. Item history is kept; you can restore it later.
-                              </span>
-                            </form>
-                          </details>
-                        </>
-                      )}
-
-                      {isAdmin && r.deleted && (
-                        <form action={restoreReceipt} style={{ marginTop: 6 }}>
-                          <input type="hidden" name="batch" value={r.batchId} />
-                          <input type="hidden" name="back" value={here} />
-                          <button type="submit">Restore</button>
-                        </form>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {pages > 1 && (
-        <p className={styles.row}>
-          {page > 1 && <Link href={link({ page: String(page - 1) })}>← Newer</Link>}
-          {page < pages && <Link href={link({ page: String(page + 1) })}>Older →</Link>}
+      {!hub && (
+        <p className={styles.error}>
+          No active receiving hub is available. Ask an
+          administrator to configure a hub.
         </p>
       )}
+
+      {waitingElsewhere.length > 0 && (
+        <p className={styles.muted}>
+          Also waiting at other hubs:{" "}
+          {waitingElsewhere.map(([id, count], index) => (
+            <span key={id}>
+              {index > 0 && ", "}
+
+              <Link
+                href={`/handover/receive?${new URLSearchParams({
+                  hub: id,
+                })}`}
+              >
+                {hubNames.get(id) ?? id} ({count})
+              </Link>
+            </span>
+          ))}
+        </p>
+      )}
+
+      <form action={receiveCards} className={styles.list}>
+        <input type="hidden" name="hub" value={hub} />
+
+        {/* Existing scan and batch-receipt interface. */}
+        <ReceiveScanArea
+          hub={hub}
+          hubNames={Object.fromEntries(hubNames)}
+          items={items.map((item) => ({
+            id: item.item_id,
+            status: item.status,
+            hub: item.current_hub,
+            type: item.item_type === "rig" || item.item_type === "mobile" ? item.item_type : "sd_card",
+            ...(item.item_type === "mobile" && { aliases: mobileAliases(item.attributes) }),
+          }))}
+        />
+
+        {/* Receive from has been removed.
+            Received by remains to identify the recorder. */}
+        <div className={styles.row}>
+          {user.role === "admin" ? (
+            <select
+              name="by"
+              defaultValue={selectedActor}
+              aria-label="Received by"
+              required
+            >
+              {byOptions.length === 0 && (
+                <option value="">
+                  No eligible recorder available
+                </option>
+              )}
+
+              {byOptions.map((option) => (
+                <option
+                  key={option.value}
+                  value={option.value}
+                >
+                  Received by: {option.label}
+                </option>
+              ))}
+            </select>
+          ) : byOptions.length ? (
+            <span>
+              Received by:{" "}
+              <strong>{byOptions[0].label}</strong>
+            </span>
+          ) : (
+            <span className={styles.error}>
+              Your login is not linked to an active IM or rig
+              team member. Ask an admin to link you.
+            </span>
+          )}
+
+          <input
+            name="expected"
+            type="number"
+            min="0"
+            step="1"
+            placeholder="Expected count (optional)"
+            aria-label="Expected count"
+          />
+
+          <input
+            name="note"
+            placeholder="Note (optional)"
+            aria-label="Note"
+          />
+
+          <button type="submit" disabled={!canReceive}>
+            Receive items
+          </button>
+        </div>
+
+        {one(sp.done) && (
+          <p className={styles.ok} role="status">
+            Received {one(sp.done)} item(s) into stock.
+          </p>
+        )}
+
+        {one(sp.mismatch) && (
+          <p className={styles.error} role="alert">
+            {one(sp.mismatch)} It was recorded on each
+            item&apos;s history.
+          </p>
+        )}
+
+        {one(sp.error) && (
+          <p className={styles.error} role="alert">
+            {one(sp.error)}
+          </p>
+        )}
+
+        <Link href="/handover/send">
+          Send items instead →
+        </Link>
+      </form>
     </main>
   );
 }
