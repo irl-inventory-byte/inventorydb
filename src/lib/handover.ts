@@ -246,7 +246,7 @@ export const receivesHeld = (role: Role | "admin" | undefined) => !!role && role
 /**
  * QC or hardware team member receives rigs. The rig stays at the hub it was sent to and becomes
  * "With QC team" / "With hardware team" under the receiver's name.
- *   QC team:       only the rigs sent to THEM.
+ *   QC team:       ANY rig sent to the QC team, whichever QC person was chosen on the send.
  *   Hardware team: ANY rig sent to the hardware team, whichever hardware person was chosen on the send
  *                  (e.g. QC sent it to Manju, Sraj can receive it). It is then with whoever received it.
  */
@@ -257,12 +257,12 @@ export function planReceiveHeld(targets: Item[], input: { note: string }, ctx: H
     plan.errors.push("Only the QC or hardware team can receive rigs this way.");
     return plan;
   }
-  const anyoneInTeam = ctx.senderRole === "hardware";
+  const anyoneInTeam = ctx.senderRole === "hardware" || ctx.senderRole === "qc";
   const wrong = targets.filter(
     (t) => t.item_type !== "rig" || t.status !== rule.from || (!anyoneInTeam && t.current_holder !== ctx.actorPersonId),
   );
   if (wrong.length) {
-    plan.errors.push(`These rigs were not sent to you, or are already received: ${listOf(wrong.map((t) => t.item_id))}.`);
+    plan.errors.push(`These rigs were not sent to your team, or are already received: ${listOf(wrong.map((t) => t.item_id))}.`);
     return plan;
   }
 
