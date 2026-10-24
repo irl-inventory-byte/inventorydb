@@ -57,6 +57,70 @@ export function rowsFromSheet(values: unknown[][], columns: readonly string[]): 
   return { rows, unknownColumns, missingColumns };
 }
 
+export interface Fold {
+  /** Rows whose attributes got the value (it was missing there). */
+  filled: number;
+  /** Rows where attributes already had the same value. */
+  same: number;
+  /** Rows where attributes had a DIFFERENT value: the attributes value (what the app shows) was kept. */
+  differed: string[];
+}
+
+/**
+ * Move an extra sheet column (e.g. "Card Type") into each row's `attributes` JSON under `attrKey`
+ * (e.g. card_type), where the app actually reads it. Only fills a blank or missing value; a value the
+ * app already has is never changed. Changes `rows` in place. `values` is the raw tab (row 0 = headings).
+ */
+export function foldColumnIntoAttributes(
+  values: unknown[][],
+  rows: Row[],
+  key: string,
+  heading: string,
+  attrKey: string,
+  clean: (v: string) => string = (v) => v.trim(),
+): Fold {
+  const header = (values[0] ?? []).map((h) => norm(String(h ?? "")));
+  const col = header.indexOf(norm(heading));
+  const keyCol = header.indexOf(norm(key));
+  const out: Fold = { filled: 0, same: 0, differed: [] };
+  if (col < 0 || keyCol < 0) return out;
+
+  // Same rule as the copy: the last sheet row for an ID gives its value.
+  const fromSheet = new Map<string, string>();
+  for (const raw of values.slice(1)) {
+    const id = String(raw[keyCol] ?? "");
+    const v = clean(String(raw[col] ?? ""));
+    if (id.trim() && v) fromSheet.set(id, v);
+  }
+
+  for (const r of rows) {
+    const v = fromSheet.get(r[key]);
+    if (!v) continue;
+    let attrs: Record<string, unknown> = {};
+    try {
+      const parsed = r.attributes ? JSON.parse(r.attributes) : {};
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) attrs = parsed as Record<string, unknown>;
+      else continue; // not the usual JSON: leave it alone
+    } catch {
+      continue;
+    }
+    const have = typeof attrs[attrKey] === "string" ? (attrs[attrKey] as string).trim() : "";
+    if (!have) {
+      attrs[attrKey] = v;
+      r.attributes = JSON.stringify(attrs);
+      out.filled++;
+    } else if (have.toLowerCase() === v.toLowerCase()) out.same++;
+    else out.differed.push(r[key]);
+  }
+  return out;
+}
+
+/** "black", " GREEN " → "Black", "Green" (the values the app accepts); anything else as typed. */
+export const cleanCardType = (v: string) => {
+  const t = v.trim().toLowerCase();
+  return t === "black" || t === "black card" ? "Black" : t === "green" || t === "green card" ? "Green" : v.trim();
+};
+
 export interface Dedupe {
   rows: Row[];
   /** History rows that shared an ID with a different row and were kept under a new ID. */
@@ -75,7 +139,8 @@ export interface Dedupe {
  * events: the row an item points to as its last event), otherwise on the last such row, which is the
  * one the app shows today. Rows keep their sheet order (oldest first).
  *
- * Other tabs: the last row with an ID wins, as before.
+ * Other tabs: one row per ID. With `preferredKeeper`, the FIRST row it accepts is kept (e.g. for users:
+ * the first active row, which is the one the app signs people in with); otherwise the last row wins.
  */
 export function dedupe(
   tab: string,
@@ -84,14 +149,20 @@ export function dedupe(
   preferredKeeper?: (row: Row) => boolean,
 ): Dedupe {
   if (!HISTORY_TABS.has(tab)) {
-    const byKey = new Map<string, Row>();
-    const replaced = new Set<string>();
-    for (const r of rows) {
-      if (byKey.has(r[key])) replaced.add(r[key]);
-      byKey.delete(r[key]);
-      byKey.set(r[key], r);
+    const groups = new Map<string, number[]>();
+    rows.forEach((r, i) => {
+      const g = groups.get(r[key]);
+      if (g) g.push(i);
+      else groups.set(r[key], [i]);
+    });
+    const keep = new Set<number>();
+    const replaced: string[] = [];
+    for (const [id, idx] of groups) {
+      if (idx.length > 1) replaced.push(id);
+      const preferred = preferredKeeper ? idx.find((i) => preferredKeeper(rows[i])) : undefined;
+      keep.add(preferred ?? idx[idx.length - 1]);
     }
-    return { rows: [...byKey.values()], renamed: [], exactCopies: 0, replaced: [...replaced] };
+    return { rows: rows.filter((_, i) => keep.has(i)), renamed: [], exactCopies: 0, replaced };
   }
 
   const sig = (r: Row) => JSON.stringify(Object.keys(r).sort().map((k) => [k, r[k]]));

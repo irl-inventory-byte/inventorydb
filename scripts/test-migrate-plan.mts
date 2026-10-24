@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { TABS } from "../src/lib/schema";
-import { dedupe, rowsFromSheet } from "../src/lib/migrate-plan";
+import { cleanCardType, dedupe, foldColumnIntoAttributes, rowsFromSheet } from "../src/lib/migrate-plan";
 
 const ev = TABS.events;
 
@@ -81,5 +81,44 @@ const people = dedupe(
 );
 assert.deepEqual(people.rows.map((r) => r.name), ["B", "New"]);
 assert.deepEqual(people.replaced, ["p1"]);
+
+// Users: the first ACTIVE row is kept, the one the app signs that login in with.
+const users = dedupe(
+  "users",
+  [
+    { email: "a@x.com", role: "im", active: "false" },
+    { email: "b@x.com", role: "admin", active: "true" },
+    { email: "a@x.com", role: "admin", active: "true" }, // app uses this one
+    { email: "a@x.com", role: "fo", active: "" }, // later, also active, but not the one in use
+  ],
+  "email",
+  (r) => r.active !== "false",
+);
+assert.deepEqual(users.rows.map((r) => `${r.email}:${r.role}`), ["b@x.com:admin", "a@x.com:admin"]);
+assert.deepEqual(users.replaced, ["a@x.com"]);
+// No active row at all: the last one, as before.
+assert.equal(dedupe("users", [{ email: "z", role: "a", active: "false" }, { email: "z", role: "b", active: "false" }], "email", (r) => r.active !== "false").rows[0].role, "b");
+
+// "Card Type" column → attributes.card_type, only where it is missing.
+const sheet = [
+  ["item_id", "attributes", "Card Type"],
+  ["SD-1", '{"capacity":"512 GB"}', "black"], // missing → filled, cleaned to Black
+  ["SD-2", '{"card_type":"Green"}', "green"], // same
+  ["SD-3", '{"card_type":"Green"}', "Black"], // different → app value kept
+  ["SD-4", "", "Green"], // no attributes yet → filled
+  ["SD-5", "not json", "Black"], // odd attributes → untouched
+  ["SD-6", "{}", ""], // no value → untouched
+];
+const itemRows = rowsFromSheet(sheet, TABS.items).rows;
+const fold = foldColumnIntoAttributes(sheet, itemRows, "item_id", "Card Type", "card_type", cleanCardType);
+assert.deepEqual([fold.filled, fold.same, fold.differed], [2, 1, ["SD-3"]]);
+const attr = (id: string) => itemRows.find((r) => r.item_id === id)!.attributes;
+assert.deepEqual(JSON.parse(attr("SD-1")), { capacity: "512 GB", card_type: "Black" });
+assert.deepEqual(JSON.parse(attr("SD-3")), { card_type: "Green" });
+assert.deepEqual(JSON.parse(attr("SD-4")), { card_type: "Green" });
+assert.equal(attr("SD-5"), "not json");
+assert.equal(attr("SD-6"), "{}");
+// No such column: nothing happens.
+assert.deepEqual(foldColumnIntoAttributes([["item_id"]], [], "item_id", "Card Type", "card_type").filled, 0);
 
 console.log("migrate plan ok");
