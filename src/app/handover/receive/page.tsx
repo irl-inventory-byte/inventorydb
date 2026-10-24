@@ -53,8 +53,10 @@ export default async function ReceivePage({
   const HELD_FROM: Partial<Record<Role, Status>> = { qc: "pending_qc", hardware: "pending_hardware" };
   const heldFrom = HELD_FROM[user.role as Role];
   if (heldFrom) {
-    const me = byOptions[0]?.value ?? "";
+    // You = your linked person (People tab). An Admin who switched to QC is found the same way.
+    const me = user.personId || byOptions[0]?.value || "";
     const wholeTeam = user.role === "hardware";
+    const notLinked = !wholeTeam && !user.personId;
     const waiting = items.filter((i) => i.status === heldFrom && (wholeTeam || i.current_holder === me));
     const personNames = new Map(people.map((p) => [p.person_id, p.name]));
     return (
@@ -69,6 +71,12 @@ export default async function ReceivePage({
             : "Rigs sent to you show here until you receive them. Scan each rig you have in hand, then press Receive."}
         </p>
 
+        {notLinked && (
+          <p className={styles.error}>
+            Your login is not linked to a person in the People tab, so rigs sent to you can&apos;t be found. Ask an
+            admin to set your Linked person on Manage users (an admin can set their own), then open this page again.
+          </p>
+        )}
         <h2>
           {wholeTeam ? "Waiting for the hardware team" : "Waiting for you"} ({waiting.length})
         </h2>
