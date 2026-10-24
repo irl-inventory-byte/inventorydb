@@ -82,8 +82,11 @@ create table if not exists public.users (
   email text primary key,
   role text not null default '',
   person_id text not null default '',
-  active text not null default ''
+  active text not null default '',
+  secondary_role text not null default ''
 );
+-- For a database created before secondary_role existed:
+alter table public.users add column if not exists secondary_role text not null default '';
 create index if not exists users_seq_idx on public.users (_seq);
 alter table public.users enable row level security;
 
@@ -144,6 +147,25 @@ create table if not exists public.qc_checks (
 create index if not exists qc_checks_seq_idx on public.qc_checks (_seq);
 alter table public.qc_checks enable row level security;
 
+create table if not exists public.rig_reports (
+  _seq bigint generated always as identity,
+  report_id text primary key,
+  item_id text not null default '',
+  recorded_at text not null default '',
+  recorded_by text not null default '',
+  recorded_by_name text not null default '',
+  location text not null default '',
+  reason text not null default '',
+  photo text not null default '',
+  hub_id text not null default '',
+  role text not null default '',
+  person_id text not null default '',
+  person_name text not null default ''
+);
+create index if not exists rig_reports_seq_idx on public.rig_reports (_seq);
+create index if not exists rig_reports_item_id_idx on public.rig_reports (item_id);
+alter table public.rig_reports enable row level security;
+
 create table if not exists public.receipt_edits (
   _seq bigint generated always as identity,
   edit_id text primary key,
@@ -157,6 +179,12 @@ create table if not exists public.receipt_edits (
 );
 create index if not exists receipt_edits_seq_idx on public.receipt_edits (_seq);
 alter table public.receipt_edits enable row level security;
+
+-- The app's server key (service_role) must be able to read and write every table, even on projects
+-- that do not grant table access automatically. Browser keys (anon) get nothing.
+grant usage on schema public to service_role;
+grant select, insert, update, delete on all tables in schema public to service_role;
+grant usage, select on all sequences in schema public to service_role;
 
 -- Faster item history and deletes.
 create index if not exists events_item_id_idx on public.events (item_id);
