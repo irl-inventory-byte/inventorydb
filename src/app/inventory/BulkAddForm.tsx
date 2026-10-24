@@ -123,6 +123,12 @@ export default function BulkAddForm({
       const found = await checkSerials(serials);
       if (current !== requestId.current) return;
 
+      if ("error" in found) {
+        setRows([]);
+        setMessage(found.error);
+        return;
+      }
+
       setRows(
         found.map((row, index) => ({
           ...row,
