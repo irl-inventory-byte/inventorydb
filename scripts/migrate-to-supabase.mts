@@ -5,9 +5,13 @@
  *   npm run migrate:supabase                 copy every tab, then check every row arrived
  *   npm run migrate:supabase -- --dry-run    only read the sheet and report, write nothing
  *   npm run migrate:supabase -- --force      copy even if Supabase already has rows
+ *   npm run migrate:supabase -- --file inventory.xlsx
+ *                                            read a downloaded copy of the sheet instead of Google
+ *                                            (Google Sheets → File → Download → Microsoft Excel)
  *
- * Needs in .env.local: SHEET_ID, GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY (the sheet)
- * and SUPABASE_URL plus SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY (Supabase).
+ * Needs in .env.local: SUPABASE_URL plus SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY (Supabase),
+ * and, only when reading Google directly (no --file): SHEET_ID, GOOGLE_SERVICE_ACCOUNT_EMAIL,
+ * GOOGLE_PRIVATE_KEY.
  *
  * How history is kept safe:
  *   - Columns are matched by their HEADING, so a moved column cannot put values in the wrong field.
@@ -19,14 +23,24 @@
  * Safe to run again before go-live: rows are matched on their ID, so nothing is doubled.
  * After go-live do NOT run it again: it would overwrite newer Supabase data with the old sheet.
  */
-import { google } from "googleapis";
+import { readFileSync } from "node:fs";
 import { TABS, type Row, type TabName } from "../src/lib/schema";
 import { dedupe, HISTORY_TABS, rowsFromSheet } from "../src/lib/migrate-plan";
 import { SupabaseBackend } from "../src/lib/store/supabase";
+import { readXlsx } from "../src/lib/xlsx-read";
 
-const args = new Set(process.argv.slice(2));
+const argv = process.argv.slice(2);
+const args = new Set(argv);
 const dryRun = args.has("--dry-run");
 const force = args.has("--force");
+const wantsFile = argv.some((a) => a === "--file" || a.startsWith("--file="));
+const file = wantsFile
+  ? (argv.find((a) => a.startsWith("--file="))?.slice(7) ?? argv[argv.indexOf("--file") + 1] ?? "")
+  : undefined;
+if (wantsFile && (!file || file.startsWith("--"))) {
+  console.error("Give the downloaded file after --file, e.g.  npm run migrate:supabase -- --file inventory.xlsx");
+  process.exit(1);
+}
 
 const need = (name: string, value: string | undefined): string => {
   if (!value) {
@@ -36,15 +50,6 @@ const need = (name: string, value: string | undefined): string => {
   return value as string;
 };
 
-const spreadsheetId = need("SHEET_ID", process.env.SHEET_ID);
-const sheets = google.sheets({
-  version: "v4",
-  auth: new google.auth.JWT({
-    email: need("GOOGLE_SERVICE_ACCOUNT_EMAIL", process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL),
-    key: need("GOOGLE_PRIVATE_KEY", process.env.GOOGLE_PRIVATE_KEY).replace(/\\n/g, "\n"),
-    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
-  }),
-});
 const supa = new SupabaseBackend({
   url: need("SUPABASE_URL", process.env.SUPABASE_URL),
   key: need(
@@ -68,16 +73,76 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+/** Where the sheet's data comes from: a downloaded .xlsx, or Google directly. */
+interface Source {
+  tabs: Set<string>;
+  values(tab: string): Promise<unknown[][]>;
+}
+
+async function fileSource(path: string): Promise<Source> {
+  let buf: Buffer;
+  try {
+    buf = readFileSync(path);
+  } catch {
+    console.error(`Cannot open ${path}. Check the file name and folder.`);
+    process.exit(1);
+  }
+  let book: ReturnType<typeof readXlsx> = [];
+  try {
+    book = readXlsx(buf!);
+  } catch (e) {
+    console.error(`${path}: ${(e as Error).message}\nDownload it again with File → Download → Microsoft Excel (.xlsx).`);
+    process.exit(1);
+  }
+  const byName = new Map(book.map((s) => [s.name, s]));
+  for (const s of book) {
+    if (s.datesConverted && s.name in TABS) {
+      notes.push(`${s.name}: ${s.datesConverted} date cell(s) typed by hand in the sheet, copied as India-time timestamps.`);
+    }
+  }
+  return { tabs: new Set(byName.keys()), values: async (tab) => byName.get(tab)?.values ?? [] };
+}
+
+async function googleSource(): Promise<Source> {
+  const { google } = await import("googleapis");
+  const spreadsheetId = need("SHEET_ID", process.env.SHEET_ID);
+  const sheets = google.sheets({
+    version: "v4",
+    auth: new google.auth.JWT({
+      email: need("GOOGLE_SERVICE_ACCOUNT_EMAIL", process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL),
+      key: need("GOOGLE_PRIVATE_KEY", process.env.GOOGLE_PRIVATE_KEY).replace(/\\n/g, "\n"),
+      scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+    }),
+  });
+  const meta = await withRetry(() =>
+    sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties.title" }),
+  );
+  return {
+    tabs: new Set((meta.data.sheets ?? []).map((s) => s.properties?.title ?? "")),
+    values: async (tab) => {
+      const res = await withRetry(() => sheets.spreadsheets.values.get({ spreadsheetId, range: tab }));
+      return (res.data.values ?? []) as unknown[][];
+    },
+  };
+}
+
+const notes: string[] = [];
+const source = file ? await fileSource(file) : await googleSource();
 // Which tabs exist in the sheet (a tab the app never created simply has no rows).
-const meta = await withRetry(() =>
-  sheets.spreadsheets.get({ spreadsheetId, fields: "sheets.properties.title" }),
-);
-const sheetTabs = new Set((meta.data.sheets ?? []).map((s) => s.properties?.title ?? ""));
+const sheetTabs = source.tabs;
+if (file && ![...sheetTabs].some((t) => t in TABS)) {
+  console.error(
+    `${file} has none of the app's tabs (items, events, people …). Found: ${[...sheetTabs].join(", ") || "nothing"}.\n` +
+      "Download the inventory sheet itself: File → Download → Microsoft Excel (.xlsx).",
+  );
+  process.exit(1);
+}
 
 // items first, so events can keep the ID that items point to as their last event.
 const tabs = (Object.keys(TABS) as TabName[]).sort((a, b) => (a === "items" ? -1 : b === "items" ? 1 : 0));
 
-console.log(dryRun ? "DRY RUN: reading only, nothing is written.\n" : "Copying Google Sheet → Supabase.\n");
+const from = file ? `${file}` : "Google Sheet";
+console.log(dryRun ? `DRY RUN: reading ${from} only, nothing is written.\n` : `Copying ${from} → Supabase.\n`);
 
 if (!dryRun) {
   // Stops here with a clear message if setup.sql was not run.
@@ -103,7 +168,6 @@ if (!dryRun) {
 
 let problems = 0;
 const report: string[] = [];
-const notes: string[] = [];
 const lastEventOf = new Map<string, string>(); // item_id → last_event_id
 let historyRows = 0;
 
@@ -116,8 +180,27 @@ for (const tab of tabs) {
     continue;
   }
 
-  const res = await withRetry(() => sheets.spreadsheets.values.get({ spreadsheetId, range: tab }));
-  const read = rowsFromSheet((res.data.values ?? []) as unknown[][], columns);
+  const read = rowsFromSheet(await source.values(tab), columns);
+
+  // An Excel cell holds at most 32,767 characters (Google Sheets: 50,000), so a downloaded file cuts
+  // longer cells. A cut photo is a broken image, so it is left blank; other cut cells are kept and listed.
+  if (file) {
+    const cut: string[] = [];
+    for (const r of read.rows) {
+      for (const c of columns) {
+        if ((r[c] ?? "").length < 32_767) continue;
+        cut.push(`${r[key]} (${c})`);
+        if (c === "photo") r[c] = "";
+      }
+    }
+    if (cut.length) {
+      notes.push(
+        `${tab}: ${cut.length} cell(s) were longer than an Excel cell allows and were cut in the download` +
+          `${columns.includes("photo" as never) ? " (photos left blank)" : ""}: ${cut.slice(0, 8).join(", ")}${cut.length > 8 ? " …" : ""}. ` +
+          "Copy these from the Google Sheet by hand if you need them.",
+      );
+    }
+  }
 
   if (read.unknownColumns.length) {
     problems++;
