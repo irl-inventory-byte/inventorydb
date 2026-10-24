@@ -22,7 +22,7 @@ import { NO_ACTIVITY_DAYS, RigMetrics } from "./rig-metrics";
 import { inactiveRigs } from "@/lib/rig-metrics";
 import { getStore } from "@/lib/store";
 import { MonthlyReportCard } from "./monthly-report";
-import { buildMonthlyReport, pickMonth, recentMonths } from "@/lib/monthly-report";
+import { buildMonthlyReport, pickFilter } from "@/lib/monthly-report";
 import type { Item } from "@/lib/schema";
 
 const inventory = (params: Record<string, string>) => `/inventory?${new URLSearchParams(params)}`;
@@ -218,8 +218,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     reportStore.list("qc_checks").catch(() => [] as QcCheck[]),
     reportStore.list("hardware_updates").catch(() => [] as HardwareUpdate[]),
   ]);
+  // Report filters: ?rfrom=2026-10-01&rto=2026-10-24&rperson=…&rcity=…&rtype=… (default: this month so far).
   const monthly = buildMonthlyReport({
-    month: pickMonth(one(sp.rmonth), now),
+    filter: pickFilter((k) => one(sp[`r${k}`]) || undefined, now),
     items: allItems,
     events: allEvents,
     hubs,
@@ -785,7 +786,16 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           )}
         </section>
 
-        <MonthlyReportCard report={monthly} months={recentMonths(now, 12)} keep={reportKeep} />
+        <MonthlyReportCard
+          report={monthly}
+          keep={reportKeep}
+          people={people
+            .filter((p) => p.active !== "false")
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map((p) => ({ id: p.person_id, label: `${p.name} (${ROLE_LABELS[p.role] ?? p.role})` }))}
+          cities={[...new Set(hubs.map((h) => (h.city || h.name || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b))}
+          types={[...allowedTypes(user.role)]}
+        />
 
         {rigView && showQc && (
           <section className={styles.card} id="unknown" aria-label="Rig audit" style={{ minWidth: 0, scrollMarginTop: 16 }}>
