@@ -18,6 +18,7 @@ export interface SupabaseConfig {
 
 const PAGE = 1000; // Supabase returns at most 1000 rows per request
 const CHUNK = 500; // rows per write request
+const PARALLEL = 8; // page requests at the same time when reading a big table
 
 const tabs = Object.keys(TABS) as TabName[];
 
@@ -86,20 +87,59 @@ export class SupabaseBackend implements TableBackend {
     }
   }
 
+  /**
+   * All rows, oldest first. Supabase gives at most PAGE rows per request, so a big table (events) needs
+   * many requests. The first one also asks for the total, then the rest are fetched AT THE SAME TIME
+   * (PARALLEL at once) instead of one after another, so 50 pages take about as long as 7, not 50.
+   */
   async readAll(tab: TabName): Promise<Row[]> {
     const columns = TABS[tab];
-    const rows: Row[] = [];
-    for (let offset = 0; ; offset += PAGE) {
-      const res = await this.call("GET", tab, `select=${columns.join(",")}&order=_seq.asc&limit=${PAGE}&offset=${offset}`);
-      const page = (await res.json()) as Record<string, unknown>[];
-      for (const r of page) {
+    const select = `select=${columns.join(",")}&order=_seq.asc`;
+    const toRows = (page: Record<string, unknown>[]): Row[] =>
+      page.map((r) => {
         const row: Row = {};
         for (const c of columns) row[c] = r[c] === null || r[c] === undefined ? "" : String(r[c]);
-        rows.push(row);
+        return row;
+      });
+    const fetchPage = async (offset: number, count = false) => {
+      const res = await this.call(
+        "GET",
+        tab,
+        `${select}&limit=${PAGE}&offset=${offset}`,
+        undefined,
+        count ? { Prefer: "count=exact" } : {},
+      );
+      return { res, page: (await res.json()) as Record<string, unknown>[] };
+    };
+
+    // First page, with the total ("Content-Range: 0-999/53412").
+    const first = await fetchPage(0, true);
+    const total = Number(first.res.headers.get("content-range")?.split("/")[1]);
+    const pages: Record<string, unknown>[][] = [first.page];
+
+    if (Number.isFinite(total) && total > PAGE) {
+      const offsets: number[] = [];
+      for (let o = PAGE; o < total; o += PAGE) offsets.push(o);
+      const rest: Record<string, unknown>[][] = new Array(offsets.length);
+      let next = 0;
+      const worker = async () => {
+        while (next < offsets.length) {
+          const i = next++;
+          rest[i] = (await fetchPage(offsets[i])).page;
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(PARALLEL, offsets.length) }, worker));
+      pages.push(...rest);
+      // Rows added while reading: pick them up the old way.
+      for (let o = PAGE * (offsets.length + 1); pages[pages.length - 1].length === PAGE; o += PAGE) {
+        pages.push((await fetchPage(o)).page);
       }
-      if (page.length < PAGE) break;
+    } else if (!Number.isFinite(total)) {
+      // No total in the answer: fall back to one page after another.
+      for (let o = PAGE; pages[pages.length - 1].length === PAGE; o += PAGE) pages.push((await fetchPage(o)).page);
     }
-    return rows;
+
+    return pages.flatMap(toRows);
   }
 
   async append(tab: TabName, rows: Row[]) {
