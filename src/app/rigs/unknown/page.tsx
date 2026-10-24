@@ -2,7 +2,7 @@ import Link from "next/link";
 import { displayName } from "@/lib/actors";
 import { storeFor } from "@/lib/access";
 import { requireRole } from "@/lib/authz";
-import { STATUS_LABELS, one } from "@/lib/labels";
+import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
 import { inactiveRigs } from "@/lib/rig-metrics";
 import { getStore } from "@/lib/store";
 import { formatIst } from "@/lib/time";
@@ -13,7 +13,7 @@ import ReportForm from "./ReportForm";
 const card = { border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, background: "#fff" } as const;
 
 /**
- * UNKNOWN RIGS: rigs with no handover, QC result or hardware update for more than NO_ACTIVITY_DAYS days
+ * RIG AUDIT (was "Unknown rigs"): rigs with no handover, QC result or hardware update for more than NO_ACTIVITY_DAYS days
  * (rigs with hardware, dead, R&D, lost or damaged are left out). Admin, IM and Hardware team.
  * Click a rig to see who reported it, where it is, why, with a photo, and to add a new report.
  */
@@ -59,11 +59,11 @@ export default async function UnknownRigsPage({ searchParams }: PageProps<"/">) 
       <p className={styles.back}>
         <Link href="/">← Home</Link> · <Link href="/dashboard?type=rig">Rig dashboard</Link>
       </p>
-      <h1>Unknown rigs ({unknown.length})</h1>
+      <h1>Rig Audit ({unknown.length})</h1>
       <p className={styles.muted}>
         Rigs with no handover, QC result or hardware update for more than {NO_ACTIVITY_DAYS} days. Rigs with the
         hardware team, dead, R&amp;D, lost or damaged are not counted. Click a rig to see its reports (who, where, why,
-        photo) or to add one. Location, reason and photo are required.
+        photo) or to add an audit report. Location, role, person, reason and photo are required.
       </p>
 
       {rig && (
@@ -134,7 +134,15 @@ export default async function UnknownRigsPage({ searchParams }: PageProps<"/">) 
                         ) : null}
                       </dd>
                       <dt>Location</dt>
-                      <dd style={{ margin: 0 }}>{r.location || "—"}</dd>
+                      <dd style={{ margin: 0 }}>
+                        {r.location || "—"}
+                        {r.hub_id && hubCity.get(r.hub_id) && hubCity.get(r.hub_id) !== r.location ? ` · ${hubCity.get(r.hub_id)}` : ""}
+                      </dd>
+                      <dt>With (person)</dt>
+                      <dd style={{ margin: 0 }}>
+                        {r.person_name || "—"}
+                        {r.role ? <span className={styles.muted}> · {ROLE_LABELS[r.role as keyof typeof ROLE_LABELS] ?? r.role}</span> : null}
+                      </dd>
                       <dt>Reason</dt>
                       <dd style={{ margin: 0, whiteSpace: "pre-wrap" }}>{r.reason || "—"}</dd>
                       <dt>When</dt>
@@ -147,23 +155,35 @@ export default async function UnknownRigsPage({ searchParams }: PageProps<"/">) 
           </div>
 
           <div>
-            <h3 style={{ margin: "4px 0 8px" }}>Add a report</h3>
-            <ReportForm rig={rig.item_id} who={me} />
+            <h3 style={{ margin: "4px 0 8px" }}>Add an audit report</h3>
+            <ReportForm
+              rig={rig.item_id}
+              who={me}
+              defaultHub={rig.current_hub}
+              hubs={hubs
+                .filter((h) => h.active !== "false")
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((h) => ({ id: h.hub_id, name: h.name, city: (h.city || "").trim() }))}
+              people={people
+                .filter((p) => p.active !== "false")
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((p) => ({ id: p.person_id, name: p.name, role: p.role, hub: p.hub }))}
+            />
           </div>
         </section>
       )}
       {rigId && !rig && <p className={styles.error}>Rig {rigId} was not found.</p>}
 
       <form className={styles.row} method="get" id="list">
-        <input name="q" defaultValue={one(sp.q)} placeholder="Search rig, person, hub or city" aria-label="Search unknown rigs" />
+        <input name="q" defaultValue={one(sp.q)} placeholder="Search rig, person, hub or city" aria-label="Search rigs to audit" />
         <button type="submit">Search</button>
         {q && <Link href="/rigs/unknown">Clear</Link>}
       </form>
 
       {shown.length === 0 ? (
-        <p className={styles.muted}>{unknown.length ? "No unknown rigs match." : "No unknown rigs right now."}</p>
+        <p className={styles.muted}>{unknown.length ? "No rigs match." : "No rigs need an audit right now."}</p>
       ) : (
-        <div role="region" aria-label="Unknown rigs" tabIndex={0} style={{ overflowX: "auto" }}>
+        <div role="region" aria-label="Rig audit" tabIndex={0} style={{ overflowX: "auto" }}>
           <table className={styles.table}>
             <thead>
               <tr>
@@ -198,7 +218,8 @@ export default async function UnknownRigsPage({ searchParams }: PageProps<"/">) 
                     <td>
                       {latest ? (
                         <>
-                          {latest.location} · {latest.recorded_by_name || latest.recorded_by}
+                          {latest.location}
+                          {latest.person_name ? ` · with ${latest.person_name}` : ""} · by {latest.recorded_by_name || latest.recorded_by}
                           {latest.photo ? " · 📷" : ""}
                         </>
                       ) : (

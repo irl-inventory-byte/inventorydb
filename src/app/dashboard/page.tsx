@@ -5,7 +5,7 @@ import { LATE_AFTER_HOURS, computeDashboard } from "@/lib/dashboard";
 import { buildHubTree } from "@/lib/hub-tree";
 import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
 import type { HardwareUpdate, QcCheck, Status } from "@/lib/schema";
-import { HANDLER_ROLES, INVENTORY_ROLES, allowedTypes, canSeeType, storeFor, typeParam } from "@/lib/access";
+import { HANDLER_ROLES, INVENTORY_ROLES, allowedTypes, canSeeType, storeFor, storeForAll, typeParam } from "@/lib/access";
 import TypeSwitch from "../TypeSwitch";
 import RoleSwitch from "../RoleSwitch";
 import { BarList, n, type BarRow } from "./charts";
@@ -21,6 +21,8 @@ import { RIG_STATES, RIG_STATE_LABELS, rigState, type RigState } from "@/lib/rig
 import { NO_ACTIVITY_DAYS, RigMetrics } from "./rig-metrics";
 import { inactiveRigs } from "@/lib/rig-metrics";
 import { getStore } from "@/lib/store";
+import { MonthlyReportCard } from "./monthly-report";
+import { buildMonthlyReport, pickMonth, recentMonths } from "@/lib/monthly-report";
 import type { Item } from "@/lib/schema";
 
 const inventory = (params: Record<string, string>) => `/inventory?${new URLSearchParams(params)}`;
@@ -207,6 +209,26 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     if (city) q.set("ucity", city);
     return `/dashboard?${q}#unknown`;
   };
+
+  // Monthly report (all item types this login can see): ?rmonth=2026-10, default this month.
+  const reportStore = storeForAll(user.role);
+  const [allItems, allEvents, allQc, allHw] = await Promise.all([
+    reportStore.list("items"),
+    reportStore.list("events"),
+    reportStore.list("qc_checks").catch(() => [] as QcCheck[]),
+    reportStore.list("hardware_updates").catch(() => [] as HardwareUpdate[]),
+  ]);
+  const monthly = buildMonthlyReport({
+    month: pickMonth(one(sp.rmonth), now),
+    items: allItems,
+    events: allEvents,
+    hubs,
+    people,
+    qcChecks: allQc,
+    hardwareUpdates: allHw,
+  });
+  const reportKeep: Record<string, string> = {};
+  for (const k of ["type", "empty", "acity", "arole"]) if (one(sp[k])) reportKeep[k] = one(sp[k]);
 
   const d = computeDashboard(items, events, people, hubs, { hub: "", days: 14, now });
   const tree = buildHubTree(hubs, items);
@@ -763,12 +785,14 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           )}
         </section>
 
+        <MonthlyReportCard report={monthly} months={recentMonths(now, 12)} keep={reportKeep} />
+
         {rigView && showQc && (
-          <section className={styles.card} id="unknown" aria-label="Unknown rigs" style={{ minWidth: 0, scrollMarginTop: 16 }}>
+          <section className={styles.card} id="unknown" aria-label="Rig audit" style={{ minWidth: 0, scrollMarginTop: 16 }}>
             <div className={styles.sectionHead}>
-              <h2>Unknown rigs ({unknownRows.length})</h2>
+              <h2>Rig Audit ({unknownRows.length})</h2>
               <Link href="/rigs/unknown" className={styles.link}>
-                Open Unknown rigs page
+                Open Rig Audit
               </Link>
             </div>
             <p className={styles.muted}>
@@ -776,10 +800,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
               hardware, dead, R&amp;D, lost or damaged). City = city of the hub the rig is at. Click a rig for its reports.
             </p>
             {unknownRows.length === 0 ? (
-              <p className={styles.ok}>No unknown rigs right now.</p>
+              <p className={styles.ok}>No rigs need an audit right now.</p>
             ) : (
               <>
-                <nav aria-label="Unknown rigs by city" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "4px 0 12px" }}>
+                <nav aria-label="Rig audit by city" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "4px 0 12px" }}>
                   {[["", unknownRows.length] as [string, number], ...unknownCities].map(([city, count]) => {
                     const on = city === unknownCity;
                     return (
@@ -806,7 +830,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                 <div
                   className={styles.tableScroll}
                   role="region"
-                  aria-label="Unknown rigs — scrollable table"
+                  aria-label="Rig audit — scrollable table"
                   tabIndex={0}
                   style={{ maxHeight: "460px", maxWidth: "100%", overflowY: "auto", overflowX: "auto" }}
                 >
@@ -843,7 +867,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                     <tfoot style={{ position: "static" }}>
                       <tr>
                         <th scope="row" colSpan={7} style={{ ...TFOOT_STYLE, textAlign: "left" }}>
-                          {unknownCity ? `Unknown rigs in ${unknownCity}` : "All unknown rigs"}
+                          {unknownCity ? `Rigs to audit in ${unknownCity}` : "All rigs to audit"}
                         </th>
                         <td style={TFOOT_STYLE}>{n(unknownShown.length)}</td>
                       </tr>

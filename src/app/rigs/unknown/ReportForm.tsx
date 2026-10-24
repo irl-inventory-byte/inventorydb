@@ -35,7 +35,50 @@ async function shrink(file: File): Promise<string> {
 }
 
 /** Add a report for an unknown rig: who (the login), where, why, and a photo. */
-export default function ReportForm({ rig, who }: { rig: string; who: string }) {
+export type ReportHub = { id: string; name: string; city: string };
+export type ReportPerson = { id: string; name: string; role: string; hub: string };
+
+const ROLE_OPTIONS: [string, string][] = [
+  ["fo", "FO"],
+  ["ifo", "IFO"],
+  ["im", "IM"],
+  ["rig", "Rig team"],
+  ["internal", "Internal team"],
+  ["qc", "QC team"],
+  ["hardware", "Hardware team"],
+];
+
+const selectStyle = {
+  width: "100%",
+  maxWidth: 480,
+  padding: "8px 10px",
+  border: "1px solid #c9c9c9",
+  borderRadius: 6,
+  font: "inherit",
+  background: "#fff",
+} as const;
+
+export default function ReportForm({
+  rig,
+  who,
+  hubs,
+  people,
+  defaultHub = "",
+}: {
+  rig: string;
+  who: string;
+  hubs: ReportHub[];
+  people: ReportPerson[];
+  defaultHub?: string;
+}) {
+  const [hub, setHub] = useState(defaultHub);
+  const [role, setRole] = useState("");
+  const [person, setPerson] = useState("");
+  // People with the chosen role: those at the chosen location first, then everyone else with that role.
+  const ofRole = people.filter((p) => p.role === role);
+  const here = ofRole.filter((p) => p.hub === hub);
+  const elsewhere = ofRole.filter((p) => p.hub !== hub);
+  const hubName = new Map(hubs.map((h) => [h.id, h.name]));
   const [photo, setPhoto] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -66,11 +109,79 @@ export default function ReportForm({ rig, who }: { rig: string; who: string }) {
         </div>
       </div>
       <div className={styles.field}>
-        <label className={styles.label} htmlFor="location">
+        <label className={styles.label} htmlFor="hub">
           Location *
         </label>
         <div className={styles.control}>
-          <input id="location" name="location" required maxLength={300} placeholder="e.g. Kolhapur hub, with Chandhu, site address…" style={{ width: "100%", padding: "8px 10px", border: "1px solid #c9c9c9", borderRadius: 6, font: "inherit", boxSizing: "border-box" }} />
+          <select id="hub" name="hub" required value={hub} onChange={(e) => setHub(e.target.value)} style={selectStyle}>
+            <option value="" disabled>
+              Choose the location (hub)
+            </option>
+            {hubs.map((h) => (
+              <option key={h.id} value={h.id}>
+                {h.name}
+                {h.city && h.city !== h.name ? ` (${h.city})` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className={styles.field}>
+        <label className={styles.label} htmlFor="role">
+          Role *
+        </label>
+        <div className={styles.control}>
+          <select
+            id="role"
+            name="role"
+            required
+            value={role}
+            onChange={(e) => {
+              setRole(e.target.value);
+              setPerson("");
+            }}
+            style={selectStyle}
+          >
+            <option value="" disabled>
+              Who has the rig? Choose the role
+            </option>
+            {ROLE_OPTIONS.map(([v, l]) => (
+              <option key={v} value={v}>
+                {l}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className={styles.field}>
+        <label className={styles.label} htmlFor="person">
+          Person *
+        </label>
+        <div className={styles.control}>
+          <select id="person" name="person" required value={person} onChange={(e) => setPerson(e.target.value)} disabled={!role} style={selectStyle}>
+            <option value="" disabled>
+              {role ? (ofRole.length ? "Choose the person" : "No active person with this role") : "Choose the role first"}
+            </option>
+            {here.length > 0 && (
+              <optgroup label={`At ${hubName.get(hub) ?? "this location"}`}>
+                {here.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {elsewhere.length > 0 && (
+              <optgroup label={hub ? "Other hubs" : "All hubs"}>
+                {elsewhere.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({hubName.get(p.hub) ?? (p.hub || "no hub")})
+                  </option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+          <p className={styles.hint}>People with the chosen role; those at the chosen location are listed first.</p>
         </div>
       </div>
       <div className={styles.field}>

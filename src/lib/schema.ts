@@ -88,6 +88,10 @@ export const TABS = {
     "location",
     "reason",
     "photo", // small JPEG as a data: URL (shrunk on the phone to fit one sheet cell), or blank
+    "hub_id", // the location chosen from the hubs list (location = its name)
+    "role", // role of the person the rig is with, e.g. fo
+    "person_id", // the person the rig is with (People tab)
+    "person_name",
   ],
   // Audit log of admin edits to past receipts: who changed what, and when.
   receipt_edits: [
@@ -269,6 +273,10 @@ export interface RigReport extends Row {
   location: string;
   reason: string;
   photo: string;
+  hub_id: string;
+  role: string;
+  person_id: string;
+  person_name: string;
 }
 
 export interface TabRows {

@@ -57,8 +57,8 @@ const WORK: Tile[] = [
   },
   {
     href: "/rigs/unknown",
-    title: "Unknown rigs",
-    desc: "Rigs with no activity for 2+ days: who saw them, where, why, with a photo.",
+    title: "Rig Audit",
+    desc: "Rigs with no activity for 2+ days: where they are, who has them, why, with a photo.",
     icon: "alert",
     roles: ["admin", "im", "hardware"],
   },
