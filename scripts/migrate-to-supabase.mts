@@ -25,7 +25,13 @@
  */
 import { readFileSync } from "node:fs";
 import { TABS, type Row, type TabName } from "../src/lib/schema";
-import { dedupe, HISTORY_TABS, rowsFromSheet } from "../src/lib/migrate-plan";
+import {
+  cleanCardType,
+  dedupe,
+  foldColumnIntoAttributes,
+  HISTORY_TABS,
+  rowsFromSheet,
+} from "../src/lib/migrate-plan";
 import { SupabaseBackend } from "../src/lib/store/supabase";
 import { readXlsx } from "../src/lib/xlsx-read";
 
@@ -180,7 +186,22 @@ for (const tab of tabs) {
     continue;
   }
 
-  const read = rowsFromSheet(await source.values(tab), columns);
+  const raw = await source.values(tab);
+  const read = rowsFromSheet(raw, columns);
+
+  // A "Card Type" column on items: the app keeps card colour in attributes.card_type, so move it there
+  // (only where attributes has none) instead of dropping it.
+  if (tab === "items" && read.unknownColumns.some((h) => h.trim().toLowerCase() === "card type")) {
+    const fold = foldColumnIntoAttributes(raw, read.rows, key, "Card Type", "card_type", cleanCardType);
+    read.unknownColumns = read.unknownColumns.filter((h) => h.trim().toLowerCase() !== "card type");
+    notes.push(
+      `items: "Card Type" column moved into each card's details: ${fold.filled} filled in, ${fold.same} already the same` +
+        (fold.differed.length
+          ? `, ${fold.differed.length} different from the app's value (app's value kept): ${fold.differed.slice(0, 8).join(", ")}${fold.differed.length > 8 ? " …" : ""}`
+          : "") +
+        ".",
+    );
+  }
 
   // An Excel cell holds at most 32,767 characters (Google Sheets: 50,000), so a downloaded file cuts
   // longer cells. A cut photo is a broken image, so it is left blank; other cut cells are kept and listed.
@@ -219,7 +240,11 @@ for (const tab of tabs) {
     tab,
     read.rows,
     key,
-    tab === "events" ? (r: Row) => lastEventOf.get(r.item_id) === r.event_id : undefined,
+    tab === "events"
+      ? (r: Row) => lastEventOf.get(r.item_id) === r.event_id
+      : tab === "users"
+        ? (r: Row) => r.active !== "false" // the row the app signs this login in with today
+        : undefined,
   );
   if (plan.renamed.length) {
     notes.push(
@@ -231,7 +256,8 @@ for (const tab of tabs) {
   if (plan.exactCopies) notes.push(`${tab}: ${plan.exactCopies} exact duplicate row(s) kept once.`);
   if (plan.replaced.length) {
     notes.push(
-      `${tab}: ${plan.replaced.length} ID(s) appear more than once, the last row was kept: ` +
+      `${tab}: ${plan.replaced.length} ID(s) appear more than once, ` +
+        (tab === "users" ? "the first active row (the one the app uses today) was kept: " : "the last row was kept: ") +
         plan.replaced.slice(0, 8).join(", ") +
         (plan.replaced.length > 8 ? " …" : ""),
     );
