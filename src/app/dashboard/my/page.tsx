@@ -166,10 +166,12 @@ export default async function MyDashboardPage({
     }
   }
 
+  // The live link (works for an Admin acting as QC / hardware too); otherwise the single match found here.
   const linkedPersonId =
-    candidatePersonIds.size === 1
+    user.personId ||
+    (candidatePersonIds.size === 1
       ? Array.from(candidatePersonIds)[0]
-      : undefined;
+      : undefined);
 
   const matchingPersonRecords = linkedPersonId
     ? people.filter(
@@ -265,17 +267,15 @@ export default async function MyDashboardPage({
     return checked === undefined || (Number.isFinite(arrived) && checked < arrived);
   };
 
-  // Rigs sent to me that I have not received yet (Receive items).
-  const toReceive = linkedPerson
-    ? items.filter(
-        (i) =>
-          i.current_holder === linkedPerson.person_id &&
-          i.status === (isQc ? "pending_qc" : "pending_hardware")
-      ).length
-    : 0;
+  // Rigs sent to my team that nobody has received yet (Receive items shows the same list). Anyone in the
+  // team can receive them, so the whole team's count is shown, with how many were sent to me by name.
+  const teamWaiting = items.filter((i) => i.status === (isQc ? "pending_qc" : "pending_hardware"));
+  const toReceive = teamWaiting.length;
+  const toReceiveMine = linkedPerson ? teamWaiting.filter((i) => i.current_holder === linkedPerson.person_id).length : 0;
 
   const qcMetrics = [
-    { label: "Waiting for me to receive", value: numberText(toReceive) },
+    { label: "Waiting for the QC team to receive", value: numberText(toReceive) },
+    { label: "Of these, sent to me", value: numberText(toReceiveMine) },
     { label: "Rigs with me", value: numberText(withMeItems.length) },
     { label: "Waiting for my QC result", value: numberText(withMeItems.filter(waitingForQc).length) },
     { label: "QC pass recorded", value: numberText(myQc.filter((c) => c.qc_status === "pass").length) },
@@ -285,7 +285,8 @@ export default async function MyDashboardPage({
   ];
 
   const hardwareMetrics = [
-    { label: "Waiting for me to receive", value: numberText(toReceive) },
+    { label: "Waiting for the hardware team to receive", value: numberText(toReceive) },
+    { label: "Of these, sent to me", value: numberText(toReceiveMine) },
     { label: "Rigs with me", value: numberText(withMeItems.length) },
     { label: "Hardware updates logged", value: numberText(myHardware.length) },
     { label: "Repaired and sent to IM", value: numberText(sentToIm) },
