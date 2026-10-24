@@ -7,7 +7,7 @@ import {
 import { requireRole } from "@/lib/authz";
 import { one } from "@/lib/labels";
 import { RECEIVE_ROLES, handoverStoreFor } from "@/lib/access";
-import { STATUS_LABELS } from "@/lib/labels";
+import { formatIst } from "@/lib/time";
 import type { Role, Status } from "@/lib/schema";
 import styles from "../../admin/admin.module.css";
 import { receiveCards } from "../actions";
@@ -22,11 +22,12 @@ export default async function ReceivePage({
   const sp = await searchParams;
   const store = handoverStoreFor(user.role);
 
-  const [items, hubs, people, users] = await Promise.all([
+  const [items, hubs, people, users, events] = await Promise.all([
     store.list("items"),
     store.list("hubs"),
     store.list("people"),
     store.list("users"),
+    store.list("events"),
   ]);
 
   const activeHubs = hubs
@@ -48,17 +49,27 @@ export default async function ReceivePage({
     )
   );
 
-  // QC team: receive the rigs sent to YOU. Hardware team: receive ANY rig sent to the hardware team.
+  // QC team: receive ANY rig sent to the QC team. Hardware team: receive ANY rig sent to the hardware team.
   // No hub to choose.
   const HELD_FROM: Partial<Record<Role, Status>> = { qc: "pending_qc", hardware: "pending_hardware" };
   const heldFrom = HELD_FROM[user.role as Role];
   if (heldFrom) {
-    // You = your linked person (People tab). An Admin who switched to QC is found the same way.
-    const me = user.personId || byOptions[0]?.value || "";
-    const wholeTeam = user.role === "hardware";
-    const notLinked = !wholeTeam && !user.personId;
-    const waiting = items.filter((i) => i.status === heldFrom && (wholeTeam || i.current_holder === me));
+    // QC and hardware: every rig sent to the team, whoever it was sent to. Received under your linked person.
+    const wholeTeam = true;
+    const team = user.role === "qc" ? "QC team" : "hardware team";
+    const notLinked = !user.personId;
+    const waiting = items.filter((i) => i.status === heldFrom);
     const personNames = new Map(people.map((p) => [p.person_id, p.name]));
+    // Who sent each rig, and when: from the rig's latest handover.
+    const eventById = new Map(events.map((e) => [e.event_id, e]));
+    const sentBy = (id: string) => {
+      const e = eventById.get(id);
+      return (e?.from_person || personNames.get(e?.from_id ?? "") || e?.from_id || "—").trim() || "—";
+    };
+    const sentOn = (id: string) => {
+      const e = eventById.get(id);
+      return e?.occurred_at ? formatIst(e.occurred_at) : "—";
+    };
     return (
       <main className={styles.page}>
         <p className={styles.back}>
@@ -66,32 +77,31 @@ export default async function ReceivePage({
         </p>
         <h1>Receive rigs</h1>
         <p className={styles.muted}>
-          {wholeTeam
-            ? "Rigs sent to the hardware team show here until someone receives them. Any hardware person can receive them, whoever they were sent to. Scan each rig you have in hand, then press Receive."
-            : "Rigs sent to you show here until you receive them. Scan each rig you have in hand, then press Receive."}
+          Rigs sent to the {team} show here until someone receives them. Anyone in the {team} can receive them,
+          whoever they were sent to. Scan each rig you have in hand, then press Receive.
         </p>
 
         {notLinked && (
           <p className={styles.error}>
-            Your login is not linked to a person in the People tab, so rigs sent to you can&apos;t be found. Ask an
-            admin to set your Linked person on Manage users (an admin can set their own), then open this page again.
+            Your login is not linked to a person in the People tab, so a receive can&apos;t be recorded under your
+            name. Ask an admin to set your Linked person on Manage users (an admin can set their own).
           </p>
         )}
         <h2>
-          {wholeTeam ? "Waiting for the hardware team" : "Waiting for you"} ({waiting.length})
+          Waiting for the {team} ({waiting.length})
         </h2>
         {waiting.length === 0 ? (
-          <p className={styles.muted}>{wholeTeam ? "No rigs are waiting for the hardware team." : "No rigs are waiting for you."}</p>
+          <p className={styles.muted}>No rigs are waiting for the {team}.</p>
         ) : (
           <table className={styles.table}>
             <thead>
               <tr>
                 <th scope="col">Rig ID / Asset Tag</th>
-                <th scope="col">Brand</th>
-                <th scope="col">Model</th>
+                {wholeTeam && <th scope="col">Sent to (person)</th>}
+                <th scope="col">Sent by</th>
+                <th scope="col">Sent on</th>
+                <th scope="col">Brand / Model</th>
                 <th scope="col">Hub</th>
-                <th scope="col">Status</th>
-                {wholeTeam && <th scope="col">Sent to</th>}
               </tr>
             </thead>
             <tbody>
@@ -100,11 +110,15 @@ export default async function ReceivePage({
                   <td>
                     <Link href={`/inventory/${encodeURIComponent(i.item_id)}`}>{i.item_id}</Link>
                   </td>
-                  <td>{i.brand || "—"}</td>
-                  <td>{i.model || "—"}</td>
+                  {wholeTeam && (
+                    <td>
+                      <strong>{personNames.get(i.current_holder) ?? (i.current_holder || "—")}</strong>
+                    </td>
+                  )}
+                  <td>{sentBy(i.last_event_id)}</td>
+                  <td>{sentOn(i.last_event_id)}</td>
+                  <td>{[i.brand, i.model].filter(Boolean).join(" ") || "—"}</td>
                   <td>{hubNames.get(i.current_hub) ?? i.current_hub}</td>
-                  <td>{STATUS_LABELS[i.status] ?? i.status}</td>
-                  {wholeTeam && <td>{personNames.get(i.current_holder) ?? (i.current_holder || "—")}</td>}
                 </tr>
               ))}
             </tbody>
