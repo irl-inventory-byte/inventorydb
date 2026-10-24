@@ -178,6 +178,14 @@ export default function AddCardForm({
         return;
       }
 
+      if (found && "error" in found) {
+        lastSuccessfulSerial.current = "";
+        clearDetails();
+
+        setNote(`${found.error} You can enter the details manually meanwhile.`);
+        return;
+      }
+
       if (!found) {
         lastSuccessfulSerial.current = "";
         clearDetails();
