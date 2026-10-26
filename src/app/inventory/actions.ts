@@ -8,10 +8,11 @@ import {
   findAsset,
   normalizeCapacity,
 } from "@/lib/asset-lookup";
-import { assetSheetError, loadAssetRecords } from "@/lib/asset-sheet";
+import { loadAssetRecords } from "@/lib/asset-sheet";
 import { requireRole } from "@/lib/authz";
 import { planCorrection } from "@/lib/correction";
 import { getStore } from "@/lib/store";
+import { collectIds } from "@/lib/scan";
 import { istTimestamp } from "@/lib/time";
 
 // Only redirect to inventory pages.
@@ -52,12 +53,22 @@ export async function applyCorrection(formData: FormData) {
     ? backRaw
     : "/inventory";
 
-  const scanned = String(formData.get("scanned") ?? "")
-    .split(/[\s,]+/);
+  // One code per line: a serial, a rig ID, or for a mobile its IMEI (or QR "IMEI1 - IMEI2"), Asset Tag
+  // or Serial. A whole line that is a known code stays one code, even with spaces in it
+  // ("Android Phone - 0221"); other lines are split on spaces and commas as before.
+  const lines = String(formData.get("scanned") ?? "")
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const wholeLines = await getStore().getItemsByIds(lines);
 
   const ids = [
     ...new Set(
-      [...formData.getAll("ids").map(String), ...scanned]
+      [
+        ...formData.getAll("ids").map(String),
+        ...lines.filter((l) => wholeLines.has(l)),
+        ...collectIds(lines.filter((l) => !wholeLines.has(l)).join("\n")),
+      ]
         .map((id) => id.trim())
         .filter(Boolean)
     ),
@@ -293,7 +304,6 @@ export async function addItem(formData: FormData) {
 /**
  * ASSET LOOKUP: Admin, IM and Rig.
  * Home hub is not fetched from the reference asset sheet.
- * { error } = the SD card sheet could not be read, with the reason in plain words.
  */
 export async function lookupAsset(serial: string) {
   await requireRole("admin", "im", "rig");
@@ -302,13 +312,7 @@ export async function lookupAsset(serial: string) {
 
   if (!cleanedSerial) return null;
 
-  let records;
-  try {
-    records = await loadAssetRecords();
-  } catch (error) {
-    console.error("SD card sheet lookup failed:", error);
-    return { error: assetSheetError(error) };
-  }
+  const records = await loadAssetRecords();
   const found = findAsset(records, cleanedSerial);
 
   if (!found) return null;
@@ -352,11 +356,10 @@ export type SerialCheck = {
  * CHECK SERIALS: Admin, IM and Rig.
  * Looks up every serial in the asset sheet in one go and flags the ones
  * already in the inventory, so the bulk form can show a table to review.
- * { error } = the SD card sheet could not be read, with the reason in plain words.
  */
 export async function checkSerials(
   serials: string[]
-): Promise<SerialCheck[] | { error: string }> {
+): Promise<SerialCheck[]> {
   await requireRole("admin", "im", "rig");
 
   const cleaned = serials
@@ -366,20 +369,10 @@ export async function checkSerials(
 
   if (!cleaned.length) return [];
 
-  let records, items;
-  try {
-    [records, items] = await Promise.all([
-      loadAssetRecords().catch((error) => {
-        console.error("SD card sheet lookup failed:", error);
-        throw Object.assign(new Error("asset sheet"), { sheetError: assetSheetError(error) });
-      }),
-      getStore().list("items"),
-    ]);
-  } catch (error) {
-    const sheetError = (error as { sheetError?: string }).sheetError;
-    if (sheetError) return { error: sheetError };
-    throw error;
-  }
+  const [records, items] = await Promise.all([
+    loadAssetRecords(),
+    getStore().list("items"),
+  ]);
 
   const inInventory = new Set(
     items.map((item) => item.item_id.toUpperCase())

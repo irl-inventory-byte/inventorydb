@@ -148,6 +148,21 @@ export default async function InventoryPage({
   const canAddMobile = (mobileView || type === "") && MOBILE_ADD_ROLES.includes(user.role) && canSeeType(user.role, "mobile");
 
   const q = one(sp.q).trim().toLowerCase();
+  // Several searches at once: separate them with commas, semicolons or new lines, e.g. "IC-6, IC-7, 3566…".
+  // A part with spaces made of several codes (each with a digit, 4+ characters) is split into those codes.
+  const terms = [
+    ...new Set(
+      q
+        .split(/[,;\n]+/)
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .flatMap((t) => {
+          const words = t.split(/\s+/);
+          return words.length > 1 && words.every((w) => w.length >= 4 && /\d/.test(w)) ? words : [t];
+        }),
+    ),
+  ];
+  const plainQ = (v: string) => v.toLowerCase().replace(/\s+/g, "");
 
   // Filters can hold several values: ?status=a&status=b or ?status=a,b
   const many = (v: string | string[] | undefined) =>
@@ -247,12 +262,17 @@ export default async function InventoryPage({
       (!hubIds.length || hubIds.includes(item.current_hub)) &&
       (!cities.length || cities.includes(hubCity.get(item.current_hub) ?? "")) &&
       (!holder || item.current_holder === holder) &&
-      (!q ||
-        (item.item_id ?? "").toLowerCase().includes(q) ||
-        (item.prism_no ?? "").toLowerCase().includes(q) ||
-        (item.brand ?? "").toLowerCase().includes(q) ||
-        (item.model ?? "").toLowerCase().includes(q) ||
-        (item.attributes ?? "").toLowerCase().includes(q))
+      (!terms.length ||
+        terms.some(
+          (t) =>
+            (item.item_id ?? "").toLowerCase().includes(t) ||
+            (item.prism_no ?? "").toLowerCase().includes(t) ||
+            (item.brand ?? "").toLowerCase().includes(t) ||
+            (item.model ?? "").toLowerCase().includes(t) ||
+            (item.attributes ?? "").toLowerCase().includes(t) ||
+            // Asset Tags typed without the spaces still match ("androidphone-0221").
+            plainQ(item.attributes ?? "").includes(plainQ(t)),
+        ))
   );
 
   const pages = Math.max(
@@ -802,7 +822,7 @@ export default async function InventoryPage({
         <input
           name="q"
           defaultValue={one(sp.q)}
-          placeholder="Search serial, prism no., brand, model or attributes"
+          placeholder="Search: serial, IMEI, asset tag, prism no., brand… (several: separate with commas)"
           aria-label="Search inventory"
         />
 

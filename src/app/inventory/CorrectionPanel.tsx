@@ -30,7 +30,7 @@ export default function CorrectionPanel({
         <textarea
           name="scanned"
           rows={3}
-          placeholder="Or scan / paste serials here, one per line"
+          placeholder="Or scan / paste here, one per line: serial, rig ID, or a mobile's IMEI, Asset Tag or Serial"
           className={styles.textarea}
         />
       )}
