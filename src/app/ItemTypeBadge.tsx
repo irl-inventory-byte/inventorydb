@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { MOBILE_IMAGE, SD_CARD_IMAGE } from "./item-images";
 
 /**
  * SD card / Rig / Mobile tags. Blue for SD cards, orange for rigs, green for mobiles, each with its own
@@ -22,7 +23,18 @@ export const RIG_ROW_BG = "#FFFBF4";
 export const rowTint = (type: string | undefined): CSSProperties | undefined =>
   kindOf(type) === "rig" ? { backgroundColor: RIG_ROW_BG } : undefined;
 
+// SD cards and mobiles show a small product photo; rigs keep the camera icon.
+const PHOTO: Partial<Record<Kind, string>> = { sd_card: SD_CARD_IMAGE, mobile: MOBILE_IMAGE };
+
 function Icon({ kind, size }: { kind: Kind; size: number }) {
+  const photo = PHOTO[kind];
+  if (photo) {
+    const h = Math.round(size * 1.6);
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={photo} alt="" aria-hidden="true" height={h} style={{ height: h, width: "auto", flexShrink: 0, display: "block" }} />
+    );
+  }
   return (
     <svg
       aria-hidden="true"
