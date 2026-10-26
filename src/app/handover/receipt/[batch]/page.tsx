@@ -52,7 +52,7 @@ function ItemTables({ items, penalty }: { items: ReceiptItem[]; penalty: (item: 
                     <td>{++n}</td>
                     {cols.map((c) => (
                       <td key={c.title} style={{ overflowWrap: "anywhere" }}>
-                        {c.badge ? <TypeBadge type={item.itemType} /> : c.value(item)}
+                        {c.badge ? <TypeBadge type={item.itemType} storage={item.storage} /> : c.value(item)}
                       </td>
                     ))}
                     {/* The amount saved in items.price. This page does not change or charge it. */}

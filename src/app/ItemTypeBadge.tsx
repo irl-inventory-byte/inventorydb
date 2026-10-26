@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { MOBILE_IMAGE, SD_CARD_IMAGE } from "./item-images";
+import { MOBILE_IMAGE, RIG_IMAGE, SD_256_IMAGE, SD_512_IMAGE, SD_CARD_IMAGE } from "./item-images";
 
 /**
  * SD card / Rig / Mobile tags. Blue for SD cards, orange for rigs, green for mobiles, each with its own
@@ -23,13 +23,22 @@ export const RIG_ROW_BG = "#FFFBF4";
 export const rowTint = (type: string | undefined): CSSProperties | undefined =>
   kindOf(type) === "rig" ? { backgroundColor: RIG_ROW_BG } : undefined;
 
-// SD cards and mobiles show a small product photo; rigs keep the camera icon.
-const PHOTO: Partial<Record<Kind, string>> = { sd_card: SD_CARD_IMAGE, mobile: MOBILE_IMAGE };
+// Each item type shows a small photo. An SD card shows its own card: 256 GB or 512 GB (both when not set).
+const PHOTO: Record<Kind, string> = { sd_card: SD_CARD_IMAGE, mobile: MOBILE_IMAGE, rig: RIG_IMAGE };
 
-function Icon({ kind, size }: { kind: Kind; size: number }) {
-  const photo = PHOTO[kind];
+function photoFor(kind: Kind, storage?: string): string {
+  if (kind === "sd_card") {
+    const gb = String(storage ?? "").replace(/\s+/g, "").toUpperCase();
+    if (gb === "256GB" || gb === "256") return SD_256_IMAGE;
+    if (gb === "512GB" || gb === "512") return SD_512_IMAGE;
+  }
+  return PHOTO[kind];
+}
+
+function Icon({ kind, size, storage }: { kind: Kind; size: number; storage?: string }) {
+  const photo = photoFor(kind, storage);
   if (photo) {
-    const h = Math.round(size * 1.6);
+    const h = Math.round(size * 2.2); // photos a bit bigger than the icon, so the item can be recognised
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img src={photo} alt="" aria-hidden="true" height={h} style={{ height: h, width: "auto", flexShrink: 0, display: "block" }} />
@@ -85,12 +94,12 @@ const pill = (kind: Kind, big: boolean): CSSProperties => ({
   WebkitPrintColorAdjust: "exact",
 });
 
-/** One tag: "SD card" or "Rig". */
-export function TypeBadge({ type }: { type: string | undefined }) {
+/** One tag: "SD card", "Rig" or "Mobile", with its photo. `storage` picks the 256 GB / 512 GB card photo. */
+export function TypeBadge({ type, storage }: { type: string | undefined; storage?: string }) {
   const kind = kindOf(type);
   return (
     <span style={pill(kind, false)}>
-      <Icon kind={kind} size={12} />
+      <Icon kind={kind} size={12} storage={storage} />
       {LOOK[kind].label}
     </span>
   );

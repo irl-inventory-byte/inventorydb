@@ -337,9 +337,9 @@ export default async function InventoryPage({
 
   // Includes optional Admin checkbox and holder-specific Since column.
   const columnCount = mobileView
-    ? 12 + (isAdmin ? 1 : 0)
+    ? 13 + (isAdmin ? 1 : 0)
     : rigView
-    ? 6 + (isAdmin ? 1 : 0)
+    ? 7 + (isAdmin ? 1 : 0)
     : 16 + (isAdmin ? 1 : 0) + (holder ? 1 : 0) + (showQc ? 1 : 0);
 
   const table = (
@@ -359,6 +359,7 @@ export default async function InventoryPage({
             <tr>
               {isAdmin && <th scope="col" aria-label="Select items" />}
               <th scope="col">Date</th>
+              <th scope="col">Items</th>
               <th scope="col">IMEI</th>
               <th scope="col">Asset Tag</th>
               <th scope="col">Serial</th>
@@ -375,6 +376,7 @@ export default async function InventoryPage({
             <tr>
               {isAdmin && <th scope="col" aria-label="Select items" />}
               <th scope="col">Date</th>
+              <th scope="col">Items</th>
               <th scope="col">Rig ID / Asset Tag</th>
               <th scope="col">Home hub</th>
               <th scope="col">Brand</th>
@@ -449,6 +451,9 @@ export default async function InventoryPage({
                       </td>
                     )}
                     <td style={{ whiteSpace: "nowrap" }}>{when ? `${formatIst(when)} IST` : "—"}</td>
+                    <td>
+                      <TypeBadge type="mobile" />
+                    </td>
                     <td style={{ whiteSpace: "nowrap" }}>
                       <Link href={itemUrl}>{item.item_id}</Link>
                       {isAdmin && (
@@ -496,6 +501,9 @@ export default async function InventoryPage({
                       </td>
                     )}
                     <td style={{ whiteSpace: "nowrap" }}>{when ? `${formatIst(when)} IST` : "—"}</td>
+                    <td>
+                      <TypeBadge type="rig" />
+                    </td>
                     <td>
                       <Link href={itemUrl}>{item.item_id}</Link>
                       {isAdmin && (
@@ -548,7 +556,7 @@ export default async function InventoryPage({
                   </td>
 
                   <td>
-                    <TypeBadge type={item.item_type} />
+                    <TypeBadge type={item.item_type} storage={storage} />
                   </td>
 
                   <td>
