@@ -33,8 +33,11 @@ export default function NavProgress() {
       if (url.pathname === location.pathname && url.search === location.search) return; // same page (e.g. #anchor)
       start();
     };
+    // A plain form, or one marked data-progress="1" (search filters and server-action forms such as a
+    // correction, whose submit React handles itself).
     const onSubmit = (e: SubmitEvent) => {
-      if (!e.defaultPrevented) start();
+      const form = e.target as HTMLFormElement | null;
+      if (!e.defaultPrevented || form?.dataset?.progress === "1") start();
     };
     document.addEventListener("click", onClick);
     document.addEventListener("submit", onSubmit);

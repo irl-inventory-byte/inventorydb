@@ -150,8 +150,8 @@ export class Store {
     events: ItemEvent[],
     items: Item[]
   ) {
-    await this.backend.append("events", events);
-    await this.backend.upsert("items", items);
+    // Both writes at the same time (about half the waiting).
+    await Promise.all([this.backend.append("events", events), this.backend.upsert("items", items)]);
   }
 
   async checkConsistency(): Promise<Inconsistency[]> {

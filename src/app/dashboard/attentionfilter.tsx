@@ -1,5 +1,6 @@
 "use client";
 
+import Form from "next/form";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import styles from "./dashboard.module.css";
@@ -31,10 +32,11 @@ export default function AttentionFilter({
     pickedCities.join(",") !== city.join(",") || pickedRoles.join(",") !== role.join(",");
 
   return (
-    <form
+    <Form
       ref={formRef}
-      method="get"
-      action="/dashboard#attention"
+      action="/dashboard"
+      scroll={false}
+      data-progress="1"
       style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", margin: "4px 0 12px" }}
     >
       {Object.entries(keep).map(([k, v]) => (
@@ -67,7 +69,7 @@ export default function AttentionFilter({
           Clear filter
         </Link>
       )}
-    </form>
+    </Form>
   );
 }
 

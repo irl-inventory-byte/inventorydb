@@ -1,3 +1,4 @@
+import Form from "next/form";
 import Link from "next/link";
 import { formatAttributes } from "@/lib/attributes";
 import { requireRole } from "@/lib/authz";
@@ -817,7 +818,8 @@ export default async function InventoryPage({
         </details>
       )}
 
-      <form className={styles.row} method="get">
+      {/* Search in the background: the page stays on screen until the results are ready. */}
+      <Form action="/inventory" className={styles.row} scroll={false} data-progress="1">
         {type && <input type="hidden" name="type" value={type} />}
         <input
           name="q"
@@ -888,7 +890,7 @@ export default async function InventoryPage({
             · <Link href="/inventory">clear</Link>
           </span>
         )}
-      </form>
+      </Form>
 
       <p className={styles.muted}>
         {matches.length} of {items.length} items. Showing{" "}
@@ -906,7 +908,7 @@ export default async function InventoryPage({
 
       {/* Corrections and selection checkboxes remain Admin-only. */}
       {isAdmin ? (
-        <form action={applyCorrection} className={styles.list}>
+        <form action={applyCorrection} className={styles.list} data-progress="1">
           <input
             type="hidden"
             name="back"

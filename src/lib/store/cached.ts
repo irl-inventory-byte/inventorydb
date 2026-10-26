@@ -1,4 +1,4 @@
-import type { Row, TabName } from "../schema";
+import { TABS, type Row, type TabName } from "../schema";
 import type { DeleteItemResult, TableBackend } from "./backend";
 
 /**
@@ -11,7 +11,7 @@ import type { DeleteItemResult, TableBackend } from "./backend";
  *   - any write to a tab clears that tab's copy, so the next read is fresh.
  * Each caller gets its own copy of the rows, so nobody can change another caller's data.
  */
-const TTL_MS = 5_000;
+const TTL_MS = 15_000; // a tab read in the last 15 s is reused; this server's own writes update it at once
 
 export class CachedBackend implements TableBackend {
   private cache = new Map<TabName, { at: number; rows: Row[] }>();
@@ -76,19 +76,44 @@ export class CachedBackend implements TableBackend {
     return this.copy(await pending);
   }
 
+  // Writes go to the backend first. On success the cached copy is updated in place (write-through), so the
+  // page shown right after a send, receive or correction does not download the whole tab again. If the
+  // write fails, the copy is dropped and the next read is fresh.
   async append(tab: TabName, rows: Row[]) {
     try {
       await this.inner.append(tab, rows);
-    } finally {
+    } catch (err) {
       this.clear(tab);
+      throw err;
     }
+    const hit = this.cache.get(tab);
+    if (hit && !this.inFlight.has(tab)) hit.rows.push(...this.copy(rows));
+    else this.clear(tab);
   }
 
   async upsert(tab: TabName, rows: Row[]) {
     try {
       await this.inner.upsert(tab, rows);
-    } finally {
+    } catch (err) {
       this.clear(tab);
+      throw err;
+    }
+    const hit = this.cache.get(tab);
+    if (!hit || this.inFlight.has(tab)) {
+      this.clear(tab);
+      return;
+    }
+    // Same rule as the backend: a row with a known key (first column) replaces it, others are added.
+    const key = TABS[tab][0];
+    const at = new Map(hit.rows.map((r, i) => [r[key], i]));
+    for (const r of rows) {
+      const i = at.get(r[key]);
+      if (i === undefined) {
+        at.set(r[key], hit.rows.length);
+        hit.rows.push({ ...r });
+      } else {
+        hit.rows[i] = { ...hit.rows[i], ...r };
+      }
     }
   }
 }
