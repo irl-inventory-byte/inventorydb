@@ -26,6 +26,12 @@ export const rowTint = (type: string | undefined): CSSProperties | undefined =>
 // Each item type shows a small photo. An SD card shows its own card: 256 GB or 512 GB (both when not set).
 const PHOTO: Record<Kind, string> = { sd_card: SD_CARD_IMAGE, mobile: MOBILE_IMAGE, rig: RIG_IMAGE };
 
+/** "256 GB" / "512 GB" from a saved storage value, or "" when it is not set. */
+function sizeOf(storage?: string): string {
+  const gb = String(storage ?? "").replace(/\s+/g, "").toUpperCase();
+  return gb === "256GB" || gb === "256" ? "256 GB" : gb === "512GB" || gb === "512" ? "512 GB" : "";
+}
+
 function photoFor(kind: Kind, storage?: string): string {
   if (kind === "sd_card") {
     const gb = String(storage ?? "").replace(/\s+/g, "").toUpperCase();
@@ -100,7 +106,7 @@ export function TypeBadge({ type, storage }: { type: string | undefined; storage
   return (
     <span style={pill(kind, false)}>
       <Icon kind={kind} size={12} storage={storage} />
-      {LOOK[kind].label}
+      {kind === "sd_card" && sizeOf(storage) ? `SD card · ${sizeOf(storage)}` : LOOK[kind].label}
     </span>
   );
 }
