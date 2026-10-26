@@ -8,7 +8,7 @@ import {
   findAsset,
   normalizeCapacity,
 } from "@/lib/asset-lookup";
-import { loadAssetRecords } from "@/lib/asset-sheet";
+import { assetSheetError, loadAssetRecords } from "@/lib/asset-sheet";
 import { requireRole } from "@/lib/authz";
 import { planCorrection } from "@/lib/correction";
 import { getStore } from "@/lib/store";
@@ -304,6 +304,7 @@ export async function addItem(formData: FormData) {
 /**
  * ASSET LOOKUP: Admin, IM and Rig.
  * Home hub is not fetched from the reference asset sheet.
+ * { error } = the SD card sheet could not be read, with the reason in plain words.
  */
 export async function lookupAsset(serial: string) {
   await requireRole("admin", "im", "rig");
@@ -312,7 +313,13 @@ export async function lookupAsset(serial: string) {
 
   if (!cleanedSerial) return null;
 
-  const records = await loadAssetRecords();
+  let records;
+  try {
+    records = await loadAssetRecords();
+  } catch (error) {
+    console.error("SD card sheet lookup failed:", error);
+    return { error: assetSheetError(error) };
+  }
   const found = findAsset(records, cleanedSerial);
 
   if (!found) return null;
@@ -356,10 +363,11 @@ export type SerialCheck = {
  * CHECK SERIALS: Admin, IM and Rig.
  * Looks up every serial in the asset sheet in one go and flags the ones
  * already in the inventory, so the bulk form can show a table to review.
+ * { error } = the SD card sheet could not be read, with the reason in plain words.
  */
 export async function checkSerials(
   serials: string[]
-): Promise<SerialCheck[]> {
+): Promise<SerialCheck[] | { error: string }> {
   await requireRole("admin", "im", "rig");
 
   const cleaned = serials
@@ -369,10 +377,20 @@ export async function checkSerials(
 
   if (!cleaned.length) return [];
 
-  const [records, items] = await Promise.all([
-    loadAssetRecords(),
-    getStore().list("items"),
-  ]);
+  let records, items;
+  try {
+    [records, items] = await Promise.all([
+      loadAssetRecords().catch((error) => {
+        console.error("SD card sheet lookup failed:", error);
+        throw Object.assign(new Error("asset sheet"), { sheetError: assetSheetError(error) });
+      }),
+      getStore().list("items"),
+    ]);
+  } catch (error) {
+    const sheetError = (error as { sheetError?: string }).sheetError;
+    if (sheetError) return { error: sheetError };
+    throw error;
+  }
 
   const inInventory = new Set(
     items.map((item) => item.item_id.toUpperCase())
