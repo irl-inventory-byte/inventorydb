@@ -335,6 +335,10 @@ async function markHardwareOutcome(formData: FormData, outcome: "rnd" | "dead") 
   );
 }
 
+/** A hub in Bangalore (its city or name says Bangalore / Bengaluru). */
+const isBangalore = (h: { city?: string; name?: string } | undefined) =>
+  /bangalore|bengaluru/i.test(`${h?.city ?? ""} ${h?.name ?? ""}`);
+
 export async function receiveCards(formData: FormData) {
   const hub = String(formData.get("hub") ?? "");
   const note = String(formData.get("note") ?? "");
@@ -343,16 +347,40 @@ export async function receiveCards(formData: FormData) {
   if (expected !== undefined && (!Number.isInteger(expected) || expected < 0)) {
     redirect(go("/handover/receive", { error: "Expected count must be a whole number." }));
   }
+  // Rigs coming back from an FO (out in the field):
+  //   received at a Bangalore hub  → QC pending: it must go to the QC team before it goes out again;
+  //   received in any other city   → QC passed: it can go back to the field straight away.
+  let qcRows: TabRows["qc_checks"][] = [];
   await run(
     formData,
     "/handover/receive",
     // QC / hardware team: receive the rigs sent to them. Everyone else: take items into stock at a hub.
-    (targets, ctx) =>
-      receivesHeld(ctx.senderRole)
-        ? planReceiveHeld(targets, { note }, ctx)
-        : planReceive(targets, { hub, note, expected }, ctx),
+    (targets, ctx) => {
+      if (receivesHeld(ctx.senderRole)) return planReceiveHeld(targets, { note }, ctx);
+      const plan = planReceive(targets, { hub, note, expected }, ctx);
+      if (!plan.errors.length) {
+        const where = ctx.hubs.find((h) => h.hub_id === hub);
+        const inBangalore = isBangalore(where);
+        qcRows = targets
+          .filter((t) => t.item_type === "rig" && t.status === "with_fo")
+          .map((t) => ({
+            check_id: ctx.newId("qc"),
+            item_id: t.item_id,
+            recorded_at: ctx.now,
+            recorded_by: ctx.by,
+            recorded_by_name: displayName(ctx.people, ctx.actorPersonId),
+            qc_status: inBangalore ? ("qc_pending" as const) : ("pass" as const),
+            comment: inBangalore
+              ? "Back from the field (FO) in Bangalore · send to the QC team before the next use"
+              : `Back from the field (FO) in ${(where?.city || where?.name || "").trim() || "another city"} · QC passed`,
+          }));
+      }
+      return plan;
+    },
     (plan): Record<string, string> => (plan.mismatch ? { mismatch: plan.mismatch } : {}),
-    undefined,
+    async () => {
+      if (qcRows.length) await getStore().appendRows("qc_checks", qcRows);
+    },
     { roles: RECEIVE_ROLES, actorRoles: ["im", "rig", "qc", "hardware", "internal"] },
   );
 }
