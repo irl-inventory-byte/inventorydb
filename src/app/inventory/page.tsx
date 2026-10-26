@@ -20,6 +20,7 @@ import { mobileHomeHub, rigHomeHub } from "@/lib/rig-hub";
 import BulkAddForm from "./BulkAddForm";
 import { applyCorrection } from "./actions";
 import CorrectionPanel from "./CorrectionPanel";
+import SearchBox from "./SearchBox";
 
 const PAGE_SIZE = 100;
 
@@ -151,15 +152,22 @@ export default async function InventoryPage({
   const q = one(sp.q).trim().toLowerCase();
   // Several searches at once: separate them with commas, semicolons or new lines, e.g. "IC-6, IC-7, 3566…".
   // A part with spaces made of several codes (each with a digit, 4+ characters) is split into those codes.
+  // Each search as typed (for the "Not found" list), keyed by its lower-case form.
+  const typed = new Map<string, string>();
   const terms = [
     ...new Set(
-      q
+      one(sp.q)
+        .trim()
         .split(/[,;\n]+/)
         .map((t) => t.trim())
         .filter(Boolean)
         .flatMap((t) => {
           const words = t.split(/\s+/);
-          return words.length > 1 && words.every((w) => w.length >= 4 && /\d/.test(w)) ? words : [t];
+          const parts = words.length > 1 && words.every((w) => w.length >= 4 && /\d/.test(w)) ? words : [t];
+          return parts.map((x) => {
+            if (!typed.has(x.toLowerCase())) typed.set(x.toLowerCase(), x);
+            return x.toLowerCase();
+          });
         }),
     ),
   ];
@@ -275,6 +283,16 @@ export default async function InventoryPage({
             plainQ(item.attributes ?? "").includes(plainQ(t)),
         ))
   );
+
+  // Several items searched: which of them matched nothing (with the other filters applied).
+  const termMatches = (item: (typeof items)[number], t: string) =>
+    (item.item_id ?? "").toLowerCase().includes(t) ||
+    (item.prism_no ?? "").toLowerCase().includes(t) ||
+    (item.brand ?? "").toLowerCase().includes(t) ||
+    (item.model ?? "").toLowerCase().includes(t) ||
+    (item.attributes ?? "").toLowerCase().includes(t) ||
+    plainQ(item.attributes ?? "").includes(plainQ(t));
+  const notFound = terms.length > 1 ? terms.filter((t) => !matches.some((item) => termMatches(item, t))) : [];
 
   const pages = Math.max(
     1,
@@ -821,12 +839,7 @@ export default async function InventoryPage({
       {/* Search in the background: the page stays on screen until the results are ready. */}
       <Form action="/inventory" className={styles.row} scroll={false} data-progress="1">
         {type && <input type="hidden" name="type" value={type} />}
-        <input
-          name="q"
-          defaultValue={one(sp.q)}
-          placeholder="Search: serial, IMEI, asset tag, prism no., brand… (several: separate with commas)"
-          aria-label="Search inventory"
-        />
+        <SearchBox defaultValue={one(sp.q)} />
 
         <MultiSelect
           name="status"
@@ -893,10 +906,18 @@ export default async function InventoryPage({
       </Form>
 
       <p className={styles.muted}>
+        {terms.length > 1 && `${terms.length} searches · `}
         {matches.length} of {items.length} items. Showing{" "}
         {shown.length ? (page - 1) * PAGE_SIZE + 1 : 0}–
         {(page - 1) * PAGE_SIZE + shown.length}.
       </p>
+
+      {notFound.length > 0 && (
+        <p className={styles.error}>
+          Not found ({notFound.length}): {notFound.slice(0, 20).map((t) => typed.get(t) ?? t).join(", ")}
+          {notFound.length > 20 ? ` and ${notFound.length - 20} more` : ""}
+        </p>
+      )}
 
       {!rigView && !mobileView && (
         <p className={styles.muted}>
