@@ -7,7 +7,7 @@ import {
   type CSSProperties,
 } from "react";
 import { useRouter } from "next/navigation";
-import CameraScanButton from "../CameraScanButton";
+import CameraAddBox from "./CameraAddBox";
 import { cameraAddSdCard } from "./camera-add";
 import styles from "../admin/admin.module.css";
 import {
@@ -287,17 +287,16 @@ export default function BulkAddForm({
         </label>
       </div>
 
+      <CameraAddBox
+        onOpen={() => {
+          if (homeHub) return true;
+          setHubError(true);
+          return false;
+        }}
+        save={(code) => cameraAddSdCard(code, homeHub)}
+      />
+
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
-        <CameraScanButton
-          label="Scan & add with camera"
-          onOpen={() => {
-            if (homeHub) return true;
-            setHubError(true);
-            return false;
-          }}
-          onScan={(code) => cameraAddSdCard(code, homeHub)}
-          onClose={(saved) => saved > 0 && router.refresh()}
-        />
         <button
           type="button"
           disabled={checking || !text.trim()}

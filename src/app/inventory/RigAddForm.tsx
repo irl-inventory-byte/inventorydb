@@ -3,8 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useFormStatus } from "react-dom";
 import styles from "../admin/admin.module.css";
-import { useRouter } from "next/navigation";
-import CameraScanButton from "../CameraScanButton";
+import CameraAddBox from "./CameraAddBox";
 import { cameraAddRig } from "./camera-add";
 import { addRig, lookupRig } from "./rig-actions";
 
@@ -24,7 +23,6 @@ function SaveButton({ busy }: { busy: boolean }) {
 
 /** Rigs: home hub is always Bangalore, and there is no prism number. */
 export default function RigAddForm({ homeHub }: { homeHub?: Hub }) {
-  const router = useRouter();
   const [rigId, setRigId] = useState("");
   const [brand, setBrand] = useState("");
   const [model, setModel] = useState("");
@@ -147,10 +145,8 @@ export default function RigAddForm({ homeHub }: { homeHub?: Hub }) {
               style={inputStyle}
             />
           </label>
-          <CameraScanButton
-            label="Scan & add with camera"
-            onScan={cameraAddRig}
-            onClose={(saved) => saved > 0 && router.refresh()}
+          <CameraAddBox
+            save={cameraAddRig}
           />
         </div>
 

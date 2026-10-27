@@ -42,9 +42,9 @@
 .frame {
   position: absolute;
   left: 50%;
-  top: 58%;
+  top: 48%;
   width: min(82vw, 420px);
-  height: min(50vw, 260px);
+  height: min(55vw, 280px);
   transform: translate(-50%, -50%);
   border: 3px solid rgba(255, 255, 255, 0.9);
   border-radius: 14px;
@@ -61,81 +61,15 @@
 }
 .top {
   padding-top: max(16px, env(safe-area-inset-top));
-  display: grid;
-  gap: 10px;
-  background: linear-gradient(rgba(0, 0, 0, 0.75) 60%, transparent);
-}
-.head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  font-weight: 700;
-  min-height: 44px;
-}
-
-/* Scanned items, newest first, above the aiming box. */
-.list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 6px;
-  max-height: 30vh;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-}
-.list li {
-  display: flex;
-  align-items: flex-start;
   gap: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  animation: pop 0.25s ease-out;
+  background: linear-gradient(rgba(0, 0, 0, 0.7), transparent);
 }
-.itemOk {
-  background: rgba(30, 107, 47, 0.92);
-}
-.itemBad {
-  background: rgba(163, 38, 27, 0.92);
-}
-.itemWait {
-  background: rgba(255, 255, 255, 0.18);
-}
-.mark {
+.counter {
+  margin-right: auto;
   font-weight: 800;
-  font-size: 1.05rem;
-  line-height: 1.3;
-  width: 1em;
-  text-align: center;
-}
-.itemBody {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-.itemTop {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.code {
-  font-weight: 800;
-  font-size: 0.98rem;
-  overflow-wrap: anywhere;
-}
-.type {
-  font-size: 0.75rem;
-  font-weight: 700;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.9);
-  color: #111;
-}
-.msg {
-  font-size: 0.85rem;
-  opacity: 0.95;
+  font-size: 1.1rem;
 }
 .bottom {
   padding-bottom: max(20px, env(safe-area-inset-bottom));
@@ -144,9 +78,58 @@
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.75) 35%);
 }
 
+/* The scanned ID / serial, shown big over the aiming box for a moment. */
+.flash {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  transform: translate(-50%, -50%);
+  width: min(88vw, 460px);
+  box-sizing: border-box;
+  padding: 18px 16px;
+  border-radius: 16px;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  animation: pop 0.2s ease-out;
+}
+.flashWait {
+  background: rgba(20, 20, 20, 0.9);
+}
+.flashOk {
+  background: #1e6b2f;
+}
+.flashBad {
+  background: #a3261b;
+}
+.flashRepeat {
+  background: #8a5a00;
+}
+.flashMark {
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1;
+}
+.flashCode {
+  font-size: clamp(1.2rem, 6vw, 1.7rem);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.flashMsg {
+  font-size: 1rem;
+}
+.type {
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #111;
+}
+
 .status,
-.added,
-.repeat,
 .error {
   margin: 0;
   padding: 10px 12px;
@@ -157,30 +140,10 @@
 .status {
   background: rgba(255, 255, 255, 0.12);
 }
-.added {
-  background: #1e6b2f;
-  animation: pop 0.25s ease-out;
-}
-.repeat {
-  background: #8a5a00;
-}
 .error {
   background: #a3261b;
 }
-.added code,
-.repeat code {
-  font-weight: 700;
-}
 
-.actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.count {
-  font-weight: 700;
-  font-size: 1.05rem;
-}
 .done,
 .ghost {
   min-height: 44px;
@@ -191,7 +154,6 @@
   cursor: pointer;
 }
 .done {
-  margin-left: auto;
   border: none;
   background: #fff;
   color: #111;
@@ -202,9 +164,62 @@
   color: #fff;
 }
 
+/* "Added with camera" list on the Add pages. */
+.added {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid #c9c9c9;
+  border-radius: 6px;
+  background: #fafafa;
+}
+.addedHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+.addedClear {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #666;
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+}
+.addedList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 0.9rem;
+}
+.addedList li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+.addedOk {
+  color: #1e6b2f;
+}
+.addedBad {
+  color: #a3261b;
+}
+.addedType {
+  font-size: 0.75rem;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+
 @keyframes pop {
   from {
-    transform: scale(0.96);
+    transform: translate(-50%, -50%) scale(0.94);
     opacity: 0.6;
   }
 }

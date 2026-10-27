@@ -6,10 +6,9 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { useRouter } from "next/navigation";
 import { useFormStatus } from "react-dom";
 import styles from "../admin/admin.module.css";
-import CameraScanButton from "../CameraScanButton";
+import CameraAddBox from "./CameraAddBox";
 import { cameraAddSdCard } from "./camera-add";
 import { addItem, lookupAsset } from "./actions";
 
@@ -59,7 +58,6 @@ export default function AddCardForm({
 }: {
   hubs?: Hubs;
 }) {
-  const router = useRouter();
   const hubRef = useRef<HTMLSelectElement>(null);
   const [serial, setSerial] = useState("");
   const [prismNo, setPrismNo] = useState("");
@@ -313,11 +311,9 @@ export default function AddCardForm({
               style={inputStyle}
             />
           </label>
-          <CameraScanButton
-            label="Scan & add with camera"
+          <CameraAddBox
             onOpen={() => hubRef.current?.reportValidity() ?? false}
-            onScan={(code) => cameraAddSdCard(code, hubRef.current?.value ?? "")}
-            onClose={(saved) => saved > 0 && router.refresh()}
+            save={(code) => cameraAddSdCard(code, hubRef.current?.value ?? "")}
           />
         </div>
 
