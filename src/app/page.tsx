@@ -60,7 +60,7 @@ const WORK: Tile[] = [
     title: "Rig Audit",
     desc: "Rigs with no activity for 2+ days: where they are, who has them, why, with a photo.",
     icon: "alert",
-    roles: ["admin", "im", "hardware"],
+    roles: ["admin", "im", "hardware","qc"],
   },
   {
     href: "/handover/send",
