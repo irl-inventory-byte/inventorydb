@@ -183,8 +183,14 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const now = new Date();
 
   // Rig view: unknown rigs (no activity for more than NO_ACTIVITY_DAYS days), city-wise, with their reports.
-  const unknownRigs = rigView && showQc ? inactiveRigs(items, events, qcChecks, hardwareUpdates, now, NO_ACTIVITY_DAYS) : [];
-  const rigReports = unknownRigs.length ? await getStore().list("rig_reports").catch(() => []) : [];
+  // Worked out twice on purpose: the first pass is free and tells us whether any rig is overdue at all, so
+  // the reports table is only downloaded when it can change something. The second pass lets an audit report
+  // count as activity, which takes a rig that has just been found off the list.
+  const overdue = rigView && showQc ? inactiveRigs(items, events, qcChecks, hardwareUpdates, now, NO_ACTIVITY_DAYS) : [];
+  const rigReports = overdue.length ? await getStore().list("rig_reports").catch(() => []) : [];
+  const unknownRigs = overdue.length
+    ? inactiveRigs(items, events, qcChecks, hardwareUpdates, now, NO_ACTIVITY_DAYS, rigReports)
+    : [];
   const unknownHubCity = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
   const unknownItem = new Map(items.map((i) => [i.item_id, i]));
   const unknownRows = unknownRigs.map((u) => {

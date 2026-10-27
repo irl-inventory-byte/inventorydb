@@ -1,4 +1,4 @@
-import type { HardwareUpdate, Item, ItemEvent, Person, QcCheck } from "./schema";
+import type { HardwareUpdate, Item, ItemEvent, Person, QcCheck, RigReport } from "./schema";
 
 /**
  * RIG DASHBOARD METRICS. Everything here is worked out from data the app already records:
@@ -313,17 +313,23 @@ export interface Inactive {
   item_id: string;
   status: string;
   holder: string;
-  lastActivity: string; // ISO time of the latest handover, QC result or hardware update
+  lastActivity: string; // ISO time of the latest handover, QC result, hardware update or audit report
   days: number;
+  /** True when the latest activity was an audit report rather than a handover, QC result or update. */
+  lastWasReport?: boolean;
 }
 
 // Not counted as "unknown": with or sent to hardware, dead, R&D, lost or damaged.
 const NOT_UNKNOWN = new Set(["with_hardware", "pending_hardware", "retired", "rnd", "lost", "damaged"]);
 
 /**
- * "Unknown" rigs: nothing has happened to them (no handover, QC result or hardware update) for more than
- * `minDays` days, so nobody can say where they are or how they are. Rigs with hardware, dead, R&D, lost
- * or damaged are left out. Longest first.
+ * "Unknown" rigs: nothing has happened to them for more than `minDays` days, so nobody can say where they
+ * are or how they are. Rigs with hardware, dead, R&D, lost or damaged are left out. Longest first.
+ *
+ * Activity means a handover, a QC result, a hardware update — or an audit report. An audit report counts
+ * because someone has just gone and looked at the rig: the question "where is it?" has been answered, so
+ * the rig leaves the list and only comes back if it then goes quiet again for another `minDays` days.
+ * Pass `reports` to have them counted; without it, reports are ignored (the old behaviour).
  */
 export function inactiveRigs(
   items: Item[],
@@ -332,15 +338,22 @@ export function inactiveRigs(
   updates: HardwareUpdate[],
   now: Date,
   minDays = 7,
+  reports: RigReport[] = [],
 ): Inactive[] {
   const last = new Map<string, number>();
-  const bump = (id: string, v: string) => {
+  // Remembers which rigs were last touched by an audit report, so the page can say so.
+  const reported = new Set<string>();
+  const bump = (id: string, v: string, isReport = false) => {
     const t = time(v);
-    if (Number.isFinite(t) && t > (last.get(id) ?? -Infinity)) last.set(id, t);
+    if (!Number.isFinite(t) || t <= (last.get(id) ?? -Infinity)) return;
+    last.set(id, t);
+    if (isReport) reported.add(id);
+    else reported.delete(id);
   };
   for (const e of events) bump(e.item_id, e.occurred_at);
   for (const c of checks) bump(c.item_id, c.recorded_at);
   for (const u of updates) bump(u.item_id, u.recorded_at);
+  for (const r of reports) bump(r.item_id, r.recorded_at, true);
 
   const out: Inactive[] = [];
   for (const i of items) {
@@ -349,7 +362,14 @@ export function inactiveRigs(
     if (!Number.isFinite(t)) continue;
     const days = (now.getTime() - t) / DAY_MS;
     if (days <= minDays) continue;
-    out.push({ item_id: i.item_id, status: i.status, holder: i.current_holder, lastActivity: new Date(t).toISOString(), days: Math.floor(days) });
+    out.push({
+      item_id: i.item_id,
+      status: i.status,
+      holder: i.current_holder,
+      lastActivity: new Date(t).toISOString(),
+      days: Math.floor(days),
+      lastWasReport: reported.has(i.item_id),
+    });
   }
   return out.sort((a, b) => b.days - a.days || a.item_id.localeCompare(b.item_id));
 }

@@ -18,7 +18,7 @@ const card = { border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, backg
  * Click a rig to see who reported it, where it is, why, with a photo, and to add a new report.
  */
 export default async function UnknownRigsPage({ searchParams }: PageProps<"/">) {
-  const user = await requireRole("admin", "im", "hardware", "qc");
+  const user = await requireRole("admin", "im", "hardware");
   const sp = await searchParams;
   const q = one(sp.q).trim().toLowerCase();
   const rigId = one(sp.rig);
@@ -34,7 +34,8 @@ export default async function UnknownRigsPage({ searchParams }: PageProps<"/">) 
     getStore().list("rig_reports"),
   ]);
   const now = new Date();
-  const unknown = inactiveRigs(rigs, events, qcChecks, hardware, now, NO_ACTIVITY_DAYS);
+  // Audit reports count as activity, so a rig someone has just gone and found leaves this list.
+  const unknown = inactiveRigs(rigs, events, qcChecks, hardware, now, NO_ACTIVITY_DAYS, reports);
 
   const byId = new Map(rigs.map((r) => [r.item_id, r]));
   const hubName = new Map(hubs.map((h) => [h.hub_id, h.name]));
@@ -111,7 +112,7 @@ export default async function UnknownRigsPage({ searchParams }: PageProps<"/">) 
                     key={r.report_id}
                     style={{ display: "flex", gap: 14, flexWrap: "wrap", border: "1px solid #eef0f3", borderRadius: 10, padding: 12 }}
                   >
-                    {r.photo ? (
+                    {r.photo.startsWith("data:image/") ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={r.photo}
@@ -119,10 +120,17 @@ export default async function UnknownRigsPage({ searchParams }: PageProps<"/">) 
                         style={{ width: 180, maxWidth: "100%", height: "auto", borderRadius: 8, border: "1px solid #e5e7eb", objectFit: "cover" }}
                       />
                     ) : (
+                      /*
+                       * Two different reasons for no picture, kept apart so it is clear which one it is:
+                       * the photo was never saved, or something is stored but it is not a usable image
+                       * (for example a photo cut short when the data was moved to Supabase).
+                       */
                       <div
-                        style={{ width: 180, height: 120, borderRadius: 8, background: "#f3f4f6", display: "grid", placeItems: "center", color: "#6b7280", fontSize: "0.85rem" }}
+                        style={{ width: 180, minHeight: 120, borderRadius: 8, background: "#f3f4f6", display: "grid", placeItems: "center", color: "#6b7280", fontSize: "0.8rem", textAlign: "center", padding: 10, lineHeight: 1.35 }}
                       >
-                        No photo
+                        {r.photo
+                          ? "Photo is damaged and cannot be shown. It may still be in the Google Sheet."
+                          : "No photo saved with this report."}
                       </div>
                     )}
                     <dl className={styles.facts} style={{ flex: "1 1 260px", alignContent: "start" }}>
@@ -212,7 +220,10 @@ export default async function UnknownRigsPage({ searchParams }: PageProps<"/">) 
                     <td>{STATUS_LABELS[u.status as keyof typeof STATUS_LABELS] ?? u.status}</td>
                     <td>{displayName(people, u.holder) || hubName.get(r?.current_hub ?? "") || "—"}</td>
                     <td>{hubCity.get(r?.current_hub ?? "") ?? "—"}</td>
-                    <td>{formatIst(u.lastActivity)}</td>
+                    <td>
+                      {formatIst(u.lastActivity)}
+                      {u.lastWasReport && <span className={styles.muted}> · audit report</span>}
+                    </td>
                     <td>{u.days} days</td>
                     <td>{list.length || "—"}</td>
                     <td>
