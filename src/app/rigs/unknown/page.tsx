@@ -18,7 +18,7 @@ const card = { border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, backg
  * Click a rig to see who reported it, where it is, why, with a photo, and to add a new report.
  */
 export default async function UnknownRigsPage({ searchParams }: PageProps<"/">) {
-  const user = await requireRole("admin", "im", "hardware");
+  const user = await requireRole("admin", "im", "hardware", "qc");
   const sp = await searchParams;
   const q = one(sp.q).trim().toLowerCase();
   const rigId = one(sp.rig);

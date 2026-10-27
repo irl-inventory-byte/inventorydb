@@ -184,7 +184,7 @@ export default async function Home({
               <h1>Inventory</h1>
 
               <p className={styles.subtitle}>
-                {greeting}. SD card tracking across hubs.
+                {greeting}. Tracking Inventory Across Hubs.
               </p>
             </div>
           </div>
