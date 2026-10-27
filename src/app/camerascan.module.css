@@ -1,0 +1,140 @@
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid #1a1a1a;
+  border-radius: 6px;
+  background: #1a1a1a;
+  color: #fff;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.trigger:active {
+  transform: translateY(1px);
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: #000;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Aiming box: wide enough for a barcode, tall enough for a QR code. */
+.frame {
+  position: absolute;
+  left: 50%;
+  top: 45%;
+  width: min(82vw, 420px);
+  height: min(50vw, 260px);
+  transform: translate(-50%, -50%);
+  border: 3px solid rgba(255, 255, 255, 0.9);
+  border-radius: 14px;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.top,
+.bottom {
+  position: relative;
+  padding: 16px;
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+}
+.top {
+  padding-top: max(16px, env(safe-area-inset-top));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: 600;
+}
+.bottom {
+  padding-bottom: max(20px, env(safe-area-inset-bottom));
+  display: grid;
+  gap: 12px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75) 35%);
+}
+
+.status,
+.added,
+.repeat,
+.error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  overflow-wrap: anywhere;
+}
+.status {
+  background: rgba(255, 255, 255, 0.12);
+}
+.added {
+  background: #1e6b2f;
+  animation: pop 0.25s ease-out;
+}
+.repeat {
+  background: #8a5a00;
+}
+.error {
+  background: #a3261b;
+}
+.added code,
+.repeat code {
+  font-weight: 700;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.count {
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+.done,
+.ghost {
+  min-height: 44px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.done {
+  margin-left: auto;
+  border: none;
+  background: #fff;
+  color: #111;
+}
+.ghost {
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: transparent;
+  color: #fff;
+}
+
+@keyframes pop {
+  from {
+    transform: scale(0.96);
+    opacity: 0.6;
+  }
+}

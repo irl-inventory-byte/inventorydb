@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import CameraScanButton, { appendLine } from "../CameraScanButton";
 
 /**
  * Inventory search for one or many items. Type or scan codes one per line (a scanner's Enter starts a new
@@ -44,6 +45,9 @@ export default function SearchBox({ defaultValue }: { defaultValue: string }) {
           boxSizing: "border-box",
         }}
       />
+      <span>
+        <CameraScanButton multiple label="Scan to search" onScan={(code) => setValue((v) => appendLine(v, code))} />
+      </span>
       {count > 1 && (
         <span style={{ fontSize: "0.78rem", color: "#64748b" }}>
           {count} items to search · press Filter (or Ctrl + Enter)

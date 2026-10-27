@@ -94,3 +94,12 @@
 .bad code {
   color: inherit;
 }
+
+/* The scanner-gun status pill and the phone camera button, side by side. */
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}

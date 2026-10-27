@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { useFormStatus } from "react-dom";
 import styles from "../admin/admin.module.css";
+import CameraScanButton from "../CameraScanButton";
 import { addMobile, lookupMobile, type MobileLookup } from "./mobile-actions";
 
 const EMPTY: MobileLookup = {
@@ -154,6 +155,7 @@ export default function MobileAddForm({ homeHubName }: { homeHubName?: string })
             required
             style={{ ...inputStyle, fontSize: "1.05rem", padding: "12px 14px" }}
           />
+          <CameraScanButton onScan={(code) => changeFind(code)} />
         </label>
         <div style={fieldStyle}>
           <span>Home hub</span>

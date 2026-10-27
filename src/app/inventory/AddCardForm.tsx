@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useFormStatus } from "react-dom";
 import styles from "../admin/admin.module.css";
+import CameraScanButton from "../CameraScanButton";
 import { addItem, lookupAsset } from "./actions";
 
 type Hubs = {
@@ -280,33 +281,36 @@ export default function AddCardForm({
           alignItems: "start",
         }}
       >
-        <label style={fieldStyle}>
-          <span>Serial / Asset Tag *</span>
+        <div style={fieldStyle}>
+          <label style={fieldStyle}>
+            <span>Serial / Asset Tag *</span>
 
-          <input
-            name="itemId"
-            placeholder="Scan or type — details load automatically"
-            value={serial}
-            onChange={(event) =>
-              changeSerial(event.target.value)
-            }
-            onBlur={(event) => {
-              if (event.currentTarget.value.trim()) {
-                void lookup(event.currentTarget.value);
+            <input
+              name="itemId"
+              placeholder="Scan or type — details load automatically"
+              value={serial}
+              onChange={(event) =>
+                changeSerial(event.target.value)
               }
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                void lookup(event.currentTarget.value);
-              }
-            }}
-            autoComplete="off"
-            spellCheck={false}
-            required
-            style={inputStyle}
-          />
-        </label>
+              onBlur={(event) => {
+                if (event.currentTarget.value.trim()) {
+                  void lookup(event.currentTarget.value);
+                }
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void lookup(event.currentTarget.value);
+                }
+              }}
+              autoComplete="off"
+              spellCheck={false}
+              required
+              style={inputStyle}
+            />
+          </label>
+          <CameraScanButton onScan={(code) => changeSerial(code)} />
+        </div>
 
         {/* Home hub is mandatory. No default hub is selected. */}
         <label style={fieldStyle}>

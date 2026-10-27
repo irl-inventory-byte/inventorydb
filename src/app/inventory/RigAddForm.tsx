@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useFormStatus } from "react-dom";
 import styles from "../admin/admin.module.css";
+import CameraScanButton from "../CameraScanButton";
 import { addRig, lookupRig } from "./rig-actions";
 
 type Hub = { hub_id: string; name: string };
@@ -123,25 +124,28 @@ export default function RigAddForm({ homeHub }: { homeHub?: Hub }) {
           alignItems: "start",
         }}
       >
-        <label style={fieldStyle}>
-          <span>Rig ID / Asset Tag *</span>
-          <input
-            name="itemId"
-            value={rigId}
-            onChange={(e) => changeId(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                void lookup(e.currentTarget.value);
-              }
-            }}
-            placeholder="Scan or type — details load automatically"
-            autoComplete="off"
-            spellCheck={false}
-            required
-            style={inputStyle}
-          />
-        </label>
+        <div style={fieldStyle}>
+          <label style={fieldStyle}>
+            <span>Rig ID / Asset Tag *</span>
+            <input
+              name="itemId"
+              value={rigId}
+              onChange={(e) => changeId(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void lookup(e.currentTarget.value);
+                }
+              }}
+              placeholder="Scan or type — details load automatically"
+              autoComplete="off"
+              spellCheck={false}
+              required
+              style={inputStyle}
+            />
+          </label>
+          <CameraScanButton onScan={(code) => changeId(code)} />
+        </div>
 
         <div style={fieldStyle}>
           <span>Home hub</span>

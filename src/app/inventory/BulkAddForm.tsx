@@ -7,6 +7,7 @@ import {
   type CSSProperties,
 } from "react";
 import { useRouter } from "next/navigation";
+import CameraScanButton, { appendLine } from "../CameraScanButton";
 import styles from "../admin/admin.module.css";
 import {
   addItems,
@@ -286,6 +287,7 @@ export default function BulkAddForm({
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+        <CameraScanButton multiple onScan={(code) => changeText(appendLine(text, code))} />
         <button
           type="button"
           disabled={checking || !text.trim()}

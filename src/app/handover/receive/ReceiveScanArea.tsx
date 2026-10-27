@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Status } from "@/lib/schema";
 import styles from "../../admin/admin.module.css";
 import formStyles from "../form.module.css";
+import CameraScanButton from "../../CameraScanButton";
 import ScanBox from "../ScanBox";
 import { lookupBatch } from "./lookupBatch";
 
@@ -33,11 +34,11 @@ export default function ReceiveScanArea({
     ref.current?.focus();
   }, []);
 
-  async function load() {
-    if (!code.trim() || pending) return;
+  async function load(value = code) {
+    if (!value.trim() || pending) return;
     setPending(true);
     try {
-      const result = await lookupBatch(code);
+      const result = await lookupBatch(value);
       setMessage({ ok: result.ok, text: result.message });
       if (result.ok) {
         setInjected({ ids: result.ids, nonce: Date.now() });
@@ -74,6 +75,13 @@ export default function ReceiveScanArea({
             <button type="button" onClick={() => void load()} disabled={pending}>
               {pending ? "Loading…" : "Load batch"}
             </button>
+            <CameraScanButton
+              label="Scan receipt QR"
+              onScan={(value) => {
+                setCode(value);
+                void load(value);
+              }}
+            />
           </div>
           {message && <p className={message.ok ? styles.ok : styles.error}>{message.text}</p>}
           <p className={formStyles.hint}>

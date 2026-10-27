@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { QC_LABELS, STATUS_LABELS } from "@/lib/labels";
 import { classifyScans, type ScanState } from "@/lib/scan";
 import { OUT_STATUSES, type Status } from "@/lib/schema";
+import CameraScanButton, { appendLine } from "../CameraScanButton";
 import { TypeBadge, TypeCounts } from "../ItemTypeBadge";
 import styles from "./scanbox.module.css";
 
@@ -105,8 +106,11 @@ export default function ScanBox({
 
   return (
     <div className={styles.box}>
-      <div className={`${styles.state} ${focused ? styles.stateOn : ""}`} aria-live="polite">
-        {focused ? "Ready to scan" : "Click the box below before scanning"}
+      <div className={styles.top}>
+        <div className={`${styles.state} ${focused ? styles.stateOn : ""}`} aria-live="polite">
+          {focused ? "Ready to scan" : "Click the box below before scanning"}
+        </div>
+        <CameraScanButton multiple onScan={(code) => setText((t) => appendLine(t, code))} />
       </div>
       <textarea
         id={id}
