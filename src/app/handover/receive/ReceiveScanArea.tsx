@@ -76,6 +76,7 @@ export default function ReceiveScanArea({
               {pending ? "Loading…" : "Load batch"}
             </button>
             <CameraScanButton
+              multiple={false}
               label="Scan receipt QR"
               onScan={(value) => {
                 setCode(value);

@@ -6,9 +6,11 @@ import {
   useState,
   type CSSProperties,
 } from "react";
+import { useRouter } from "next/navigation";
 import { useFormStatus } from "react-dom";
 import styles from "../admin/admin.module.css";
 import CameraScanButton from "../CameraScanButton";
+import { cameraAddSdCard } from "./camera-add";
 import { addItem, lookupAsset } from "./actions";
 
 type Hubs = {
@@ -57,6 +59,8 @@ export default function AddCardForm({
 }: {
   hubs?: Hubs;
 }) {
+  const router = useRouter();
+  const hubRef = useRef<HTMLSelectElement>(null);
   const [serial, setSerial] = useState("");
   const [prismNo, setPrismNo] = useState("");
   const [brand, setBrand] = useState("");
@@ -309,7 +313,12 @@ export default function AddCardForm({
               style={inputStyle}
             />
           </label>
-          <CameraScanButton onScan={(code) => changeSerial(code)} />
+          <CameraScanButton
+            label="Scan & add with camera"
+            onOpen={() => hubRef.current?.reportValidity() ?? false}
+            onScan={(code) => cameraAddSdCard(code, hubRef.current?.value ?? "")}
+            onClose={(saved) => saved > 0 && router.refresh()}
+          />
         </div>
 
         {/* Home hub is mandatory. No default hub is selected. */}
@@ -317,6 +326,7 @@ export default function AddCardForm({
           <span>Home hub *</span>
 
           <select
+            ref={hubRef}
             name="homeHub"
             defaultValue=""
             required

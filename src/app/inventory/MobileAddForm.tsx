@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { useFormStatus } from "react-dom";
 import styles from "../admin/admin.module.css";
+import { useRouter } from "next/navigation";
 import CameraScanButton from "../CameraScanButton";
+import { cameraAddMobile } from "./camera-add";
 import { addMobile, lookupMobile, type MobileLookup } from "./mobile-actions";
 
 const EMPTY: MobileLookup = {
@@ -48,6 +50,7 @@ function SaveButton({ busy }: { busy: boolean }) {
  * phone is found in the mobile sheet and every other field fills in by itself.
  */
 export default function MobileAddForm({ homeHubName }: { homeHubName?: string }) {
+  const router = useRouter();
   const [find, setFind] = useState("");
   const [details, setDetails] = useState<MobileLookup>(EMPTY);
   const [found, setFound] = useState(false);
@@ -155,7 +158,11 @@ export default function MobileAddForm({ homeHubName }: { homeHubName?: string })
             required
             style={{ ...inputStyle, fontSize: "1.05rem", padding: "12px 14px" }}
           />
-          <CameraScanButton onScan={(code) => changeFind(code)} />
+          <CameraScanButton
+            label="Scan & add with camera"
+            onScan={cameraAddMobile}
+            onClose={(saved) => saved > 0 && router.refresh()}
+          />
         </label>
         <div style={fieldStyle}>
           <span>Home hub</span>

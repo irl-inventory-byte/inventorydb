@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
-import CameraScanButton, { appendLine } from "../CameraScanButton";
+import CameraScanButton from "../CameraScanButton";
+import { cameraAddMobile } from "./camera-add";
 import styles from "../admin/admin.module.css";
 import { addMobiles, checkMobiles, type MobileBulkResult, type MobileCheck } from "./mobile-actions";
 
@@ -160,7 +161,11 @@ export default function MobileBulkAddForm({ homeHubName }: { homeHubName?: strin
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
-        <CameraScanButton multiple onScan={(code) => changeText(appendLine(text, code))} />
+        <CameraScanButton
+          label="Scan & add with camera"
+          onScan={cameraAddMobile}
+          onClose={(saved) => saved > 0 && router.refresh()}
+        />
         <button type="button" disabled={checking || !text.trim()} onClick={() => void check(text)}>
           {checking ? "Fetching…" : "Fetch details"}
         </button>

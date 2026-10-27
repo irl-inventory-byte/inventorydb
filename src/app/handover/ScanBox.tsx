@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { QC_LABELS, STATUS_LABELS } from "@/lib/labels";
+import { ITEM_TYPE_LABELS, QC_LABELS, STATUS_LABELS } from "@/lib/labels";
 import { classifyScans, type ScanState } from "@/lib/scan";
 import { OUT_STATUSES, type Status } from "@/lib/schema";
-import CameraScanButton, { appendLine } from "../CameraScanButton";
+import CameraScanButton, { appendLine, type ScanOutcome } from "../CameraScanButton";
 import { TypeBadge, TypeCounts } from "../ItemTypeBadge";
 import styles from "./scanbox.module.css";
 
@@ -104,13 +104,41 @@ export default function ScanBox({
   const okTypes = results.filter((r) => r.state === "ok" && r.id).map((r) => typeOf.get(r.id!));
   const problems = results.filter((r) => r.state === "wrong" || r.state === "unknown").length;
 
+  // What the camera screen shows for one code, with the same checks as the list below.
+  function cameraOutcome(code: string): ScanOutcome {
+    const accepts = allowed ? new Set<string>(allowed) : ALLOWED[mode];
+    const phones = new Map(items.filter((i) => i.type === "mobile").map((i) => [i.id, i.aliases ?? []]));
+    const r = classifyScans(code, statuses, accepts, phones)[0];
+    if (!r || !r.id || r.state === "unknown") return { ok: false, message: "Not found in the inventory" };
+    const item = items.find((i) => i.id === r.id);
+    const type = ITEM_TYPE_LABELS[item?.type ?? "sd_card"] ?? item?.type;
+    const statusText = STATUS_LABELS[r.status as Status] ?? r.status ?? "";
+    if (r.state === "wrong") return { id: r.id, type, ok: false, message: `${statusText}: ${WRONG_HINT[mode]}` };
+    const elsewhere = mode === "send" || r.status === "pending";
+    if (hub && elsewhere && item?.hub && item.hub !== hub) {
+      const at = hubNames[item.hub] ?? item.hub;
+      return {
+        id: r.id,
+        type,
+        ok: false,
+        message: mode === "send" ? `At ${at}: choose that hub in "Sending from"` : `Sent to ${at}: switch "Receiving at"`,
+      };
+    }
+    return { id: r.id, type, ok: true, message: `${mode === "send" ? "Ready to send" : "Ready to receive"} · ${statusText}` };
+  }
+
   return (
     <div className={styles.box}>
       <div className={styles.top}>
         <div className={`${styles.state} ${focused ? styles.stateOn : ""}`} aria-live="polite">
           {focused ? "Ready to scan" : "Click the box below before scanning"}
         </div>
-        <CameraScanButton multiple onScan={(code) => setText((t) => appendLine(t, code))} />
+        <CameraScanButton
+          onScan={(code) => {
+            setText((t) => appendLine(t, code));
+            return cameraOutcome(code);
+          }}
+        />
       </div>
       <textarea
         id={id}

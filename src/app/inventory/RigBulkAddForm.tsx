@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
-import CameraScanButton, { appendLine } from "../CameraScanButton";
+import CameraScanButton from "../CameraScanButton";
+import { cameraAddRig } from "./camera-add";
 import styles from "../admin/admin.module.css";
 import { addRigs, checkRigs, type RigBulkResult, type RigCheck } from "./rig-actions";
 
@@ -159,7 +160,11 @@ export default function RigBulkAddForm({ homeHubName }: { homeHubName?: string }
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
-        <CameraScanButton multiple onScan={(code) => changeText(appendLine(text, code))} />
+        <CameraScanButton
+          label="Scan & add with camera"
+          onScan={cameraAddRig}
+          onClose={(saved) => saved > 0 && router.refresh()}
+        />
         <button type="button" disabled={checking || !text.trim()} onClick={() => void check(text)}>
           {checking ? "Fetching…" : "Fetch details"}
         </button>

@@ -46,7 +46,10 @@ export default function SearchBox({ defaultValue }: { defaultValue: string }) {
         }}
       />
       <span>
-        <CameraScanButton multiple label="Scan to search" onScan={(code) => setValue((v) => appendLine(v, code))} />
+        <CameraScanButton label="Scan to search" onScan={(code) => {
+            setValue((v) => appendLine(v, code));
+            return { ok: true, message: "Added to the search" };
+          }} />
       </span>
       {count > 1 && (
         <span style={{ fontSize: "0.78rem", color: "#64748b" }}>

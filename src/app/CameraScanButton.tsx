@@ -7,15 +7,25 @@ import styles from "./camerascan.module.css";
  * "Scan with camera": reads barcodes (lines) and QR codes with the phone's back camera, so a phone can
  * do the scanner gun's job. Works on Android (Chrome) and iPhone (Safari) over HTTPS.
  *
- * - `multiple`: keeps the camera open and adds every new code it sees (Send, Receive, bulk add, search).
- *   Otherwise the first code is used and the camera closes (single Add forms, batch receipt field).
- * - Each code is handed to `onScan` exactly as a scanner gun would type it, so the existing checks run.
+ * - `multiple` (default): the camera stays open. Every new code is handled the moment it is detected
+ *   (no button to press) and listed at the top of the screen with its ID, type and result.
+ * - `multiple={false}`: the first code is used and the camera closes (batch receipt QR).
+ * - `onScan` may return the result to show for the code (or a promise of it). Codes are handled one at a
+ *   time, in the order they were scanned, so saves never overlap.
  *
  * Android Chrome has a built-in barcode reader, which is used when present. iPhone has none, so the
  * `barcode-detector` library (ZXing) is loaded only when the camera opens.
  */
 
-// Labels in use: QR codes on mobiles and receipts, Code 128 / Code 39 style barcodes on SD cards and rigs.
+/** What to show for one scanned code. */
+export type ScanOutcome = {
+  id?: string; // the item ID, when it differs from what was scanned (e.g. a phone's IMEI)
+  type?: string; // "SD card", "Rig", "Mobile"
+  ok: boolean;
+  message: string; // "Saved", "Ready to send", "Already in the inventory", …
+};
+
+// Labels in use: QR codes on mobiles, SD cards and receipts, Code 128 / Code 39 style barcodes.
 const FORMATS = [
   "qr_code",
   "code_128",
@@ -86,20 +96,26 @@ function cameraError(error: unknown): string {
   return "The camera scanner could not start. Check your internet connection and try again.";
 }
 
+type Entry = { key: number; code: string; state: "pending" | "ok" | "bad"; outcome?: ScanOutcome };
+
 export default function CameraScanButton({
   onScan,
-  multiple = false,
+  multiple = true,
   label = "Scan with camera",
+  onOpen,
+  onClose,
 }: {
-  onScan: (code: string) => void;
+  onScan: (code: string) => void | ScanOutcome | Promise<void | ScanOutcome>;
   multiple?: boolean;
   label?: string;
+  onOpen?: () => boolean; // return false to keep the camera closed (e.g. a required field is empty)
+  onClose?: (saved: number) => void; // saved = codes with an ok result
 }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [starting, setStarting] = useState(false);
-  const [last, setLast] = useState<{ code: string; repeat: boolean; at: number } | null>(null);
-  const [count, setCount] = useState(0);
+  const [entries, setEntries] = useState<Entry[]>([]);
+  const [repeat, setRepeat] = useState<{ code: string; at: number } | null>(null);
   const [torch, setTorch] = useState<boolean | null>(null); // null: this camera has no torch
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -109,12 +125,17 @@ export default function CameraScanButton({
   const runningRef = useRef(false);
   const seenRef = useRef(new Set<string>());
   const recentRef = useRef(new Map<string, number>());
+  const queueRef = useRef<Promise<void>>(Promise.resolve());
+  const keyRef = useRef(0);
+  const savedRef = useRef(0);
 
-  // Always call the latest onScan, so codes added while the camera is open build on each other.
+  // Always call the latest callbacks.
   const onScanRef = useRef(onScan);
+  const onCloseRef = useRef(onClose);
   useEffect(() => {
     onScanRef.current = onScan;
-  }, [onScan]);
+    onCloseRef.current = onClose;
+  }, [onScan, onClose]);
 
   const stop = useCallback(() => {
     runningRef.current = false;
@@ -127,6 +148,9 @@ export default function CameraScanButton({
   const close = useCallback(() => {
     stop();
     setOpen(false);
+    const saved = savedRef.current;
+    // Let pending saves finish before the page refreshes its lists.
+    void queueRef.current.then(() => onCloseRef.current?.(savedRef.current || saved));
   }, [stop]);
 
   useEffect(() => stop, [stop]);
@@ -143,21 +167,28 @@ export default function CameraScanButton({
     };
   }, [open, close]);
 
-  function beep() {
+  function tone(ok: boolean) {
     try {
-      navigator.vibrate?.(60);
+      navigator.vibrate?.(ok ? 60 : [80, 60, 80]);
       const ctx = audioRef.current;
       if (!ctx) return;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      osc.frequency.value = 1800;
+      osc.frequency.value = ok ? 1800 : 300;
       gain.gain.value = 0.08;
       osc.connect(gain).connect(ctx.destination);
       osc.start();
-      osc.stop(ctx.currentTime + 0.09);
+      osc.stop(ctx.currentTime + (ok ? 0.09 : 0.25));
     } catch {
       // Sound and vibration are only a nicety.
     }
+  }
+
+  function settle(key: number, outcome: ScanOutcome | void) {
+    const ok = outcome ? outcome.ok : true;
+    if (ok) savedRef.current += 1;
+    if (outcome && !outcome.ok) tone(false);
+    setEntries((list) => list.map((e) => (e.key === key ? { ...e, state: ok ? "ok" : "bad", outcome: outcome || undefined } : e)));
   }
 
   function handle(codes: string[]) {
@@ -170,32 +201,39 @@ export default function CameraScanButton({
       if (seenAt !== undefined && now - seenAt < SAME_CODE_MS) continue; // still in view
 
       if (!multiple) {
-        beep();
-        onScanRef.current(code);
+        tone(true);
+        void onScanRef.current(code);
         close();
         return;
       }
       if (seenRef.current.has(code)) {
-        setLast({ code, repeat: true, at: now });
+        setRepeat({ code, at: now });
+        setTimeout(() => setRepeat((r) => (r?.at === now ? null : r)), 2500);
         continue;
       }
       seenRef.current.add(code);
-      beep();
-      onScanRef.current(code);
-      setCount((c) => c + 1);
-      setLast({ code, repeat: false, at: now });
-      // One new code per frame: the form updates before the next one is added on top of it.
-      return;
+      tone(true);
+      const key = ++keyRef.current;
+      setEntries((list) => [{ key, code, state: "pending" }, ...list]);
+      queueRef.current = queueRef.current.then(async () => {
+        try {
+          settle(key, await onScanRef.current(code));
+        } catch {
+          settle(key, { ok: false, message: "Could not save. Check the internet connection." });
+        }
+      });
     }
   }
 
   async function start() {
+    if (onOpen && onOpen() === false) return;
     setError("");
-    setLast(null);
-    setCount(0);
+    setEntries([]);
+    setRepeat(null);
     setTorch(null);
     seenRef.current = new Set();
     recentRef.current = new Map();
+    savedRef.current = 0;
     setOpen(true);
     setStarting(true);
 
@@ -270,6 +308,10 @@ export default function CameraScanButton({
     }
   }
 
+  const okCount = entries.filter((e) => e.state === "ok").length;
+  const badCount = entries.filter((e) => e.state === "bad").length;
+  const waiting = entries.some((e) => e.state === "pending");
+
   return (
     <>
       <button type="button" className={styles.trigger} onClick={() => void start()}>
@@ -286,11 +328,40 @@ export default function CameraScanButton({
           <div className={styles.frame} aria-hidden />
 
           <div className={styles.top}>
-            <span>{multiple ? "Point at each barcode or QR code" : "Point at the barcode or QR code"}</span>
-            {torch !== null && (
-              <button type="button" className={styles.ghost} onClick={() => void toggleTorch()}>
-                {torch ? "Light off" : "Light on"}
-              </button>
+            <div className={styles.head}>
+              <span>
+                {multiple
+                  ? entries.length > 0
+                    ? `${entries.length} scanned · ${okCount} ✓${badCount ? ` · ${badCount} ✕` : ""}`
+                    : "Point at each barcode or QR code"
+                  : "Point at the barcode or QR code"}
+              </span>
+              {torch !== null && (
+                <button type="button" className={styles.ghost} onClick={() => void toggleTorch()}>
+                  {torch ? "Light off" : "Light on"}
+                </button>
+              )}
+            </div>
+
+            {entries.length > 0 && (
+              <ol className={styles.list} aria-label="Scanned items" aria-live="polite">
+                {entries.map((e) => (
+                  <li key={e.key} className={e.state === "ok" ? styles.itemOk : e.state === "bad" ? styles.itemBad : styles.itemWait}>
+                    <span className={styles.mark} aria-hidden>
+                      {e.state === "ok" ? "✓" : e.state === "bad" ? "✕" : "…"}
+                    </span>
+                    <span className={styles.itemBody}>
+                      <span className={styles.itemTop}>
+                        <code className={styles.code}>{e.outcome?.id ?? e.code}</code>
+                        {e.outcome?.type && <span className={styles.type}>{e.outcome.type}</span>}
+                      </span>
+                      <span className={styles.msg}>
+                        {e.state === "pending" ? "Checking…" : (e.outcome?.message ?? "Added")}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
             )}
           </div>
 
@@ -299,23 +370,21 @@ export default function CameraScanButton({
               <p className={styles.error}>{error}</p>
             ) : starting ? (
               <p className={styles.status}>Starting camera…</p>
-            ) : last ? (
-              <p key={last.at} className={last.repeat ? styles.repeat : styles.added}>
-                {last.repeat ? "Already scanned: " : "Added: "}
-                <code>{last.code}</code>
+            ) : repeat ? (
+              <p key={repeat.at} className={styles.repeat}>
+                Already scanned: <code>{repeat.code}</code>
               </p>
             ) : (
-              <p className={styles.status}>Hold steady about a hand’s length away.</p>
+              <p className={styles.status}>Hold steady about a hand’s length away. Each code is added automatically.</p>
             )}
             <div className={styles.actions}>
-              {multiple && !error && <span className={styles.count}>{count} scanned</span>}
               {error && (
                 <button type="button" className={styles.ghost} onClick={() => void start()}>
                   Try again
                 </button>
               )}
               <button type="button" className={styles.done} onClick={close}>
-                {multiple && count > 0 ? "Done" : "Close"}
+                {waiting ? "Finishing…" : entries.length > 0 ? "Done" : "Close"}
               </button>
             </div>
           </div>
