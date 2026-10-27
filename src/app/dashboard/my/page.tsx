@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/authz";
 import { QC_LABELS, ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
-import { OUT_STATUSES, type HardwareUpdate, type QcCheck, type Status } from "@/lib/schema";
+import { OUT_STATUSES, type HardwareUpdate, type Item, type QcCheck, type Status } from "@/lib/schema";
 import { MY_DASHBOARD_ROLES, RECEIVE_ROLES, storeFor } from "@/lib/access";
 import { formatIst } from "@/lib/time";
 import styles from "../dashboard.module.css";
@@ -25,6 +25,38 @@ const ACTION_LABELS: Record<string, string> = {
   correct: "Corrected",
   import: "Imported",
 };
+
+/**
+ * One line of a card's breakdown: the rig (IC number) and the details needed to
+ * recognise it without opening the item page.
+ */
+interface DetailRow {
+  key: string;
+  itemId: string;
+  prism: string;
+  brand: string;
+  model: string;
+  status: string;
+  qc: string;
+  where: string;
+  when: string;
+  note: string;
+}
+
+/**
+ * A summary card. `view` makes the card clickable: the rigs behind the number are
+ * listed under the cards when ?view= matches.
+ */
+interface Metric {
+  label: string;
+  value: string;
+  view?: string;
+  rows?: DetailRow[];
+  /** Heading for the breakdown, when the card label doesn't read well as one. */
+  rowsTitle?: string;
+  /** What `when` holds for this card, e.g. "Recorded at". */
+  whenLabel?: string;
+}
 
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
@@ -59,6 +91,7 @@ export default async function MyDashboardPage({
 }: {
   searchParams: Promise<{
     page?: string | string[];
+    view?: string | string[];
   }>;
 }) {
   // Authenticate and authorize on the server.
@@ -118,6 +151,12 @@ export default async function MyDashboardPage({
   const hubNames = new Map(
     hubs.map((hub) => [hub.hub_id, hub.name])
   );
+
+  const personNames = new Map(
+    people.map((person) => [person.person_id, person.name])
+  );
+
+  const itemById = new Map(items.map((item) => [item.item_id, item]));
 
   /*
    * PERSONAL ACTIVITY
@@ -257,8 +296,10 @@ export default async function MyDashboardPage({
   );
 
   // Where this login sent rigs: to an IM (QC pass / repaired) or to the hardware team (QC fail).
-  const sentToIm = myEvents.filter((e) => e.action === "check_out" && e.status_after === "pending").length;
-  const sentToHardware = myEvents.filter((e) => e.action === "check_out" && e.status_after === "with_hardware").length;
+  const sentToImEvents = myEvents.filter((e) => e.action === "check_out" && e.status_after === "pending");
+  const sentToHardwareEvents = myEvents.filter((e) => e.action === "check_out" && e.status_after === "with_hardware");
+  const sentToIm = sentToImEvents.length;
+  const sentToHardware = sentToHardwareEvents.length;
 
   // A rig with me is waiting for QC when no result was recorded since it reached me.
   const waitingForQc = (item: (typeof items)[number]) => {
@@ -270,29 +311,188 @@ export default async function MyDashboardPage({
   // Rigs sent to my team that nobody has received yet (Receive items shows the same list). Anyone in the
   // team can receive them, so the whole team's count is shown, with how many were sent to me by name.
   const teamWaiting = items.filter((i) => i.status === (isQc ? "pending_qc" : "pending_hardware"));
+  const teamWaitingMine = linkedPerson ? teamWaiting.filter((i) => i.current_holder === linkedPerson.person_id) : [];
   const toReceive = teamWaiting.length;
-  const toReceiveMine = linkedPerson ? teamWaiting.filter((i) => i.current_holder === linkedPerson.person_id).length : 0;
+  const toReceiveMine = teamWaitingMine.length;
 
-  const qcMetrics = [
-    { label: "Waiting for the QC team to receive", value: numberText(toReceive) },
-    { label: "Of these, sent to me", value: numberText(toReceiveMine) },
-    { label: "Rigs with me", value: numberText(withMeItems.length) },
-    { label: "Waiting for my QC result", value: numberText(withMeItems.filter(waitingForQc).length) },
-    { label: "QC pass recorded", value: numberText(myQc.filter((c) => c.qc_status === "pass").length) },
-    { label: "QC fail recorded", value: numberText(myQc.filter((c) => c.qc_status === "fail").length) },
-    { label: "Sent to IM", value: numberText(sentToIm) },
-    { label: "Sent to hardware team", value: numberText(sentToHardware) },
+  /*
+   * BREAKDOWN ROWS
+   *
+   * Each card's number is turned into the rigs behind it, so clicking the card
+   * shows the IC numbers and their details without a trip to another page.
+   */
+
+  // Where a rig is right now: the person holding it, else its hub.
+  const whereOf = (item: Item | undefined) =>
+    (item && (personNames.get(item.current_holder) ?? hubNames.get(item.current_hub) ?? item.current_hub)) || "—";
+
+  const rowFromItem = (item: Item, extra?: { when?: string; note?: string }): DetailRow => ({
+    key: item.item_id,
+    itemId: item.item_id,
+    prism: item.prism_no || "",
+    brand: item.brand || "",
+    model: item.model || "",
+    status: STATUS_LABELS[item.status] ?? item.status,
+    qc: latestQc.get(item.item_id) || "qc_pending",
+    where: whereOf(item),
+    when: extra?.when ?? (eventById.get(item.last_event_id)?.occurred_at || item.updated_at || ""),
+    note: extra?.note ?? "",
+  });
+
+  // A row for a QC result or hardware update: the rig's details, plus when and what was written.
+  const rowFromRecord = (
+    id: string,
+    itemId: string,
+    when: string,
+    note: string,
+    qcOverride?: string,
+  ): DetailRow => {
+    const item = itemById.get(itemId);
+    return {
+      key: id,
+      itemId,
+      prism: item?.prism_no || "",
+      brand: item?.brand || "",
+      model: item?.model || "",
+      status: item ? STATUS_LABELS[item.status] ?? item.status : "—",
+      qc: qcOverride ?? latestQc.get(itemId) ?? "qc_pending",
+      where: whereOf(item),
+      when,
+      note,
+    };
+  };
+
+  const itemRows = (list: Item[]) => list.map((item) => rowFromItem(item));
+
+  // Rigs this login sent on: the event says when and to whom.
+  const sentRows = (list: typeof myEvents) =>
+    list.map((event) => {
+      const item = itemById.get(event.item_id);
+      return {
+        ...rowFromRecord(event.event_id, event.item_id, event.occurred_at || event.recorded_at, event.note || ""),
+        where: event.to_person || whereOf(item),
+      };
+    });
+
+  const qcRows = (list: QcCheck[]) =>
+    list.map((c) => rowFromRecord(c.check_id, c.item_id, c.recorded_at, c.comment || "", c.qc_status));
+
+  const hardwareRows = (list: HardwareUpdate[]) =>
+    list.map((h) =>
+      rowFromRecord(h.update_id, h.item_id, h.recorded_at, [h.update_type, h.comment].filter(Boolean).join(": ")),
+    );
+
+  const qcMetrics: Metric[] = [
+    {
+      label: "Waiting for the QC team to receive",
+      value: numberText(toReceive),
+      view: "to_receive",
+      rows: itemRows(teamWaiting),
+      rowsTitle: "Rigs sent to the QC team, not received yet",
+      whenLabel: "Sent at",
+    },
+    {
+      label: "Of these, sent to me",
+      value: numberText(toReceiveMine),
+      view: "to_receive_mine",
+      rows: itemRows(teamWaitingMine),
+      rowsTitle: "Rigs sent to me, not received yet",
+      whenLabel: "Sent at",
+    },
+    {
+      label: "Rigs with me",
+      value: numberText(withMeItems.length),
+      view: "with_me",
+      rows: itemRows(withMeItems),
+      rowsTitle: "Rigs currently with me",
+      whenLabel: "Since",
+    },
+    {
+      label: "Waiting for my QC result",
+      value: numberText(withMeItems.filter(waitingForQc).length),
+      view: "awaiting_qc",
+      rows: itemRows(withMeItems.filter(waitingForQc)),
+      rowsTitle: "Rigs with me that still need a QC result",
+      whenLabel: "Since",
+    },
+    {
+      label: "QC pass recorded",
+      value: numberText(myQc.filter((c) => c.qc_status === "pass").length),
+      view: "qc_pass",
+      rows: qcRows(myQc.filter((c) => c.qc_status === "pass")),
+      rowsTitle: "Rigs I passed",
+      whenLabel: "Recorded at",
+    },
+    {
+      label: "QC fail recorded",
+      value: numberText(myQc.filter((c) => c.qc_status === "fail").length),
+      view: "qc_fail",
+      rows: qcRows(myQc.filter((c) => c.qc_status === "fail")),
+      rowsTitle: "Rigs I failed",
+      whenLabel: "Recorded at",
+    },
+    {
+      label: "Sent to IM",
+      value: numberText(sentToIm),
+      view: "sent_im",
+      rows: sentRows(sentToImEvents),
+      rowsTitle: "Rigs I sent to an IM",
+      whenLabel: "Sent at",
+    },
+    {
+      label: "Sent to hardware team",
+      value: numberText(sentToHardware),
+      view: "sent_hardware",
+      rows: sentRows(sentToHardwareEvents),
+      rowsTitle: "Rigs I sent to the hardware team",
+      whenLabel: "Sent at",
+    },
   ];
 
-  const hardwareMetrics = [
-    { label: "Waiting for the hardware team to receive", value: numberText(toReceive) },
-    { label: "Of these, sent to me", value: numberText(toReceiveMine) },
-    { label: "Rigs with me", value: numberText(withMeItems.length) },
-    { label: "Hardware updates logged", value: numberText(myHardware.length) },
-    { label: "Repaired and sent to IM", value: numberText(sentToIm) },
+  const hardwareMetrics: Metric[] = [
+    {
+      label: "Waiting for the hardware team to receive",
+      value: numberText(toReceive),
+      view: "to_receive",
+      rows: itemRows(teamWaiting),
+      rowsTitle: "Rigs sent to the hardware team, not received yet",
+      whenLabel: "Sent at",
+    },
+    {
+      label: "Of these, sent to me",
+      value: numberText(toReceiveMine),
+      view: "to_receive_mine",
+      rows: itemRows(teamWaitingMine),
+      rowsTitle: "Rigs sent to me, not received yet",
+      whenLabel: "Sent at",
+    },
+    {
+      label: "Rigs with me",
+      value: numberText(withMeItems.length),
+      view: "with_me",
+      rows: itemRows(withMeItems),
+      rowsTitle: "Rigs currently with me",
+      whenLabel: "Since",
+    },
+    {
+      label: "Hardware updates logged",
+      value: numberText(myHardware.length),
+      view: "hw_updates",
+      rows: hardwareRows(myHardware),
+      rowsTitle: "Hardware updates I logged",
+      whenLabel: "Recorded at",
+    },
+    {
+      label: "Repaired and sent to IM",
+      value: numberText(sentToIm),
+      view: "sent_im",
+      rows: sentRows(sentToImEvents),
+      rowsTitle: "Rigs I repaired and sent to an IM",
+      whenLabel: "Sent at",
+    },
   ];
 
-  const handlerMetrics = [
+  const handlerMetrics: Metric[] = [
     {
       label: "My recorded events",
       value: numberText(myEvents.length),
@@ -312,11 +512,25 @@ export default async function MyDashboardPage({
     {
       label: "Items currently with me",
       value: numberText(withMeItems.length),
+      view: "with_me",
+      rows: itemRows(withMeItems),
+      rowsTitle: "Items currently with me",
+      whenLabel: "Since",
     },
   ];
 
   const metrics = isQc ? qcMetrics : isHardware ? hardwareMetrics : handlerMetrics;
   const withMeTitle = isQc || isHardware ? "Rigs currently with me" : "Items currently with me";
+
+  // The card the breakdown is open on, from ?view=.
+  const requestedView = one(sp.view);
+  const openMetric = metrics.find((m) => m.view && m.view === requestedView);
+  const openRows = openMetric?.rows ?? [];
+  const showQcColumn = isQc || isHardware;
+
+  // Keeps the breakdown open while paging through the activity list below.
+  const pageHref = (n: number) =>
+    openMetric?.view ? `/dashboard/my?view=${openMetric.view}&page=${n}` : `/dashboard/my?page=${n}`;
 
   return (
     <div className={styles.root}>
@@ -373,6 +587,12 @@ export default async function MyDashboardPage({
                 Rig checks
               </Link>
             )}
+
+            {(isQc || isHardware) && (
+              <Link href="/rigs/audit" className={styles.btn}>
+                Audit trail
+              </Link>
+            )}
           </div>
         </div>
 
@@ -384,7 +604,7 @@ export default async function MyDashboardPage({
           </p>
         )}
 
-        {/* Personal summary cards. */}
+        {/* Personal summary cards. A card with a breakdown opens it below when clicked. */}
         <section
           aria-label="My activity summary"
           style={{
@@ -395,21 +615,131 @@ export default async function MyDashboardPage({
             marginBottom: 24,
           }}
         >
-          {metrics.map((metric) => (
-            <div
-              key={metric.label}
-              className={styles.summary}
-            >
-              <span className={styles.summaryLabel}>
-                {metric.label}
-              </span>
+          {metrics.map((metric) => {
+            const open = Boolean(metric.view) && metric.view === openMetric?.view;
 
-              <span className={styles.summaryValue}>
-                {metric.value}
-              </span>
-            </div>
-          ))}
+            const body = (
+              <>
+                <span className={styles.summaryLabel}>
+                  {metric.label}
+                </span>
+
+                <span className={styles.summaryValue}>
+                  {metric.value}
+                </span>
+
+                {metric.view && (
+                  <span className={styles.summaryNote}>
+                    {open ? "Hide details" : "Show details"}
+                  </span>
+                )}
+              </>
+            );
+
+            // Cards without a breakdown stay plain text, so nothing looks clickable for no reason.
+            if (!metric.view) {
+              return (
+                <div key={metric.label} className={styles.summary}>
+                  {body}
+                </div>
+              );
+            }
+
+            return (
+              <Link
+                key={metric.label}
+                href={open ? "/dashboard/my" : `/dashboard/my?view=${metric.view}`}
+                className={styles.summary}
+                aria-current={open ? "true" : undefined}
+                scroll={false}
+                style={
+                  open
+                    ? { borderColor: "var(--text-primary)", boxShadow: "0 4px 14px rgba(11, 11, 11, 0.1)" }
+                    : undefined
+                }
+              >
+                {body}
+              </Link>
+            );
+          })}
         </section>
+
+        {/* The rigs behind the card that was clicked: IC number first, then the details. */}
+        {openMetric && (
+          <section className={styles.card} aria-label={openMetric.rowsTitle ?? openMetric.label} style={{ marginBottom: 24 }}>
+            <div className={styles.top}>
+              <h2>{openMetric.rowsTitle ?? openMetric.label}</h2>
+
+              <div className={styles.actions}>
+                <Link href="/dashboard/my" className={styles.btn}>
+                  Close
+                </Link>
+              </div>
+            </div>
+
+            {openRows.length === 0 ? (
+              <p className={styles.muted}>Nothing to show here right now.</p>
+            ) : (
+              <div
+                className={styles.tableScroll}
+                role="region"
+                aria-label={openMetric.rowsTitle ?? openMetric.label}
+                tabIndex={0}
+                style={{ maxHeight: "500px", overflow: "auto" }}
+              >
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th scope="col">IC number</th>
+                      <th scope="col">Prism no.</th>
+                      <th scope="col">Brand</th>
+                      <th scope="col">Model</th>
+                      <th scope="col">Status</th>
+                      {showQcColumn && <th scope="col">QC</th>}
+                      <th scope="col">Where</th>
+                      <th scope="col">{openMetric.whenLabel ?? "When"} (IST)</th>
+                      <th scope="col">Note</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {openRows.map((row) => (
+                      <tr key={row.key}>
+                        <td>
+                          <Link href={`/inventory/${encodeURIComponent(row.itemId)}`}>{row.itemId}</Link>
+                        </td>
+
+                        <td>{row.prism || "—"}</td>
+                        <td>{row.brand || "—"}</td>
+                        <td>{row.model || "—"}</td>
+                        <td>{row.status}</td>
+
+                        {showQcColumn && (
+                          <td style={{ fontWeight: 600, color: QC_COLOR[row.qc] }}>
+                            {QC_LABELS[row.qc] ?? row.qc}
+                          </td>
+                        )}
+
+                        <td style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>{row.where || "—"}</td>
+                        <td>{displayTime(row.when)}</td>
+                        <td style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>{row.note || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+
+                  <tfoot>
+                    <tr>
+                      <th scope="row">Total</th>
+                      <td colSpan={showQcColumn ? 8 : 7}>
+                        <strong>{numberText(openRows.length)}</strong>
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Items assigned to the person linked to this login. */}
         <section
@@ -707,7 +1037,7 @@ export default async function MyDashboardPage({
               >
                 {page > 1 && (
                   <Link
-                    href={`/dashboard/my?page=${page - 1}`}
+                    href={pageHref(page - 1)}
                     className={styles.btn}
                   >
                     ← Previous
@@ -720,7 +1050,7 @@ export default async function MyDashboardPage({
 
                 {page < totalPages && (
                   <Link
-                    href={`/dashboard/my?page=${page + 1}`}
+                    href={pageHref(page + 1)}
                     className={styles.btn}
                   >
                     Next →
