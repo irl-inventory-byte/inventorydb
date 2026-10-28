@@ -14,6 +14,9 @@ const daysSince = (ts: string, now: Date) => (ts ? Math.floor((now.getTime() - D
 const TOP = 10;
 
 const CSS = `
+#field-usage{grid-template-columns:minmax(0,1fr)}
+#field-usage>*,.fu-grid>*,.fu-list{min-width:0}
+.fu-list td.fu-wrap{white-space:normal;min-width:150px}
 .fu-filters{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin:2px 0 8px}
 .fu-filters label{display:flex;gap:6px;align-items:center;font-size:.9rem;color:var(--text-secondary)}
 .fu-filters select{min-width:150px;max-width:240px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-1);color:var(--text-primary);font:inherit}
@@ -118,11 +121,11 @@ export function FieldUsageCard({
                 </td>
                 <td className={styles.num}>{r.fieldDays.toLocaleString("en-IN")}</td>
                 <td className={styles.num}>{n(r.fos)}</td>
-                <td>
+                <td className="fu-wrap">
                   {when(r.lastUsed)}
                   {since !== null && <span className={styles.muted}> ({n(since)} d ago{r.lastFo ? `, ${r.lastFo}` : ""})</span>}
                 </td>
-                <td>{now_(r)}</td>
+                <td className="fu-wrap">{now_(r)}</td>
               </tr>
             );
           })}

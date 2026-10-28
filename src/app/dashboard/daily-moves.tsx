@@ -22,6 +22,8 @@ const PLOT_HEIGHT = 200;
 
 // Layout for this chart only (kept here so no shared CSS file has to change).
 const CSS = `
+#moved,#moved-hourly{grid-template-columns:minmax(0,1fr)}
+#moved>*,#moved-hourly>*{min-width:0}
 .dm-filters{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin:2px 0 4px}
 .dm-filters label{display:flex;gap:6px;align-items:center;font-size:.9rem;color:var(--text-secondary)}
 .dm-filters select{min-width:170px;max-width:260px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-1);color:var(--text-primary);font:inherit}

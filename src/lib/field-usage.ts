@@ -41,7 +41,13 @@ export interface FieldUsage {
   items: number; // items in scope
 }
 
-export const modelLabel = (i: Pick<Item, "brand" | "model">) => [i.brand, i.model].map((s) => (s ?? "").trim()).filter(Boolean).join(" ");
+/** "Brand Model", without repeating the brand when the model already starts with it ("SanDisk Extreme"). */
+export const modelLabel = (i: Pick<Item, "brand" | "model">) => {
+  const brand = (i.brand ?? "").trim();
+  const model = (i.model ?? "").trim();
+  if (brand && model.toLowerCase().startsWith(brand.toLowerCase())) return model;
+  return [brand, model].filter(Boolean).join(" ");
+};
 
 const isFoCheckout = (e: ItemEvent) => e.action === "check_out" && e.status_after === "with_fo";
 

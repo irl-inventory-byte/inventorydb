@@ -18,7 +18,10 @@ export interface SupabaseConfig {
 
 const PAGE = 1000; // Supabase returns at most 1000 rows per request
 const CHUNK = 500; // rows per write request
-const PARALLEL = 8; // page requests at the same time when reading a big table
+const PARALLEL = 16; // page requests at the same time when reading a big table
+// Events only ever grow (a send or receive adds rows), so after one full download only the new rows are
+// fetched. A full download still happens this often, and whenever the row count shows rows were removed.
+const EVENTS_FULL_MS = 10 * 60 * 1000;
 const VERSIONS_MS = 1000; // reads within this time share one check of the change counters
 
 const tabs = Object.keys(TABS) as TabName[];
@@ -111,6 +114,8 @@ export class SupabaseBackend implements TableBackend {
   /** Forget kept copies (and the counters) so the next read cannot miss a write. */
   private forget(...tabs: TabName[]) {
     for (const t of tabs) this.kept.delete(t);
+    // New events are picked up by the next read anyway; edits and deletions need a full download.
+    if (tabs.includes("events")) this.events = this.events && { ...this.events, at: 0 };
     this.versions = null;
   }
 
@@ -124,17 +129,63 @@ export class SupabaseBackend implements TableBackend {
     }
   }
 
+  // Events: the kept copy, the highest _seq in it, and when it was fully downloaded.
+  private events: { rows: Row[]; maxSeq: number; at: number } | null = null;
+  private eventsRead: Promise<Row[]> | null = null;
+
+  /**
+   * Events, oldest first, without downloading the whole history each time: fetch only rows added since
+   * the kept copy (_seq greater than the last one), and check the total row count at the same time.
+   * If the count does not match (rows were deleted), or the copy is older than EVENTS_FULL_MS, everything
+   * is downloaded again. Reads that arrive together share one request.
+   */
+  private readEvents(): Promise<Row[]> {
+    this.eventsRead ??= this.refreshEvents().finally(() => {
+      this.eventsRead = null;
+    });
+    return this.eventsRead;
+  }
+
+  private async refreshEvents(): Promise<Row[]> {
+    const kept = this.events;
+    if (kept && Date.now() - kept.at < EVENTS_FULL_MS) {
+      try {
+        const [added, total] = await Promise.all([this.download("events", kept.maxSeq), this.count("events")]);
+        if (this.events === kept && total === kept.rows.length + added.rows.length) {
+          kept.rows.push(...added.rows);
+          kept.maxSeq = Math.max(kept.maxSeq, added.maxSeq);
+          return kept.rows;
+        }
+      } catch {
+        // Fall through to a full download.
+      }
+    }
+    const full = await this.download("events");
+    this.events = { rows: full.rows, maxSeq: full.maxSeq, at: Date.now() };
+    return full.rows;
+  }
+
+  /** Total rows in a table (one small request). */
+  private async count(tab: TabName): Promise<number> {
+    const res = await this.call("GET", tab, "select=_seq&limit=1", undefined, { Prefer: "count=exact" });
+    const total = Number(res.headers.get("content-range")?.split("/")[1]);
+    if (!Number.isFinite(total)) throw new Error("no row count");
+    return total;
+  }
+
   /** All rows, oldest first; reuses the kept copy when the table has not changed since. */
   async readAll(tab: TabName): Promise<Row[]> {
+    if (tab === "events") return (await this.readEvents()).map((r) => ({ ...r }));
+
     // Counter BEFORE rows: a write that lands in between makes the next read fetch again.
     const map = await this.readVersions();
-    if (!map) return this.download(tab);
+    if (!map) return (await this.download(tab)).rows;
 
     const v = map.get(tab) ?? "0"; // "0" = never written since the counters were added
     const hit = this.kept.get(tab);
     if (hit && hit.v === v) return hit.rows.map((r) => ({ ...r }));
 
-    const rows = await this.download(tab);
+    const { rows } = await this.download(tab);
     this.kept.set(tab, { v, rows });
     return rows.map((r) => ({ ...r }));
   }
@@ -144,13 +195,17 @@ export class SupabaseBackend implements TableBackend {
    * many requests. The first one also asks for the total, then the rest are fetched AT THE SAME TIME
    * (PARALLEL at once) instead of one after another, so 50 pages take about as long as 7, not 50.
    */
-  private async download(tab: TabName): Promise<Row[]> {
+  private async download(tab: TabName, afterSeq?: number): Promise<{ rows: Row[]; maxSeq: number }> {
     const columns = TABS[tab];
-    const select = `select=${columns.join(",")}&order=_seq.asc`;
+    const since = afterSeq === undefined ? "" : `&_seq=gt.${afterSeq}`;
+    const select = `select=${columns.join(",")},_seq${since}&order=_seq.asc`;
+    let maxSeq = afterSeq ?? 0;
     const toRows = (page: Record<string, unknown>[]): Row[] =>
       page.map((r) => {
         const row: Row = {};
         for (const c of columns) row[c] = r[c] === null || r[c] === undefined ? "" : String(r[c]);
+        const seq = Number(r._seq);
+        if (seq > maxSeq) maxSeq = seq;
         return row;
       });
     const fetchPage = async (offset: number, count = false) => {
@@ -191,7 +246,8 @@ export class SupabaseBackend implements TableBackend {
       for (let o = PAGE; pages[pages.length - 1].length === PAGE; o += PAGE) pages.push((await fetchPage(o)).page);
     }
 
-    return pages.flatMap(toRows);
+    const rows = pages.flatMap(toRows);
+    return { rows, maxSeq };
   }
 
   async append(tab: TabName, rows: Row[]) {
