@@ -283,6 +283,7 @@ export default async function ReceiptPage({
               width={180}
               height={48}
               loading="eager"
+              className={styles.receiptLogo}
               style={{
                 display: "block",
                 width: 180,
@@ -536,6 +537,7 @@ export default async function ReceiptPage({
             On a return receipt it only shows when something is still out. */}
         {(!ret || missingCount > 0) && (
           <p
+            className={styles.receiptWarn}
             style={{
               marginTop: 8,
               padding: "12px 14px",

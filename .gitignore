@@ -42,3 +42,6 @@ next-env.d.ts
 
 # keep the env template committed
 !.env.local.example
+
+# camera scanner engine, copied at build time (scripts/copy-zxing-wasm.mjs)
+/public/zxing/

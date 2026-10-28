@@ -344,3 +344,8 @@ a {
     animation: none;
   }
 }
+/* Printed pages (receipts): small margins so a receipt fits on one A4 sheet. */
+@page {
+  size: A4;
+  margin: 8mm;
+}

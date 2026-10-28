@@ -141,25 +141,25 @@ export default function MobileAddForm({ homeHubName }: { homeHubName?: string })
           alignItems: "end",
         }}
       >
-        <label style={{ ...fieldStyle, gridColumn: "span 2" }}>
-          <span>
-            <strong>IMEI, Asset Tag or Serial *</strong>
-          </span>
-          <input
-            name="find"
-            value={find}
-            onChange={(e) => changeFind(e.target.value)}
-            onKeyDown={onEnter}
-            placeholder="Scan the QR code, or type the IMEI, Asset Tag or Serial"
-            autoComplete="off"
-            spellCheck={false}
-            required
-            style={{ ...inputStyle, fontSize: "1.05rem", padding: "12px 14px" }}
-          />
-          <CameraAddBox
-            save={cameraAddMobile}
-          />
-        </label>
+        <div style={{ ...fieldStyle, gridColumn: "span 2" }}>
+          <label style={fieldStyle}>
+            <span>
+              <strong>IMEI, Asset Tag or Serial *</strong>
+            </span>
+            <input
+              name="find"
+              value={find}
+              onChange={(e) => changeFind(e.target.value)}
+              onKeyDown={onEnter}
+              placeholder="Scan the QR code, or type the IMEI, Asset Tag or Serial"
+              autoComplete="off"
+              spellCheck={false}
+              required
+              style={{ ...inputStyle, fontSize: "1.05rem", padding: "12px 14px" }}
+            />
+          </label>
+          <CameraAddBox save={cameraAddMobile} />
+        </div>
         <div style={fieldStyle}>
           <span>Home hub</span>
           <strong style={{ padding: "10px 0" }}>{homeHubName || "Instawork Robotics Labs"}</strong>

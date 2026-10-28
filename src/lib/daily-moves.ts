@@ -26,14 +26,20 @@ const addDays = (iso: string, n: number) => new Date(dayMs(iso) + n * DAY).toISO
  * The range to show from the ?mfrom= / ?mto= values. Missing or invalid → the last `defaultDays` days up to
  * today (India). From after To → swapped. Longer than MAX_RANGE_DAYS → cut to the last MAX_RANGE_DAYS days.
  */
-export function pickRange(fromRaw: string, toRaw: string, now: Date, defaultDays = 14): DayRange & { days: number; cut: boolean } {
+export function pickRange(
+  fromRaw: string,
+  toRaw: string,
+  now: Date,
+  defaultDays = 14,
+  maxDays = MAX_RANGE_DAYS,
+): DayRange & { days: number; cut: boolean } {
   const today = istDate(now);
   let to = isDay(toRaw) ? toRaw : today;
   let from = isDay(fromRaw) ? fromRaw : addDays(to, -(defaultDays - 1));
   if (from > to) [from, to] = [to, from];
   let cut = false;
-  if ((dayMs(to) - dayMs(from)) / DAY + 1 > MAX_RANGE_DAYS) {
-    from = addDays(to, -(MAX_RANGE_DAYS - 1));
+  if ((dayMs(to) - dayMs(from)) / DAY + 1 > maxDays) {
+    from = addDays(to, -(maxDays - 1));
     cut = true;
   }
   return { from, to, days: Math.round((dayMs(to) - dayMs(from)) / DAY) + 1, cut };
@@ -129,3 +135,36 @@ export function moveFilterOptions(events: ItemEvent[], hubs: Hub[], people: Pers
 
 /** Short number for a bar label: 950, 1.2k, 12k. */
 export const compact = (v: number) => (v < 1000 ? String(v) : v < 10000 ? `${(v / 1000).toFixed(1).replace(/\.0$/, "")}k` : `${Math.round(v / 1000)}k`);
+export interface MoveHour {
+  hour: number; // 0–23, India time
+  sent: number; // check-outs
+  received: number; // check-ins
+}
+
+/**
+ * Items sent and received per hour of the day (India time, 00:00–23:59), added up over every day from
+ * range.from to range.to, after the same person / city / role filter as the day chart. Shows the busy hours.
+ */
+export function hourlyMoves(
+  events: ItemEvent[],
+  hubs: Hub[],
+  range: DayRange,
+  f: MoveFilter = {},
+  people: Person[] = [],
+): MoveHour[] {
+  const city = hubCityMap(hubs);
+  const roleOf = new Map(people.map((p) => [p.person_id, p.role as string]));
+  const out: MoveHour[] = Array.from({ length: 24 }, (_, hour) => ({ hour, sent: 0, received: 0 }));
+  for (const e of events) {
+    if (e.action !== "check_out" && e.action !== "receive") continue;
+    const at = Date.parse(e.occurred_at);
+    if (Number.isNaN(at)) continue;
+    const ist = new Date(at + 5.5 * 3_600_000);
+    const day = ist.toISOString().slice(0, 10);
+    if (day < range.from || day > range.to || !matchesMove(e, f, city, roleOf)) continue;
+    const slot = out[ist.getUTCHours()];
+    if (e.action === "check_out") slot.sent++;
+    else slot.received++;
+  }
+  return out;
+}

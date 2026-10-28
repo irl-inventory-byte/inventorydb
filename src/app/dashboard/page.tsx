@@ -10,7 +10,9 @@ import TypeSwitch from "../TypeSwitch";
 import RoleSwitch from "../RoleSwitch";
 import { BarList, n, type BarRow } from "./charts";
 import { DailyMoves } from "./daily-moves";
-import { dailyMoves, moveFilterOptions, pickRange } from "@/lib/daily-moves";
+import { FieldUsageCard } from "./field-usage";
+import { fieldUsage, usageFilterOptions } from "@/lib/field-usage";
+import { dailyMoves, hourlyMoves, moveFilterOptions, pickRange } from "@/lib/daily-moves";
 import { formatIst, istDate } from "@/lib/time";
 import styles from "./dashboard.module.css";
 import { HubOrgChart, countHidden } from "./hub-tree-view";
@@ -159,6 +161,9 @@ function MobileCharts({ items }: { items: Item[] }) {
     </>
   );
 }
+// Field usage filter settings, kept when another dashboard filter is applied.
+const USAGE_KEYS = ["ufrom", "uto", "ucity", "uperson", "umodel", "uout"];
+
 export default async function DashboardPage({ searchParams }: PageProps<"/dashboard">) {
   const user = await requireRole();
   const sp = await searchParams;
@@ -617,7 +622,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const detailKey = one(sp.adetail);
   const detailRow = shownDelayed.find((g) => g.key === detailKey);
   const attentionKeep: Record<string, string> = {};
-  for (const k of ["type", "empty", "acity", "arole", "mperson", "mcity", "mrole", "mfrom", "mto"]) if (one(sp[k])) attentionKeep[k] = one(sp[k]);
+  for (const k of ["type", "empty", "acity", "arole", "mperson", "mcity", "mrole", "mfrom", "mto", ...USAGE_KEYS]) if (one(sp[k])) attentionKeep[k] = one(sp[k]);
   const detailHref = (key: string) => `/dashboard?${new URLSearchParams({ ...attentionKeep, adetail: key })}#delayed-items`;
   const closeDetailHref = `/dashboard?${new URLSearchParams(attentionKeep)}#attention`;
   // "Moved per day" chart: person, city and role filters (?mperson=…&mcity=…&mrole=…). Other settings are kept.
@@ -627,9 +632,21 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // Date range (?mfrom=YYYY-MM-DD&mto=YYYY-MM-DD). Default: the last 14 days.
   const moveRange = pickRange(one(sp.mfrom), one(sp.mto), now, 14);
   const movedDays = dailyMoves(events, hubs, moveRange, { person: movePerson, city: moveCity, role: moveRole }, people);
+  const movedHours = hourlyMoves(events, hubs, moveRange, { person: movePerson, city: moveCity, role: moveRole }, people);
   const moveOptions = moveFilterOptions(events, hubs, people, moveRange);
   const moveKeep: Record<string, string> = {};
-  for (const k of ["type", "acity", "arole", "empty"]) if (one(sp[k])) moveKeep[k] = one(sp[k]);
+  for (const k of ["type", "acity", "arole", "empty", ...USAGE_KEYS]) if (one(sp[k])) moveKeep[k] = one(sp[k]);
+
+  // Field usage (most / least / never used on field): ?ufrom=&uto=&ucity=&uperson=&umodel=&uout=1. Default: last 30 days.
+  const usageRange = pickRange(one(sp.ufrom), one(sp.uto), now, 30, 366);
+  const usageCity = one(sp.ucity);
+  const usagePerson = one(sp.uperson);
+  const usageModel = one(sp.umodel);
+  const usageOut = one(sp.uout) === "1";
+  const usage = fieldUsage(items, events, hubs, people, usageRange, { city: usageCity, person: usagePerson, model: usageModel, includeOut: usageOut }, now);
+  const usageOptions = usageFilterOptions(items, events, hubs, people);
+  const usageKeep: Record<string, string> = {};
+  for (const k of ["type", "empty", "acity", "arole", "mperson", "mcity", "mrole", "mfrom", "mto"]) if (one(sp[k])) usageKeep[k] = one(sp[k]);
 
   const keepParams: Record<string, string> = {};
   if (one(sp.type)) keepParams.type = one(sp.type);
@@ -639,6 +656,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   if (moveRole) keepParams.mrole = moveRole;
   if (one(sp.mfrom)) keepParams.mfrom = one(sp.mfrom);
   if (one(sp.mto)) keepParams.mto = one(sp.mto);
+  for (const k of USAGE_KEYS) if (one(sp[k])) keepParams[k] = one(sp[k]);
 
   // Who has items: longest out first, then most items.
   const holdersSorted = [...d.holders].sort(
@@ -963,6 +981,26 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           datesChosen={!!(one(sp.mfrom) || one(sp.mto))}
           cut={moveRange.cut}
           keep={moveKeep}
+          hours={movedHours}
+        />
+
+        <FieldUsageCard
+          unit={rigView ? "rigs" : mobileView ? "mobiles" : "SD cards"}
+          usage={usage}
+          from={usageRange.from}
+          to={usageRange.to}
+          today={istDate(now)}
+          city={usageCity}
+          person={usagePerson}
+          model={usageModel}
+          includeOut={usageOut}
+          cities={usageOptions.cities}
+          fos={usageOptions.fos}
+          models={usageOptions.models}
+          names={new Map(people.map((p) => [p.person_id, p.name]))}
+          hubNames={new Map(hubs.map((h) => [h.hub_id, h.name]))}
+          keep={usageKeep}
+          now={now}
         />
 
         <div style={{ display: "grid", gap: 20 }}>

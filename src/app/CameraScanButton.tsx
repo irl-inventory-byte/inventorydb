@@ -50,8 +50,12 @@ const SHOW_BAD_MS = 2200; // a problem stays longer, so it can be read
 const SHOW_REPEAT_MS = 1000;
 const MAX_PER_OPEN = 10;
 
+const HINT_AFTER_MS = 6000; // no code read for this long: show tips
+const CROP_WIDTH = 960; // the aiming box is enlarged to this width before reading (small QR codes on SD cards)
+const FULL_WIDTH = 1280; // the whole picture is reduced to this width before reading
+
 type Detected = { rawValue: string };
-type Detector = { detect: (source: HTMLVideoElement) => Promise<Detected[]> };
+type Detector = { detect: (source: HTMLCanvasElement | HTMLVideoElement) => Promise<Detected[]> };
 type NativeDetectorClass = {
   new (options: { formats: string[] }): Detector;
   getSupportedFormats?: () => Promise<string[]>;
@@ -71,7 +75,22 @@ async function makeDetector(): Promise<Detector> {
       // Fall back to the library below.
     }
   }
-  const { BarcodeDetector } = await import("barcode-detector/ponyfill");
+  const { BarcodeDetector, prepareZXingModule } = await import("barcode-detector/ponyfill");
+  // The scanner engine (zxing_reader.wasm) is copied into public/zxing/ at build time
+  // (scripts/copy-zxing-wasm.mjs), so phones load it from this site, not from an outside CDN that a
+  // network or content blocker might stop. If it is missing, the library's default CDN is used.
+  try {
+    const local = await fetch("/zxing/zxing_reader.wasm", { method: "HEAD" });
+    if (local.ok) {
+      prepareZXingModule({
+        overrides: {
+          locateFile: (path: string, prefix: string) => (path.endsWith(".wasm") ? `/zxing/${path}` : prefix + path),
+        },
+      });
+    }
+  } catch {
+    // Use the default location.
+  }
   return new BarcodeDetector({ formats: FORMATS as never }) as unknown as Detector;
 }
 
@@ -130,8 +149,11 @@ export default function CameraScanButton({
   const [count, setCount] = useState(0);
   const [full, setFull] = useState(false);
   const [torch, setTorch] = useState<boolean | null>(null); // null: this camera has no torch
+  const [hint, setHint] = useState("");
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioRef = useRef<AudioContext | null>(null);
@@ -257,6 +279,7 @@ export default function CameraScanButton({
     setFull(false);
     setTorch(null);
     setCount(0);
+    setHint("");
     seenRef.current = new Set();
     countRef.current = 0;
     okRef.current = 0;
@@ -309,16 +332,32 @@ export default function CameraScanButton({
       setStarting(false);
       runningRef.current = true;
 
+      // Each round reads the aiming box enlarged (best for small codes), then the whole picture
+      // (codes held off-centre). Done on a canvas, so the phone works on a smaller image.
+      let round = 0;
+      let lastRead = Date.now();
+      let failures = 0;
       const tick = async () => {
         if (!runningRef.current) return;
         try {
           if (!busyRef.current && video.readyState >= 2 && video.videoWidth > 0) {
-            const found = await detector.detect(video);
+            const source = snapshot(video, round++ % 2 === 0);
+            const found = await detector.detect(source);
+            failures = 0;
             const code = found.map((f) => f.rawValue.trim()).find(Boolean);
-            if (code && runningRef.current && !busyRef.current) void handle(code);
+            if (code && runningRef.current && !busyRef.current) {
+              lastRead = Date.now();
+              setHint("");
+              void handle(code);
+            } else if (Date.now() - lastRead > HINT_AFTER_MS) {
+              setHint("Can't read a code yet. Move closer so the code fills the box, keep it flat and still, or turn the light on.");
+            }
+          } else if (busyRef.current) {
+            lastRead = Date.now();
           }
         } catch {
-          // A frame that could not be read; try the next one.
+          failures += 1;
+          if (failures === 15) setHint("The scanner is having trouble reading the camera. Close it and open it again.");
         }
         if (runningRef.current) timerRef.current = setTimeout(tick, SCAN_EVERY_MS);
       };
@@ -328,6 +367,44 @@ export default function CameraScanButton({
       setStarting(false);
       setError(cameraError(e));
     }
+  }
+
+  /** The picture to read: the aiming box enlarged (`crop`), or the whole picture made smaller. */
+  function snapshot(video: HTMLVideoElement, crop: boolean): HTMLCanvasElement | HTMLVideoElement {
+    const canvas = (canvasRef.current ??= document.createElement("canvas"));
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return video;
+    const W = video.videoWidth;
+    const H = video.videoHeight;
+    let sx = 0;
+    let sy = 0;
+    let sw = W;
+    let sh = H;
+    const box = frameRef.current?.getBoundingClientRect();
+    const view = video.getBoundingClientRect();
+    if (crop && box && view.width > 0 && view.height > 0) {
+      // The video fills the screen with object-fit: cover, so map the box from screen to video pixels.
+      const scale = Math.max(view.width / W, view.height / H);
+      const offX = (view.width - W * scale) / 2;
+      const offY = (view.height - H * scale) / 2;
+      const pad = 0.15; // a little around the box, in case the code sticks out
+      const bw = box.width * (1 + pad);
+      const bh = box.height * (1 + pad);
+      const bx = box.left - view.left - (bw - box.width) / 2;
+      const by = box.top - view.top - (bh - box.height) / 2;
+      sx = Math.max(0, (bx - offX) / scale);
+      sy = Math.max(0, (by - offY) / scale);
+      sw = Math.min(W - sx, bw / scale);
+      sh = Math.min(H - sy, bh / scale);
+    }
+    if (sw < 16 || sh < 16) return video;
+    const target = crop ? CROP_WIDTH : Math.min(FULL_WIDTH, W);
+    const k = target / sw;
+    canvas.width = Math.round(sw * k);
+    canvas.height = Math.round(sh * k);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    return canvas;
   }
 
   async function toggleTorch() {
@@ -363,7 +440,7 @@ export default function CameraScanButton({
       {open && (
         <div className={styles.overlay} role="dialog" aria-modal="true" aria-label="Camera scanner">
           <video ref={videoRef} className={styles.video} playsInline muted autoPlay />
-          <div className={styles.frame} aria-hidden />
+          <div ref={frameRef} className={styles.frame} aria-hidden />
 
           <div className={styles.top}>
             <span className={styles.counter}>
@@ -402,6 +479,8 @@ export default function CameraScanButton({
               <p className={styles.error}>{error}</p>
             ) : starting ? (
               <p className={styles.status}>Starting camera…</p>
+            ) : hint && !flash ? (
+              <p className={styles.hint}>{hint}</p>
             ) : (
               <p className={styles.status}>
                 {multiple

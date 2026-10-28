@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ROLE_LABELS } from "@/lib/labels";
 import type { Role } from "@/lib/schema";
-import { compact, type MoveDay } from "@/lib/daily-moves";
+import { compact, type MoveDay, type MoveHour } from "@/lib/daily-moves";
 import { n } from "./charts";
 import styles from "./dashboard.module.css";
 
@@ -59,6 +59,7 @@ export function DailyMoves({
   datesChosen,
   cut,
   keep,
+  hours,
 }: {
   title: string;
   unit: string; // "SD cards" or "rigs"
@@ -75,6 +76,7 @@ export function DailyMoves({
   datesChosen: boolean; // a From / To was chosen (not the default last 14 days)
   cut: boolean; // the chosen range was longer than allowed and was shortened
   keep: Record<string, string>; // other dashboard settings to keep when filtering
+  hours?: MoveHour[]; // the same handovers per hour of the day, shown under the day chart
 }) {
   const top = niceMax(Math.max(0, ...days.flatMap((d) => [d.sent, d.received])));
   const totalSent = days.reduce((s, d) => s + d.sent, 0);
@@ -242,6 +244,8 @@ export function DailyMoves({
         ))}
       </div>
 
+      {hours && <HourlyChart hours={hours} unit={unit} days={days.length} />}
+
       <details className={styles.details}>
         <summary>Table view</summary>
         {busy.length === 0 ? (
@@ -272,5 +276,100 @@ export function DailyMoves({
         )}
       </details>
     </section>
+  );
+}
+const hourLabel = (h: number) => `${String(h).padStart(2, "0")}:00`;
+const hourRange = (h: number) => `${hourLabel(h)}–${String(h).padStart(2, "0")}:59`;
+
+/**
+ * Hourly graph: the same handovers (same person / city / role / date filters) added up per hour of the
+ * day, India time, so the busy hours stand out. Sent and received side by side, like the day chart.
+ */
+function HourlyChart({ hours, unit, days }: { hours: MoveHour[]; unit: string; days: number }) {
+  const top = niceMax(Math.max(0, ...hours.flatMap((h) => [h.sent, h.received])));
+  const cols = { gridTemplateColumns: "repeat(24, minmax(0, 1fr))", gap: 3 };
+  const busiest = [...hours].sort((a, b) => b.sent + b.received - (a.sent + a.received))[0];
+  const any = hours.some((h) => h.sent + h.received > 0);
+  const tip = (h: MoveHour) => `${hourRange(h.hour)}\nSent ${n(h.sent)}\nReceived ${n(h.received)}`;
+
+  return (
+    <div id="moved-hourly" style={{ marginTop: 22 }}>
+      <div className={styles.sectionHead}>
+        <h3 style={{ margin: 0, fontSize: "1rem" }}>{unit.charAt(0).toUpperCase() + unit.slice(1)} moved per hour of day</h3>
+        <span className={styles.muted}>
+          India time · all {days} days above added up
+        </span>
+      </div>
+      <p className={styles.muted} style={{ marginTop: 4 }}>
+        {any ? (
+          <>
+            Busiest hour: <strong>{hourRange(busiest.hour)}</strong> ({n(busiest.sent)} sent · {n(busiest.received)}{" "}
+            received). Uses the same filters as the chart above.
+          </>
+        ) : (
+          "No handovers in this period."
+        )}
+      </p>
+      <div className={styles.plotWrap} style={{ paddingTop: 14 }}>
+        <div className={styles.plot} style={{ height: 160 }}>
+          {[top / 2, top].map((t) => (
+            <div key={t} className={styles.gridLine} style={{ bottom: `${(t / top) * 100}%` }}>
+              <span>{compact(t)}</span>
+            </div>
+          ))}
+          <div className="dm-cols" style={cols}>
+            {hours.map((h) => (
+              <div key={h.hour} className={`dm-day ${styles.tip}`} tabIndex={0} data-tip={tip(h)} aria-label={tip(h).replace(/\n/g, ", ")}>
+                {[
+                  { v: h.sent, color: SENT },
+                  { v: h.received, color: RECEIVED },
+                ].map((b, i) => (
+                  <div key={i} className="dm-bar">
+                    {b.v > 0 && (
+                      <>
+                        <span className="dm-val" style={{ bottom: `calc(${(b.v / top) * 100}% + 3px)` }} aria-hidden="true">
+                          {compact(b.v)}
+                        </span>
+                        <div className="dm-fill" style={{ height: `${(b.v / top) * 100}%`, background: b.color }} />
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="dm-axis" style={cols}>
+        {hours.map((h) => (
+          <span key={h.hour}>{h.hour % 3 === 0 ? String(h.hour).padStart(2, "0") : ""}</span>
+        ))}
+      </div>
+      <details className={styles.details}>
+        <summary>Hourly table</summary>
+        <div className={styles.tableScroll}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Hour (India time)</th>
+                <th className={styles.num}>Sent</th>
+                <th className={styles.num}>Received</th>
+              </tr>
+            </thead>
+            <tbody>
+              {hours
+                .filter((h) => h.sent + h.received > 0)
+                .map((h) => (
+                  <tr key={h.hour}>
+                    <td>{hourRange(h.hour)}</td>
+                    <td className={styles.num}>{n(h.sent)}</td>
+                    <td className={styles.num}>{n(h.received)}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </div>
   );
 }
