@@ -59,7 +59,6 @@ export function DailyMoves({
   datesChosen,
   cut,
   keep,
-  hours,
 }: {
   title: string;
   unit: string; // "SD cards" or "rigs"
@@ -76,7 +75,6 @@ export function DailyMoves({
   datesChosen: boolean; // a From / To was chosen (not the default last 14 days)
   cut: boolean; // the chosen range was longer than allowed and was shortened
   keep: Record<string, string>; // other dashboard settings to keep when filtering
-  hours?: MoveHour[]; // the same handovers per hour of the day, shown under the day chart
 }) {
   const top = niceMax(Math.max(0, ...days.flatMap((d) => [d.sent, d.received])));
   const totalSent = days.reduce((s, d) => s + d.sent, 0);
@@ -244,8 +242,6 @@ export function DailyMoves({
         ))}
       </div>
 
-      {hours && <HourlyChart hours={hours} unit={unit} days={days.length} />}
-
       <details className={styles.details}>
         <summary>Table view</summary>
         {busy.length === 0 ? (
@@ -282,10 +278,53 @@ const hourLabel = (h: number) => `${String(h).padStart(2, "0")}:00`;
 const hourRange = (h: number) => `${hourLabel(h)}–${String(h).padStart(2, "0")}:59`;
 
 /**
- * Hourly graph: the same handovers (same person / city / role / date filters) added up per hour of the
- * day, India time, so the busy hours stand out. Sent and received side by side, like the day chart.
+ * "Moved per hour of day": handovers added up per hour of the day, India time, so the busy hours stand
+ * out. Sent and received side by side, like the day chart. Its own filters: item type (All items, SD
+ * cards, rigs, mobiles), person, city, role and a From / To range.
  */
-function HourlyChart({ hours, unit, days }: { hours: MoveHour[]; unit: string; days: number }) {
+export function HourlyMoves({
+  hours,
+  itemType,
+  types,
+  people,
+  cities,
+  roles,
+  person,
+  city,
+  role,
+  from,
+  to,
+  today,
+  days,
+  filtered,
+  keep,
+}: {
+  hours: MoveHour[];
+  itemType: string; // "" = all items, or sd_card / rig / mobile
+  types: { id: string; label: string }[]; // the item types this login can see
+  people: { id: string; label: string; role?: string }[];
+  cities: string[];
+  roles: string[];
+  person: string;
+  city: string;
+  role: string;
+  from: string;
+  to: string;
+  today: string;
+  days: number;
+  filtered: boolean; // any hourly filter chosen
+  keep: Record<string, string>; // other dashboard settings
+}) {
+  const unit = (types.find((t) => t.id === itemType)?.label ?? "All items").toLowerCase();
+  const roleName = (r: string) => ROLE_LABELS[r as Role] ?? r;
+  const shownPeople = role ? people.filter((p) => p.role === role || p.id === person) : people;
+  const clearHref = `/dashboard?${new URLSearchParams(keep)}#moved-hourly`;
+  const quick = (n: number) => {
+    const q = new URLSearchParams({ ...keep, ...(itemType && { htype: itemType }), ...(person && { hperson: person }), ...(city && { hcity: city }), ...(role && { hrole: role }) });
+    q.set("hfrom", new Date(Date.parse(`${today}T00:00:00Z`) - (n - 1) * 86_400_000).toISOString().slice(0, 10));
+    q.set("hto", today);
+    return `/dashboard?${q}#moved-hourly`;
+  };
   const top = niceMax(Math.max(0, ...hours.flatMap((h) => [h.sent, h.received])));
   const cols = { gridTemplateColumns: "repeat(24, minmax(0, 1fr))", gap: 3 };
   const busiest = [...hours].sort((a, b) => b.sent + b.received - (a.sent + a.received))[0];
@@ -293,23 +332,110 @@ function HourlyChart({ hours, unit, days }: { hours: MoveHour[]; unit: string; d
   const tip = (h: MoveHour) => `${hourRange(h.hour)}\nSent ${n(h.sent)}\nReceived ${n(h.received)}`;
 
   return (
-    <div id="moved-hourly" style={{ marginTop: 22 }}>
+    <section className={styles.card} id="moved-hourly" aria-label="Moved per hour of day">
+      <style>{CSS}</style>
       <div className={styles.sectionHead}>
-        <h3 style={{ margin: 0, fontSize: "1rem" }}>{unit.charAt(0).toUpperCase() + unit.slice(1)} moved per hour of day</h3>
+        <h2>{unit.charAt(0).toUpperCase() + unit.slice(1)} moved per hour of day</h2>
         <span className={styles.muted}>
-          India time · all {days} days above added up
+          {shortDate(from)} – {shortDate(to)} ({days} days added up) · India time
         </span>
       </div>
-      <p className={styles.muted} style={{ marginTop: 4 }}>
+
+      <form method="get" action="/dashboard#moved-hourly" className="dm-filters">
+        {Object.entries(keep).map(([k, v]) => (
+          <input key={k} type="hidden" name={k} value={v} />
+        ))}
+        <label>
+          Items
+          <select name="htype" defaultValue={itemType}>
+            <option value="">All items</option>
+            {types.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Person
+          <select name="hperson" defaultValue={person}>
+            <option value="">All people</option>
+            {shownPeople.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+                {p.role ? ` (${roleName(p.role)})` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          City
+          <select name="hcity" defaultValue={city}>
+            <option value="">All cities</option>
+            {cities.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Role
+          <select name="hrole" defaultValue={role}>
+            <option value="">All roles</option>
+            {roles.map((r) => (
+              <option key={r} value={r}>
+                {roleName(r)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          From
+          <input type="date" name="hfrom" defaultValue={from} max={today} />
+        </label>
+        <label>
+          To
+          <input type="date" name="hto" defaultValue={to} max={today} />
+        </label>
+        <button type="submit">Apply</button>
+        {filtered && (
+          <Link href={clearHref} className={styles.link}>
+            Clear filter
+          </Link>
+        )}
+      </form>
+
+      <p className={styles.muted}>
         {any ? (
           <>
             Busiest hour: <strong>{hourRange(busiest.hour)}</strong> ({n(busiest.sent)} sent · {n(busiest.received)}{" "}
-            received). Uses the same filters as the chart above.
+            received).{" "}
           </>
         ) : (
-          "No handovers in this period."
+          "No handovers in this period. "
         )}
+        Quick:{" "}
+        {[1, 7, 14, 30].map((q, i) => (
+          <span key={q}>
+            {i > 0 && " · "}
+            <Link href={quick(q)} className={styles.link}>
+              {q === 1 ? "Today" : `${q} days`}
+            </Link>
+          </span>
+        ))}
       </p>
+
+      <div className={styles.legend}>
+        <span>
+          <i className={styles.swatch} style={{ background: SENT }} />
+          Sent (check-out)
+        </span>
+        <span>
+          <i className={styles.swatch} style={{ background: RECEIVED }} />
+          Received (check-in)
+        </span>
+      </div>
       <div className={styles.plotWrap} style={{ paddingTop: 14 }}>
         <div className={styles.plot} style={{ height: 160 }}>
           {[top / 2, top].map((t) => (
@@ -370,6 +496,6 @@ function HourlyChart({ hours, unit, days }: { hours: MoveHour[]; unit: string; d
           </table>
         </div>
       </details>
-    </div>
+    </section>
   );
 }

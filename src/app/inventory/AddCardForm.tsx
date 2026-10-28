@@ -65,6 +65,8 @@ export default function AddCardForm({
   const [model, setModel] = useState("");
   const [capacity, setCapacity] = useState("");
   const [cardType, setCardType] = useState("");
+  const [sheetDate, setSheetDate] = useState(""); // "Date" from the SD card sheet, display only
+  const [condition, setCondition] = useState(""); // "New/Old" from the SD card sheet, display only
   const [note, setNote] = useState("");
 
   const [lookingUp, setLookingUp] = useState(false);
@@ -103,6 +105,8 @@ export default function AddCardForm({
     setModel("");
     setCapacity("");
     setCardType("");
+    setSheetDate("");
+    setCondition("");
   }
 
   function cancelScheduledLookup() {
@@ -216,6 +220,8 @@ export default function AddCardForm({
       setModel(found.model ?? "");
       setCapacity(foundCapacity);
       setCardType(foundCardType);
+      setSheetDate(found.date ?? "");
+      setCondition(found.condition ?? "");
 
       lastSuccessfulSerial.current = normalized;
 
@@ -423,6 +429,16 @@ export default function AddCardForm({
             <option value="Black">Black</option>
             <option value="Green">Green</option>
           </select>
+        </label>
+
+        <label style={fieldStyle}>
+          <span>Date (from sheet)</span>
+          <input value={sheetDate} placeholder="Loads from the sheet" readOnly style={inputStyle} />
+        </label>
+
+        <label style={fieldStyle}>
+          <span>New / Old</span>
+          <input value={condition} placeholder="Loads from the sheet" readOnly style={inputStyle} />
         </label>
 
         <label style={fieldStyle}>

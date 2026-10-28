@@ -287,7 +287,7 @@ export default async function ReceivePage({
       <form action={receiveCards} className={styles.list}>
         <input type="hidden" name="hub" value={hub} />
 
-        {/* Existing scan and batch-receipt interface. */}
+        {/* Item scan box (batch receive from a receipt QR is switched off). */}
         <ReceiveScanArea
           hub={hub}
           hubNames={Object.fromEntries(hubNames)}

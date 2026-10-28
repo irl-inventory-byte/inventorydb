@@ -335,6 +335,8 @@ export async function lookupAsset(serial: string) {
     capacity,
     cardType: found.cardType ?? "",
     price: penaltyForCapacity(capacity),
+    date: found.date ?? "",
+    condition: found.condition ?? "",
   };
 }
 /* ------------------------------------------------------------------ */
@@ -357,6 +359,8 @@ export type SerialCheck = {
   model: string;
   capacity: string;
   cardType: string;
+  date: string; // sheet "Date" (display only)
+  condition: string; // sheet "New/Old" (display only)
 };
 
 /**
@@ -412,6 +416,8 @@ export async function checkSerials(
       model: found?.model ?? "",
       capacity: ["256 GB", "512 GB"].includes(capacity) ? capacity : "",
       cardType,
+      date: found?.date ?? "",
+      condition: found?.condition ?? "",
     };
 
     if (seen.has(key)) return { ...details, status: "repeated" };

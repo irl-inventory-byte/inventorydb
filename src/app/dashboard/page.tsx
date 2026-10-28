@@ -9,7 +9,7 @@ import { HANDLER_ROLES, INVENTORY_ROLES, allowedTypes, canSeeType, storeFor, sto
 import TypeSwitch from "../TypeSwitch";
 import RoleSwitch from "../RoleSwitch";
 import { BarList, n, type BarRow } from "./charts";
-import { DailyMoves } from "./daily-moves";
+import { DailyMoves, HourlyMoves } from "./daily-moves";
 import { FieldUsageCard } from "./field-usage";
 import { fieldUsage, usageFilterOptions } from "@/lib/field-usage";
 import { dailyMoves, hourlyMoves, moveFilterOptions, pickRange } from "@/lib/daily-moves";
@@ -161,8 +161,10 @@ function MobileCharts({ items }: { items: Item[] }) {
     </>
   );
 }
-// Field usage filter settings, kept when another dashboard filter is applied.
-const USAGE_KEYS = ["ufrom", "uto", "ucity", "uperson", "umodel", "uout"];
+// Field usage (u…) and hourly chart (h…) filter settings, kept when another dashboard filter is applied.
+const EXTRA_KEYS = ["ufrom", "uto", "ucity", "uperson", "umodel", "uout", "htype", "hperson", "hcity", "hrole", "hfrom", "hto"];
+const HOURLY_KEYS = ["htype", "hperson", "hcity", "hrole", "hfrom", "hto"];
+const TYPE_LABELS: Record<string, string> = { sd_card: "SD cards", rig: "Rigs", mobile: "Mobiles" };
 
 export default async function DashboardPage({ searchParams }: PageProps<"/dashboard">) {
   const user = await requireRole();
@@ -622,7 +624,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const detailKey = one(sp.adetail);
   const detailRow = shownDelayed.find((g) => g.key === detailKey);
   const attentionKeep: Record<string, string> = {};
-  for (const k of ["type", "empty", "acity", "arole", "mperson", "mcity", "mrole", "mfrom", "mto", ...USAGE_KEYS]) if (one(sp[k])) attentionKeep[k] = one(sp[k]);
+  for (const k of ["type", "empty", "acity", "arole", "mperson", "mcity", "mrole", "mfrom", "mto", ...EXTRA_KEYS]) if (one(sp[k])) attentionKeep[k] = one(sp[k]);
   const detailHref = (key: string) => `/dashboard?${new URLSearchParams({ ...attentionKeep, adetail: key })}#delayed-items`;
   const closeDetailHref = `/dashboard?${new URLSearchParams(attentionKeep)}#attention`;
   // "Moved per day" chart: person, city and role filters (?mperson=…&mcity=…&mrole=…). Other settings are kept.
@@ -632,10 +634,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // Date range (?mfrom=YYYY-MM-DD&mto=YYYY-MM-DD). Default: the last 14 days.
   const moveRange = pickRange(one(sp.mfrom), one(sp.mto), now, 14);
   const movedDays = dailyMoves(events, hubs, moveRange, { person: movePerson, city: moveCity, role: moveRole }, people);
-  const movedHours = hourlyMoves(events, hubs, moveRange, { person: movePerson, city: moveCity, role: moveRole }, people);
   const moveOptions = moveFilterOptions(events, hubs, people, moveRange);
   const moveKeep: Record<string, string> = {};
-  for (const k of ["type", "acity", "arole", "empty", ...USAGE_KEYS]) if (one(sp[k])) moveKeep[k] = one(sp[k]);
+  for (const k of ["type", "acity", "arole", "empty", ...EXTRA_KEYS]) if (one(sp[k])) moveKeep[k] = one(sp[k]);
 
   // Field usage (most / least / never used on field): ?ufrom=&uto=&ucity=&uperson=&umodel=&uout=1. Default: last 30 days.
   const usageRange = pickRange(one(sp.ufrom), one(sp.uto), now, 30, 366);
@@ -646,7 +647,23 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const usage = fieldUsage(items, events, hubs, people, usageRange, { city: usageCity, person: usagePerson, model: usageModel, includeOut: usageOut }, now);
   const usageOptions = usageFilterOptions(items, events, hubs, people);
   const usageKeep: Record<string, string> = {};
-  for (const k of ["type", "empty", "acity", "arole", "mperson", "mcity", "mrole", "mfrom", "mto"]) if (one(sp[k])) usageKeep[k] = one(sp[k]);
+  for (const k of ["type", "empty", "acity", "arole", "mperson", "mcity", "mrole", "mfrom", "mto", ...HOURLY_KEYS]) if (one(sp[k])) usageKeep[k] = one(sp[k]);
+
+  // "Moved per hour of day": its own filters (?htype=&hperson=&hcity=&hrole=&hfrom=&hto=). Items: All items
+  // (default) or one type this login can see. Default range: the last 14 days.
+  const hourTypes = allowedTypes(user.role).map((t) => ({ id: t as string, label: TYPE_LABELS[t] ?? t }));
+  const hourType = hourTypes.some((t) => t.id === one(sp.htype)) ? one(sp.htype) : "";
+  const hourPerson = one(sp.hperson);
+  const hourCity = one(sp.hcity);
+  const hourRole = one(sp.hrole);
+  const hourRange = pickRange(one(sp.hfrom), one(sp.hto), now, 14);
+  const hourStore = storeFor(user.role, hourType || undefined);
+  const hourEvents = hourType === type && type ? events : await hourStore.list("events");
+  const movedHours = hourlyMoves(hourEvents, hubs, hourRange, { person: hourPerson, city: hourCity, role: hourRole }, people);
+  const hourOptions = moveFilterOptions(hourEvents, hubs, people, hourRange);
+  const hourKeep: Record<string, string> = {};
+  for (const k of ["type", "empty", "acity", "arole", "mperson", "mcity", "mrole", "mfrom", "mto", "ufrom", "uto", "ucity", "uperson", "umodel", "uout"])
+    if (one(sp[k])) hourKeep[k] = one(sp[k]);
 
   const keepParams: Record<string, string> = {};
   if (one(sp.type)) keepParams.type = one(sp.type);
@@ -656,7 +673,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   if (moveRole) keepParams.mrole = moveRole;
   if (one(sp.mfrom)) keepParams.mfrom = one(sp.mfrom);
   if (one(sp.mto)) keepParams.mto = one(sp.mto);
-  for (const k of USAGE_KEYS) if (one(sp[k])) keepParams[k] = one(sp[k]);
+  for (const k of EXTRA_KEYS) if (one(sp[k])) keepParams[k] = one(sp[k]);
 
   // Who has items: longest out first, then most items.
   const holdersSorted = [...d.holders].sort(
@@ -981,7 +998,24 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           datesChosen={!!(one(sp.mfrom) || one(sp.mto))}
           cut={moveRange.cut}
           keep={moveKeep}
+        />
+
+        <HourlyMoves
           hours={movedHours}
+          itemType={hourType}
+          types={hourTypes}
+          people={hourOptions.people}
+          cities={hourOptions.cities}
+          roles={hourOptions.roles}
+          person={hourPerson}
+          city={hourCity}
+          role={hourRole}
+          from={hourRange.from}
+          to={hourRange.to}
+          today={istDate(now)}
+          days={hourRange.days}
+          filtered={!!(one(sp.htype) || hourPerson || hourCity || hourRole || one(sp.hfrom) || one(sp.hto))}
+          keep={hourKeep}
         />
 
         <FieldUsageCard

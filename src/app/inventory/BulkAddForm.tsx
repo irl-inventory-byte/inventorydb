@@ -326,6 +326,8 @@ export default function BulkAddForm({
                 <th style={cellStyle}>Brand / Model</th>
                 <th style={cellStyle}>Storage</th>
                 <th style={cellStyle}>Colour</th>
+                <th style={cellStyle}>Date</th>
+                <th style={cellStyle}>New / Old</th>
                 <th style={cellStyle}>Penalty</th>
                 <th style={cellStyle}>Check</th>
                 <th style={cellStyle}>
@@ -344,6 +346,8 @@ export default function BulkAddForm({
                     <td style={cellStyle}>{row.model || row.brand || "—"}</td>
                     <td style={cellStyle}>{row.capacity || "—"}</td>
                     <td style={cellStyle}>{row.cardType || "—"}</td>
+                    <td style={cellStyle}>{row.date || "—"}</td>
+                    <td style={cellStyle}>{row.condition || "—"}</td>
                     <td style={cellStyle}>{penaltyLabel(row.capacity)}</td>
                     <td style={{ ...cellStyle, color: label.color, fontWeight: 600 }}>
                       {label.text}

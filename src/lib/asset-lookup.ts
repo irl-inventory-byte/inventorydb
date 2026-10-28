@@ -9,6 +9,8 @@ export interface AssetRecord {
   price: string;
   capacity?: string;
   cardType?: string;
+  date?: string; // the sheet's "Date" column, as written in the sheet (shown on Add SD card only)
+  condition?: string; // the sheet's "New/Old" column (shown on Add SD card only)
 }
 
 /**
@@ -265,6 +267,10 @@ export function parseAssetRow(
     }
   }
 
+  // Shown on the Add SD card forms; not saved with the card.
+  const date = sheetDate(firstValue(["Date", "Purchase Date", "Date of Purchase", "Received Date", "Added Date"]));
+  const condition = firstValue(["New/Old", "New / Old", "New or Old", "Old/New", "Condition"]);
+
   return {
     itemId,
     brand,
@@ -272,10 +278,25 @@ export function parseAssetRow(
     prismNo,
     capacity,
     cardType,
+    date,
+    condition,
 
     // Ignore the source price: apply your fixed penalty rule.
     price: penaltyForCapacity(capacity),
   };
+}
+
+/**
+ * The sheet is read unformatted, so a date cell arrives as a day number (45730 = 14 Mar 2025).
+ * Turn that into "15 Mar 2025"; anything else (text dates) is shown as written.
+ */
+export function sheetDate(raw: string): string {
+  const value = String(raw ?? "").trim();
+  if (!/^\d{5}(?:\.\d+)?$/.test(value)) return value;
+  const serial = Number(value);
+  if (serial < 20000 || serial > 80000) return value;
+  const ms = Date.UTC(1899, 11, 30) + Math.floor(serial) * 86_400_000;
+  return new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
 /** Find a card by its Asset Tag, ignoring letter case. */
