@@ -144,6 +144,24 @@ export async function lookupEmails(names: string[]): Promise<EmailLookup> {
   return { tab: usedTab, emails };
 }
 
+/** person_id -> email: the People entry's email, else the login linked to that person on Manage users. */
+async function emailsByPersonId(): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  try {
+    const store = getStore();
+    const [people, users] = await Promise.all([store.list("people"), store.list("users")]);
+    for (const u of users) {
+      if (u.person_id && looksLikeEmail(u.email) && u.active !== "false") out.set(u.person_id, u.email.trim());
+    }
+    for (const p of people) {
+      if (looksLikeEmail(p.linked_user ?? "")) out.set(p.person_id, p.linked_user.trim());
+    }
+  } catch {
+    // Fall back to the lookup by name.
+  }
+  return out;
+}
+
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, "&amp;")
@@ -187,14 +205,27 @@ export async function sendReceiptEmail(options: {
   fileName: string;
   receiptUrl: string;
   totalPenalty: string;
+  /** Everyone on the batch (person_id + name). Default: the From and To person of the receipt. */
+  people?: { id: string; name: string }[];
 }): Promise<ReceiptEmailResult> {
   const { summary, title, pdf, fileName, receiptUrl, totalPenalty } = options;
 
-  const names = [summary.fromName, summary.toName].filter(Boolean);
+  const recipients = (options.people ?? [
+    { id: summary.fromId, name: summary.fromName },
+    { id: summary.toId, name: summary.toName },
+  ]).filter((r) => r.id || r.name);
+  const names = [...new Set(recipients.map((r) => r.name).filter(Boolean))];
   const { tab, emails } = await lookupEmails(names);
+  // First by person: the email on their People entry, or the login linked to them; then by name.
+  const byId = await emailsByPersonId();
+  const found = new Map<string, string>(); // recipient label -> email
+  for (const r of recipients) {
+    const email = byId.get(r.id) || (looksLikeEmail(r.id) ? r.id : "") || emails.get(r.name);
+    if (email) found.set(r.name || r.id, email);
+  }
 
-  const missing = names.filter((name) => !emails.has(name));
-  const sentTo = [...new Set(emails.values())];
+  const missing = [...new Set(recipients.map((r) => r.name || r.id))].filter((label) => !found.has(label));
+  const sentTo = [...new Set([...found.values()].map((e) => e.toLowerCase()))];
 
   if (!tab) {
     console.warn(

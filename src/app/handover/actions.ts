@@ -378,8 +378,19 @@ export async function receiveCards(formData: FormData) {
       return plan;
     },
     (plan): Record<string, string> => (plan.mismatch ? { mismatch: plan.mismatch } : {}),
-    async () => {
+    async (plan) => {
       if (qcRows.length) await getStore().appendRows("qc_checks", qcRows);
+
+      // Items taken back from an FO or IFO: save the receipt (PDF, Receipts tab) and email it to them and
+      // to the person who received, like a send receipt. Runs after the page has redirected.
+      const batchId = plan.events[0]?.batch_id;
+      if (!batchId) return;
+      const people = await getStore().list("people");
+      const roleOf = new Map(people.map((p) => [p.person_id, String(p.role ?? "").toLowerCase()]));
+      const fromField = plan.events.some((e) => ["fo", "ifo"].includes(roleOf.get(e.from_id) ?? ""));
+      if (!fromField) return;
+      const base = await siteUrl();
+      after(() => archiveReceipt(batchId, base));
     },
     { roles: RECEIVE_ROLES, actorRoles: ["im", "rig", "qc", "hardware", "internal"] },
   );

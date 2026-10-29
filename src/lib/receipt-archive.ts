@@ -704,7 +704,20 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
     });
 
     // Email the PDF to the person who sent the items and the person who received them.
-    step = "emailing the receipt to the From and To person";
+    step = "emailing the receipt to the people on the batch";
+    // Everyone on the batch: a receive can take items back from several FOs / IFOs at once, and each of
+    // them gets the receipt, as does the person who sent or received.
+    const onBatch = new Map<string, string>();
+    for (const e of events) {
+      if (e.batch_id !== batchId) continue;
+      for (const [id, name] of [
+        [e.from_id, e.from_person],
+        [e.to_id, e.to_person],
+      ]) {
+        const key = id || name;
+        if (key && !onBatch.has(key)) onBatch.set(key, name || id);
+      }
+    }
     const email: ReceiptEmailResult = await sendReceiptEmail({
       summary,
       title: ACTION_TITLE[summary.action] ?? "Batch record",
@@ -712,6 +725,7 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
       fileName,
       receiptUrl,
       totalPenalty: rupeeTotal(penalties.total),
+      people: [...onBatch.entries()].map(([id, name]) => ({ id: id === name ? "" : id, name })),
     });
 
     if (email.missing.length > 0) {

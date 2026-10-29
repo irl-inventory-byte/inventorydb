@@ -2,6 +2,7 @@ import Link from "next/link";
 import { LATE_AFTER_HOURS, type Dashboard } from "@/lib/dashboard";
 import type { Item } from "@/lib/schema";
 import { getStore } from "@/lib/store";
+import { loadAssetRecords } from "@/lib/asset-sheet";
 import { n } from "./charts";
 import styles from "./dashboard.module.css";
 import { Icon, type IconName } from "./icons";
@@ -27,6 +28,22 @@ interface FleetCounts {
   colourUnknown: number;
   sdCards: number;
   rigs: number;
+  newCards: number; // "New" in the SD card sheet's New/Old column
+  oldCards: number; // "Old"
+  ageUnknown: number; // not in the sheet, or New/Old blank
+}
+
+/**
+ * New / Old for every SD card in the inventory, from the SD card sheet's New/Old column (matched by Asset
+ * Tag). The sheet is read through the same short cache as Add SD card. null = the sheet could not be read.
+ */
+async function sheetAges(): Promise<Map<string, string> | null> {
+  try {
+    const records = await loadAssetRecords();
+    return new Map(records.map((r) => [r.itemId.trim().toUpperCase(), (r.condition ?? "").trim().toLowerCase()]));
+  } catch {
+    return null;
+  }
 }
 
 interface SummaryKpisProps {
@@ -99,7 +116,7 @@ function attributeText(value: unknown): string {
  *
  * Storage and colour are separate breakdowns of the same items.
  */
-function countFleet(items: readonly Item[]): FleetCounts {
+function countFleet(items: readonly Item[], ages: Map<string, string> | null): FleetCounts {
   const counts: FleetCounts = {
     storage512: 0,
     storage256: 0,
@@ -109,6 +126,9 @@ function countFleet(items: readonly Item[]): FleetCounts {
     colourUnknown: 0,
     sdCards: 0,
     rigs: 0,
+    newCards: 0,
+    oldCards: 0,
+    ageUnknown: 0,
   };
 
   for (const item of items) {
@@ -118,6 +138,11 @@ function countFleet(items: readonly Item[]): FleetCounts {
       continue;
     }
     counts.sdCards++;
+
+    const age = ages?.get(item.item_id.trim().toUpperCase()) ?? "";
+    if (age.startsWith("new")) counts.newCards++;
+    else if (age.startsWith("old")) counts.oldCards++;
+    else counts.ageUnknown++;
 
     const attributes = readAttributes(item.attributes);
 
@@ -189,7 +214,9 @@ export async function SummaryKpis({
         )
       : sourceItems;
 
-  const fleet = countFleet(fleetItems);
+  const hasSd = fleetItems.some((i) => i.item_type !== "rig" && i.item_type !== "mobile");
+  const ages = hasSd ? await sheetAges() : null;
+  const fleet = countFleet(fleetItems, ages);
 
   // A second read can differ if inventory changed during rendering,
   // or if the caller supplied a different hub scope.
@@ -232,6 +259,25 @@ export async function SummaryKpis({
       border: "#16a34a",
       text: "#14532d",
     },
+    // New / Old from the SD card sheet (only when the sheet could be read).
+    ...(ages
+      ? [
+          {
+            label: "New cards",
+            count: fleet.newCards,
+            bg: "#e0f2fe",
+            border: "#0284c7",
+            text: "#0c4a6e",
+          },
+          {
+            label: "Old cards",
+            count: fleet.oldCards,
+            bg: "#f3f4f6",
+            border: "#6b7280",
+            text: "#1f2937",
+          },
+        ]
+      : []),
   ];
 
   // SD card tiles only when there are SD cards; a Rigs tile when there are rigs.
@@ -480,6 +526,30 @@ export async function SummaryKpis({
                 >
                   Unknown / other storage:{" "}
                   {n(fleet.storageUnknown)}
+                </span>
+              )}
+
+              {ages && fleet.ageUnknown > 0 && (
+                <span
+                  style={{
+                    display: "block",
+                    marginTop: 8,
+                    fontSize: 12,
+                  }}
+                >
+                  New / Old not set in the sheet: {n(fleet.ageUnknown)}
+                </span>
+              )}
+
+              {hasSd && !ages && (
+                <span
+                  style={{
+                    display: "block",
+                    marginTop: 8,
+                    fontSize: 12,
+                  }}
+                >
+                  New / Old: the SD card sheet could not be read right now.
                 </span>
               )}
 

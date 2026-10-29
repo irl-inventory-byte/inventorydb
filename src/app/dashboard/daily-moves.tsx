@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ROLE_LABELS } from "@/lib/labels";
 import type { Role } from "@/lib/schema";
 import { compact, type MoveDay, type MoveHour } from "@/lib/daily-moves";
+import MultiSelect from "../inventory/MultiSelect";
 import { n } from "./charts";
 import styles from "./dashboard.module.css";
 
@@ -41,6 +42,104 @@ const CSS = `
 `;
 
 /**
+ * The filter bar of the day and hourly charts: Items, Person, City and Role are tick-box lists (several can
+ * be chosen at once), then From / To. Each ticked value is sent as its own ?name=value.
+ */
+function MoveFilters({
+  prefix,
+  anchor,
+  types,
+  itemTypes,
+  people,
+  cities,
+  roles,
+  person,
+  city,
+  role,
+  from,
+  to,
+  today,
+  filtered,
+  keep,
+}: {
+  prefix: "m" | "h"; // m… = day chart, h… = hourly chart
+  anchor: string;
+  types: { id: string; label: string }[];
+  itemTypes: string[];
+  people: { id: string; label: string; role?: string }[];
+  cities: string[];
+  roles: string[];
+  person: string[];
+  city: string[];
+  role: string[];
+  from: string;
+  to: string;
+  today: string;
+  filtered: boolean;
+  keep: Record<string, string>;
+}) {
+  const roleName = (r: string) => ROLE_LABELS[r as Role] ?? r;
+  // With roles chosen, the person list shows only people with those roles (and anyone already ticked).
+  const shownPeople = role.length ? people.filter((p) => role.includes(p.role ?? "") || person.includes(p.id)) : people;
+  const clearHref = `/dashboard?${new URLSearchParams(keep)}#${anchor}`;
+  return (
+    <form method="get" action={`/dashboard#${anchor}`} className="dm-filters">
+      {Object.entries(keep).map(([k, v]) => (
+        <input key={k} type="hidden" name={k} value={v} />
+      ))}
+      {types.length > 1 && (
+        <MultiSelect
+          name={`${prefix}type`}
+          label="Items"
+          allLabel="All items"
+          options={types.map((t) => ({ value: t.id, label: t.label }))}
+          selected={itemTypes}
+        />
+      )}
+      <MultiSelect
+        name={`${prefix}person`}
+        label="Person"
+        allLabel="All people"
+        options={shownPeople.map((p) => ({ value: p.id, label: p.role ? `${p.label} (${roleName(p.role)})` : p.label }))}
+        selected={person}
+      />
+      <MultiSelect
+        name={`${prefix}city`}
+        label="City"
+        allLabel="All cities"
+        options={cities.map((c) => ({ value: c, label: c }))}
+        selected={city}
+      />
+      <MultiSelect
+        name={`${prefix}role`}
+        label="Role"
+        allLabel="All roles"
+        options={roles.map((r) => ({ value: r, label: roleName(r) }))}
+        selected={role}
+      />
+      <label>
+        From
+        <input type="date" name={`${prefix}from`} defaultValue={from} max={today} />
+      </label>
+      <label>
+        To
+        <input type="date" name={`${prefix}to`} defaultValue={to} max={today} />
+      </label>
+      <button type="submit">Apply</button>
+      {filtered && (
+        <Link href={clearHref} className={styles.link}>
+          Clear filter
+        </Link>
+      )}
+    </form>
+  );
+}
+
+/** Query values for a quick-range link: chosen lists as "a,b". */
+const listParams = (prefix: string, v: Record<string, string[]>) =>
+  Object.fromEntries(Object.entries(v).filter(([, list]) => list.length).map(([k, list]) => [`${prefix}${k}`, list.join(",")]));
+
+/**
  * "SD cards / Rigs moved per day": sent and received side by side for each day, the number on top of each
  * bar, full width so every day lines up with its date. Filters for person, city, role and a From / To date
  * range sit above the chart. Long ranges (more than 3 weeks) hide the numbers on the bars and label fewer dates.
@@ -61,16 +160,20 @@ export function DailyMoves({
   datesChosen,
   cut,
   keep,
+  types,
+  itemTypes,
 }: {
   title: string;
-  unit: string; // "SD cards" or "rigs"
+  unit: string; // "SD cards", "rigs", "items", …
   days: MoveDay[];
   people: { id: string; label: string; role?: string }[];
   cities: string[];
   roles: string[]; // fo, ifo, im, …
-  person: string;
-  city: string;
-  role: string;
+  person: string[];
+  city: string[];
+  role: string[];
+  types: { id: string; label: string }[]; // item types this login can see
+  itemTypes: string[]; // chosen item types, empty = all
   from: string; // YYYY-MM-DD, first day shown
   to: string; // YYYY-MM-DD, last day shown
   today: string; // YYYY-MM-DD (India), the latest day that can be chosen
@@ -89,18 +192,20 @@ export function DailyMoves({
   const cols = { gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))`, ...(dense ? { gap: 2 } : {}) };
   // Quick ranges keep the person / city / role filters.
   const quick = (n: number) => {
-    const q = new URLSearchParams({ ...keep, ...(person && { mperson: person }), ...(city && { mcity: city }), ...(role && { mrole: role }) });
+    const q = new URLSearchParams({ ...keep, ...listParams("m", { type: itemTypes, person, city, role }) });
     const start = new Date(Date.parse(`${today}T00:00:00Z`) - (n - 1) * 86_400_000).toISOString().slice(0, 10);
     q.set("mfrom", start);
     q.set("mto", today);
     return `/dashboard?${q}#moved`;
   };
-  const filtered = !!(person || city || role || datesChosen);
+  const filtered = !!(person.length || city.length || role.length || itemTypes.length || datesChosen);
   const roleName = (r: string) => ROLE_LABELS[r as Role] ?? r;
-  // With a role chosen, the person list shows only people with that role.
-  const shownPeople = role ? people.filter((p) => p.role === role || p.id === person) : people;
-  const personName = people.find((p) => p.id === person)?.label ?? person;
-  const clearHref = `/dashboard?${new URLSearchParams(keep)}#moved`;
+  const personName = (id: string) => people.find((p) => p.id === id)?.label ?? id;
+  const showing = [
+    person.map(personName).join(", "),
+    role.map(roleName).join(", "),
+    city.length ? `in ${city.join(", ")}` : "",
+  ].filter(Boolean);
   const tip = (d: MoveDay) =>
     `${shortDate(d.date)}\nSent ${n(d.sent)}\nReceived ${n(d.received)}${d.corrected ? `\nCorrected ${n(d.corrected)}` : ""}`;
 
@@ -114,69 +219,26 @@ export function DailyMoves({
         </span>
       </div>
 
-      <form method="get" action="/dashboard#moved" className="dm-filters">
-        {Object.entries(keep).map(([k, v]) => (
-          <input key={k} type="hidden" name={k} value={v} />
-        ))}
-        <label>
-          Person
-          <select name="mperson" defaultValue={person}>
-            <option value="">All people</option>
-            {shownPeople.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-                {p.role ? ` (${roleName(p.role)})` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          City
-          <select name="mcity" defaultValue={city}>
-            <option value="">All cities</option>
-            {cities.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Role
-          <select name="mrole" defaultValue={role}>
-            <option value="">All roles</option>
-            {roles.map((r) => (
-              <option key={r} value={r}>
-                {roleName(r)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          From
-          <input type="date" name="mfrom" defaultValue={from} max={today} />
-        </label>
-        <label>
-          To
-          <input type="date" name="mto" defaultValue={to} max={today} />
-        </label>
-        <button type="submit">Apply</button>
-        {filtered && (
-          <Link href={clearHref} className={styles.link}>
-            Clear filter
-          </Link>
-        )}
-      </form>
+      <MoveFilters
+        prefix="m"
+        anchor="moved"
+        types={types}
+        itemTypes={itemTypes}
+        people={people}
+        cities={cities}
+        roles={roles}
+        person={person}
+        city={city}
+        role={role}
+        from={from}
+        to={to}
+        today={today}
+        filtered={filtered}
+        keep={keep}
+      />
 
       <p className={styles.muted}>
-        {(person || city || role) && (
-          <>
-            Showing{person ? ` ${personName}` : ""}
-            {role ? ` ${roleName(role)}` : ""}
-            {(person || role) && city ? " in" : ""}
-            {city ? ` ${city}` : ""}:{" "}
-          </>
-        )}
+        {showing.length > 0 && <>Showing {showing.join(" · ")}: </>}
         <strong>{n(totalSent)}</strong> {unit} sent · <strong>{n(totalReceived)}</strong> received
         {totalCorrected > 0 && <> · {n(totalCorrected)} corrected</>} in {days.length} days.{" "}
         <span>
@@ -302,14 +364,14 @@ export function HourlyMoves({
   keep,
 }: {
   hours: MoveHour[];
-  itemType: string; // "" = all items, or sd_card / rig / mobile
+  itemType: string[]; // chosen item types, empty = all items
   types: { id: string; label: string }[]; // the item types this login can see
   people: { id: string; label: string; role?: string }[];
   cities: string[];
   roles: string[];
-  person: string;
-  city: string;
-  role: string;
+  person: string[];
+  city: string[];
+  role: string[];
   from: string;
   to: string;
   today: string;
@@ -317,12 +379,12 @@ export function HourlyMoves({
   filtered: boolean; // any hourly filter chosen
   keep: Record<string, string>; // other dashboard settings
 }) {
-  const unit = (types.find((t) => t.id === itemType)?.label ?? "All items").toLowerCase();
-  const roleName = (r: string) => ROLE_LABELS[r as Role] ?? r;
-  const shownPeople = role ? people.filter((p) => p.role === role || p.id === person) : people;
-  const clearHref = `/dashboard?${new URLSearchParams(keep)}#moved-hourly`;
+  const unit =
+    itemType.length === 0 || itemType.length === types.length
+      ? "all items"
+      : types.filter((t) => itemType.includes(t.id)).map((t) => t.label).join(" + ").toLowerCase();
   const quick = (n: number) => {
-    const q = new URLSearchParams({ ...keep, ...(itemType && { htype: itemType }), ...(person && { hperson: person }), ...(city && { hcity: city }), ...(role && { hrole: role }) });
+    const q = new URLSearchParams({ ...keep, ...listParams("h", { type: itemType, person, city, role }) });
     q.set("hfrom", new Date(Date.parse(`${today}T00:00:00Z`) - (n - 1) * 86_400_000).toISOString().slice(0, 10));
     q.set("hto", today);
     return `/dashboard?${q}#moved-hourly`;
@@ -343,70 +405,23 @@ export function HourlyMoves({
         </span>
       </div>
 
-      <form method="get" action="/dashboard#moved-hourly" className="dm-filters">
-        {Object.entries(keep).map(([k, v]) => (
-          <input key={k} type="hidden" name={k} value={v} />
-        ))}
-        <label>
-          Items
-          <select name="htype" defaultValue={itemType}>
-            <option value="">All items</option>
-            {types.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Person
-          <select name="hperson" defaultValue={person}>
-            <option value="">All people</option>
-            {shownPeople.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-                {p.role ? ` (${roleName(p.role)})` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          City
-          <select name="hcity" defaultValue={city}>
-            <option value="">All cities</option>
-            {cities.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Role
-          <select name="hrole" defaultValue={role}>
-            <option value="">All roles</option>
-            {roles.map((r) => (
-              <option key={r} value={r}>
-                {roleName(r)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          From
-          <input type="date" name="hfrom" defaultValue={from} max={today} />
-        </label>
-        <label>
-          To
-          <input type="date" name="hto" defaultValue={to} max={today} />
-        </label>
-        <button type="submit">Apply</button>
-        {filtered && (
-          <Link href={clearHref} className={styles.link}>
-            Clear filter
-          </Link>
-        )}
-      </form>
+      <MoveFilters
+        prefix="h"
+        anchor="moved-hourly"
+        types={types}
+        itemTypes={itemType}
+        people={people}
+        cities={cities}
+        roles={roles}
+        person={person}
+        city={city}
+        role={role}
+        from={from}
+        to={to}
+        today={today}
+        filtered={filtered}
+        keep={keep}
+      />
 
       <p className={styles.muted}>
         {any ? (

@@ -45,25 +45,44 @@ export function pickRange(
   return { from, to, days: Math.round((dayMs(to) - dayMs(from)) / DAY) + 1, cut };
 }
 
+/** One value or several (a multi-select); empty = no filter. */
+export type Many = string | readonly string[] | undefined;
+
 export interface MoveFilter {
-  person?: string; // person_id: only handovers this person sent or received
-  city?: string; // only handovers to or from a hub in this city
-  role?: string; // only handovers sent or received by someone with this role (fo, ifo, im, …)
+  person?: Many; // person_id(s): only handovers one of these people sent or received
+  city?: Many; // only handovers to or from a hub in one of these cities
+  role?: Many; // only handovers sent or received by someone with one of these roles (fo, ifo, im, …)
+}
+
+/** The chosen values as a list, from one value, several, or "a,b" text. */
+export function manyValues(v: Many): string[] {
+  const list = typeof v === "string" ? [v] : v ? [...v] : [];
+  return [...new Set(list.flatMap((x) => String(x).split(",")).map((x) => x.trim()).filter(Boolean))];
 }
 
 /** City of a hub: its City column, or its name when City is blank. */
 export const hubCityMap = (hubs: Hub[]) => new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
 
+/** A test for the person / city / role filter (each may hold several values). `roleOf` gives a person's role. */
+export function moveMatcher(f: MoveFilter, city: Map<string, string>, roleOf: Map<string, string> = new Map()) {
+  const persons = new Set(manyValues(f.person));
+  const roles = new Set(manyValues(f.role));
+  const cities = new Set(manyValues(f.city));
+  return (e: ItemEvent): boolean => {
+    if (persons.size && !persons.has(e.from_id) && !persons.has(e.to_id)) return false;
+    if (roles.size && !roles.has(roleOf.get(e.from_id) ?? "") && !roles.has(roleOf.get(e.to_id) ?? "")) return false;
+    if (cities.size) {
+      const here = city.get(e.hub) ?? e.hub;
+      const from = city.get(e.from_hub) ?? e.from_hub;
+      if (!cities.has(here) && !cities.has(from)) return false;
+    }
+    return true;
+  };
+}
+
 /** Does this handover match the person / city / role filter? `roleOf` gives a person's role. */
 export function matchesMove(e: ItemEvent, f: MoveFilter, city: Map<string, string>, roleOf: Map<string, string> = new Map()): boolean {
-  if (f.person && e.from_id !== f.person && e.to_id !== f.person) return false;
-  if (f.role && roleOf.get(e.from_id) !== f.role && roleOf.get(e.to_id) !== f.role) return false;
-  if (f.city) {
-    const here = city.get(e.hub) ?? e.hub;
-    const from = city.get(e.from_hub) ?? e.from_hub;
-    if (here !== f.city && from !== f.city) return false;
-  }
-  return true;
+  return moveMatcher(f, city, roleOf)(e);
 }
 
 /**
@@ -79,6 +98,7 @@ export function dailyMoves(
 ): MoveDay[] {
   const city = hubCityMap(hubs);
   const roleOf = new Map(people.map((p) => [p.person_id, p.role as string]));
+  const match = moveMatcher(f, city, roleOf);
   const out: MoveDay[] = [];
   const index = new Map<string, MoveDay>();
   for (let d = range.from; d <= range.to; d = addDays(d, 1)) {
@@ -89,7 +109,7 @@ export function dailyMoves(
   for (const e of events) {
     const at = Date.parse(e.occurred_at);
     const day = Number.isNaN(at) ? undefined : index.get(istDate(new Date(at)));
-    if (!day || !matchesMove(e, f, city, roleOf)) continue;
+    if (!day || !match(e)) continue;
     if (e.action === "check_out") day.sent++;
     else if (e.action === "receive") day.received++;
     else if (e.action === "correct" || e.action === "reassign_home_hub") day.corrected++;
@@ -154,6 +174,7 @@ export function hourlyMoves(
 ): MoveHour[] {
   const city = hubCityMap(hubs);
   const roleOf = new Map(people.map((p) => [p.person_id, p.role as string]));
+  const match = moveMatcher(f, city, roleOf);
   const out: MoveHour[] = Array.from({ length: 24 }, (_, hour) => ({ hour, sent: 0, received: 0 }));
   for (const e of events) {
     if (e.action !== "check_out" && e.action !== "receive") continue;
@@ -161,7 +182,7 @@ export function hourlyMoves(
     if (Number.isNaN(at)) continue;
     const ist = new Date(at + 5.5 * 3_600_000);
     const day = ist.toISOString().slice(0, 10);
-    if (day < range.from || day > range.to || !matchesMove(e, f, city, roleOf)) continue;
+    if (day < range.from || day > range.to || !match(e)) continue;
     const slot = out[ist.getUTCHours()];
     if (e.action === "check_out") slot.sent++;
     else slot.received++;

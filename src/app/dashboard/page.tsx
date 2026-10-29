@@ -12,7 +12,7 @@ import { BarList, n, type BarRow } from "./charts";
 import { DailyMoves, HourlyMoves } from "./daily-moves";
 import { FieldUsageCard } from "./field-usage";
 import { fieldUsage, usageFilterOptions } from "@/lib/field-usage";
-import { dailyMoves, hourlyMoves, moveFilterOptions, pickRange } from "@/lib/daily-moves";
+import { dailyMoves, hourlyMoves, manyValues, moveFilterOptions, pickRange } from "@/lib/daily-moves";
 import { formatIst, istDate } from "@/lib/time";
 import styles from "./dashboard.module.css";
 import { HubOrgChart, countHidden } from "./hub-tree-view";
@@ -164,11 +164,15 @@ function MobileCharts({ items }: { items: Item[] }) {
 // Field usage (u…) and hourly chart (h…) filter settings, kept when another dashboard filter is applied.
 const EXTRA_KEYS = ["ufrom", "uto", "ucity", "uperson", "umodel", "uout", "htype", "hperson", "hcity", "hrole", "hfrom", "hto"];
 const HOURLY_KEYS = ["htype", "hperson", "hcity", "hrole", "hfrom", "hto"];
+const MOVE_KEYS = ["mtype", "mperson", "mcity", "mrole", "mfrom", "mto"];
 const TYPE_LABELS: Record<string, string> = { sd_card: "SD cards", rig: "Rigs", mobile: "Mobiles" };
 
 export default async function DashboardPage({ searchParams }: PageProps<"/dashboard">) {
   const user = await requireRole();
   const sp = await searchParams;
+  // Filter values: a multi-select sends ?x=a&x=b, links carry "a,b"; both are read as a list.
+  const many = (k: string) => manyValues(sp[k] as string | string[] | undefined);
+  const val = (k: string) => many(k).join(",");
   // Each login sees only its item types; IM/Admin/FO can switch SD cards / Rigs. There is no "All items"
   // view on the dashboard: with no choice yet it opens on the first type this login can see (SD cards).
   const type = typeParam(one(sp.type), user.role) || allowedTypes(user.role)[0] || "";
@@ -269,10 +273,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // City-wise count of items with a status (city of the hub the item is at), biggest first.
   const cityOfHub = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
   // pct = share of that tile's items in the city (whole numbers, e.g. 42%).
-  const citiesFor = (status: Status, onlyType?: string) => {
+  const citiesFor = (status: Status | Status[], onlyType?: string) => {
+    const wanted = new Set<string>(Array.isArray(status) ? status : [status]);
     const count = new Map<string, number>();
     for (const i of items) {
-      if (i.status !== status || (onlyType && i.item_type !== onlyType)) continue;
+      if (!wanted.has(i.status) || (onlyType && i.item_type !== onlyType)) continue;
       const c = cityOfHub.get(i.current_hub) || i.current_hub || "Not set";
       count.set(c, (count.get(c) ?? 0) + 1);
     }
@@ -284,7 +289,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           city,
           count: c,
           pct: total ? Math.round((c / total) * 100) : 0,
-          href: inventory({ status, city: city.toLowerCase(), ...(onlyType && { type: onlyType }) }),
+          href: inventory({ status: [...wanted].join(","), city: city.toLowerCase(), ...(onlyType && { type: onlyType }) }),
         };
       });
   };
@@ -363,7 +368,15 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
   // SD CARDS (and the "All" view): unchanged.
   const sdKpis: Kpi[] = [
-    { label: "In stock", value: s.in_stock, hint: share(s.in_stock), href: inventory({ status: "in_stock" }), icon: "check", color: "var(--series-3)" },
+    {
+      label: "In stock",
+      value: s.in_stock,
+      hint: share(s.in_stock),
+      href: inventory({ status: "in_stock" }),
+      icon: "check",
+      color: "var(--series-3)",
+      cities: citiesFor("in_stock"),
+    },
     {
       label: "With field officers",
       value: s.with_fo,
@@ -382,6 +395,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       href: inventory({ status: "traveling,pending" }),
       icon: "truck",
       color: "var(--series-4)",
+      cities: citiesFor(["traveling", "pending"]),
     },
     {
       label: "Lost or damaged",
@@ -624,19 +638,37 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const detailKey = one(sp.adetail);
   const detailRow = shownDelayed.find((g) => g.key === detailKey);
   const attentionKeep: Record<string, string> = {};
-  for (const k of ["type", "empty", "acity", "arole", "mperson", "mcity", "mrole", "mfrom", "mto", ...EXTRA_KEYS]) if (one(sp[k])) attentionKeep[k] = one(sp[k]);
+  for (const k of ["type", "empty", "acity", "arole", ...MOVE_KEYS, ...EXTRA_KEYS]) if (val(k)) attentionKeep[k] = val(k);
   const detailHref = (key: string) => `/dashboard?${new URLSearchParams({ ...attentionKeep, adetail: key })}#delayed-items`;
   const closeDetailHref = `/dashboard?${new URLSearchParams(attentionKeep)}#attention`;
-  // "Moved per day" chart: person, city and role filters (?mperson=…&mcity=…&mrole=…). Other settings are kept.
-  const movePerson = one(sp.mperson);
-  const moveCity = one(sp.mcity);
-  const moveRole = one(sp.mrole);
-  // Date range (?mfrom=YYYY-MM-DD&mto=YYYY-MM-DD). Default: the last 14 days.
+  // "Moved per day" and "Moved per hour of day": each has its own Items, Person, City and Role filters, and
+  // several values can be ticked in each (?mperson=a&mperson=b, kept in links as "a,b"). Items: empty = all
+  // the types this login can see. Default range: the last 14 days.
+  const typeOptions = allowedTypes(user.role).map((t) => ({ id: t as string, label: TYPE_LABELS[t] ?? t }));
+  const pickTypes = (k: string) => many(k).filter((t) => typeOptions.some((o) => o.id === t));
+  const eventsByTypes = new Map<string, Promise<typeof events>>();
+  const eventsFor = (chosen: string[]) => {
+    const list = chosen.length ? chosen : typeOptions.map((t) => t.id);
+    const key = [...list].sort().join(",");
+    if (list.length === 1 && list[0] === type) return Promise.resolve(events);
+    if (!eventsByTypes.has(key)) eventsByTypes.set(key, getStore().forTypes(list).list("events"));
+    return eventsByTypes.get(key)!;
+  };
+  const typesTitle = (chosen: string[]) =>
+    chosen.length === 0 || chosen.length === typeOptions.length
+      ? "All items"
+      : typeOptions.filter((t) => chosen.includes(t.id)).map((t) => t.label).join(" + ");
+
+  const moveTypes = pickTypes("mtype");
+  const movePerson = many("mperson");
+  const moveCity = many("mcity");
+  const moveRole = many("mrole");
   const moveRange = pickRange(one(sp.mfrom), one(sp.mto), now, 14);
-  const movedDays = dailyMoves(events, hubs, moveRange, { person: movePerson, city: moveCity, role: moveRole }, people);
-  const moveOptions = moveFilterOptions(events, hubs, people, moveRange);
+  const moveEvents = await eventsFor(moveTypes);
+  const movedDays = dailyMoves(moveEvents, hubs, moveRange, { person: movePerson, city: moveCity, role: moveRole }, people);
+  const moveOptions = moveFilterOptions(moveEvents, hubs, people, moveRange);
   const moveKeep: Record<string, string> = {};
-  for (const k of ["type", "acity", "arole", "empty", ...EXTRA_KEYS]) if (one(sp[k])) moveKeep[k] = one(sp[k]);
+  for (const k of ["type", "acity", "arole", "empty", ...EXTRA_KEYS]) if (val(k)) moveKeep[k] = val(k);
 
   // Field usage (most / least / never used on field): ?ufrom=&uto=&ucity=&uperson=&umodel=&uout=1. Default: last 30 days.
   const usageRange = pickRange(one(sp.ufrom), one(sp.uto), now, 30, 366);
@@ -647,33 +679,24 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const usage = fieldUsage(items, events, hubs, people, usageRange, { city: usageCity, person: usagePerson, model: usageModel, includeOut: usageOut }, now);
   const usageOptions = usageFilterOptions(items, events, hubs, people);
   const usageKeep: Record<string, string> = {};
-  for (const k of ["type", "empty", "acity", "arole", "mperson", "mcity", "mrole", "mfrom", "mto", ...HOURLY_KEYS]) if (one(sp[k])) usageKeep[k] = one(sp[k]);
+  for (const k of ["type", "empty", "acity", "arole", ...MOVE_KEYS, ...HOURLY_KEYS]) if (val(k)) usageKeep[k] = val(k);
 
-  // "Moved per hour of day": its own filters (?htype=&hperson=&hcity=&hrole=&hfrom=&hto=). Items: All items
-  // (default) or one type this login can see. Default range: the last 14 days.
-  const hourTypes = allowedTypes(user.role).map((t) => ({ id: t as string, label: TYPE_LABELS[t] ?? t }));
-  const hourType = hourTypes.some((t) => t.id === one(sp.htype)) ? one(sp.htype) : "";
-  const hourPerson = one(sp.hperson);
-  const hourCity = one(sp.hcity);
-  const hourRole = one(sp.hrole);
+  const hourTypes = pickTypes("htype");
+  const hourPerson = many("hperson");
+  const hourCity = many("hcity");
+  const hourRole = many("hrole");
   const hourRange = pickRange(one(sp.hfrom), one(sp.hto), now, 14);
-  const hourStore = storeFor(user.role, hourType || undefined);
-  const hourEvents = hourType === type && type ? events : await hourStore.list("events");
+  const hourEvents = await eventsFor(hourTypes);
   const movedHours = hourlyMoves(hourEvents, hubs, hourRange, { person: hourPerson, city: hourCity, role: hourRole }, people);
   const hourOptions = moveFilterOptions(hourEvents, hubs, people, hourRange);
   const hourKeep: Record<string, string> = {};
-  for (const k of ["type", "empty", "acity", "arole", "mperson", "mcity", "mrole", "mfrom", "mto", "ufrom", "uto", "ucity", "uperson", "umodel", "uout"])
-    if (one(sp[k])) hourKeep[k] = one(sp[k]);
+  for (const k of ["type", "empty", "acity", "arole", ...MOVE_KEYS, "ufrom", "uto", "ucity", "uperson", "umodel", "uout"])
+    if (val(k)) hourKeep[k] = val(k);
 
   const keepParams: Record<string, string> = {};
   if (one(sp.type)) keepParams.type = one(sp.type);
   if (showEmpty) keepParams.empty = "1";
-  if (movePerson) keepParams.mperson = movePerson;
-  if (moveCity) keepParams.mcity = moveCity;
-  if (moveRole) keepParams.mrole = moveRole;
-  if (one(sp.mfrom)) keepParams.mfrom = one(sp.mfrom);
-  if (one(sp.mto)) keepParams.mto = one(sp.mto);
-  for (const k of EXTRA_KEYS) if (one(sp[k])) keepParams[k] = one(sp[k]);
+  for (const k of [...MOVE_KEYS, ...EXTRA_KEYS]) if (val(k)) keepParams[k] = val(k);
 
   // Who has items: longest out first, then most items.
   const holdersSorted = [...d.holders].sort(
@@ -983,9 +1006,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
         {mobileView && <MobileCharts items={items} />}
 
         <DailyMoves
-          title={rigView ? "Rigs moved per day" : mobileView ? "Mobiles moved per day" : "SD cards moved per day"}
-          unit={rigView ? "rigs" : mobileView ? "mobiles" : "SD cards"}
+          title={`${typesTitle(moveTypes)} moved per day`}
+          unit={typesTitle(moveTypes).toLowerCase()}
           days={movedDays}
+          types={typeOptions}
+          itemTypes={moveTypes}
           people={moveOptions.people}
           cities={moveOptions.cities}
           roles={moveOptions.roles}
@@ -1002,8 +1027,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
         <HourlyMoves
           hours={movedHours}
-          itemType={hourType}
-          types={hourTypes}
+          itemType={hourTypes}
+          types={typeOptions}
           people={hourOptions.people}
           cities={hourOptions.cities}
           roles={hourOptions.roles}
@@ -1014,7 +1039,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           to={hourRange.to}
           today={istDate(now)}
           days={hourRange.days}
-          filtered={!!(one(sp.htype) || hourPerson || hourCity || hourRole || one(sp.hfrom) || one(sp.hto))}
+          filtered={!!(hourTypes.length || hourPerson.length || hourCity.length || hourRole.length || one(sp.hfrom) || one(sp.hto))}
           keep={hourKeep}
         />
 

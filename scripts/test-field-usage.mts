@@ -72,4 +72,14 @@ assert.equal(h.reduce((s, x) => s + x.sent + x.received, 0), 7, "September event
 const hf = hourlyMoves(events, hubs, range, { person: "fo2" }, people);
 assert.equal(hf.reduce((s, x) => s + x.sent, 0), 1);
 
+// Several values in one filter (multi-select): either FO counts
+const both = hourlyMoves(events, hubs, range, { person: ["fo1", "fo2"] }, people);
+assert.equal(both.reduce((s, x) => s + x.sent, 0), 4, "A twice, B, D");
+const listText = hourlyMoves(events, hubs, range, { person: "fo1,fo2" }, people);
+assert.deepEqual(listText, both, "'a,b' text works like a list");
+const noCity = hourlyMoves(events, hubs, range, { city: ["Bangalore"] }, people);
+assert.equal(noCity.reduce((s, x) => s + x.sent + x.received, 0), 0);
+const anyCity = hourlyMoves(events, hubs, range, { city: ["Bangalore", "Kadapa"] }, people);
+assert.equal(anyCity.reduce((s, x) => s + x.sent + x.received, 0), 7);
+
 console.log("field usage + hourly: all checks passed");
