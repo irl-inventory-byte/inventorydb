@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { requireRole } from "@/lib/authz";
 import { getStore } from "@/lib/store";
+import { saveReceipt } from "@/lib/receipt-archive";
 
 // Admin-only check for the receipt archive.
 // Open /api/receipt-test in the browser to save the latest send's receipt,
@@ -38,8 +39,4 @@ export async function GET(request: Request) {
       error: error instanceof Error ? error.message : String(error),
     });
   }
-}
-
-function saveReceipt(batch: string, arg1: string): Record<string, unknown> {
-  throw new Error("Function not implemented.");
 }
