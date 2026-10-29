@@ -13,6 +13,7 @@ import styles from "../../admin/admin.module.css";
 import { receiveCards } from "../actions";
 import HubSelect from "./HubSelect";
 import { mobileAliases } from "@/lib/scan";
+import { linkProblem, type LoginRole } from "@/lib/user-link";
 import ReceiveScanArea from "./ReceiveScanArea";
 
 export default async function ReceivePage({
@@ -58,6 +59,14 @@ export default async function ReceivePage({
     const wholeTeam = true;
     const team = user.role === "qc" ? "QC team" : "hardware team";
     const notLinked = !user.personId;
+    // Exactly why, so the admin knows what to fix (wrong role in People, missing email, inactive, …).
+    const whyNotLinked = notLinked
+      ? linkProblem(
+          users.find((u) => u.email.toLowerCase() === String(user.email ?? "").toLowerCase() && u.active !== "false"),
+          user.role as LoginRole,
+          people,
+        )
+      : "";
     const waiting = items.filter((i) => i.status === heldFrom);
     const personNames = new Map(people.map((p) => [p.person_id, p.name]));
     // Who sent each rig, and when: from the rig's latest handover.
@@ -84,7 +93,7 @@ export default async function ReceivePage({
         {notLinked && (
           <p className={styles.error}>
             Your login is not linked to a person in the People tab, so a receive can&apos;t be recorded under your
-            name. Ask an admin to set your Linked person on Manage users (an admin can set their own).
+            name. {whyNotLinked}
           </p>
         )}
         <h2>
