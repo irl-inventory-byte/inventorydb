@@ -2,6 +2,7 @@ import Link from "next/link";
 import { STATUS_LABELS } from "@/lib/labels";
 import type { Status } from "@/lib/schema";
 import { modelLabel, type FieldUsage, type UsageRow } from "@/lib/field-usage";
+import MultiSelect from "../inventory/MultiSelect";
 import { n } from "./charts";
 import styles from "./dashboard.module.css";
 
@@ -59,9 +60,9 @@ export function FieldUsageCard({
   from: string;
   to: string;
   today: string;
-  city: string;
-  person: string;
-  model: string;
+  city: string[];
+  person: string[];
+  model: string[];
   includeOut: boolean;
   cities: string[];
   fos: { id: string; label: string }[];
@@ -75,10 +76,16 @@ export function FieldUsageCard({
   const most = used.slice(0, TOP);
   const least = used.length > TOP ? [...used].reverse().slice(0, TOP) : [...used].reverse();
   const maxUses = Math.max(1, ...used.map((r) => r.uses));
-  const filtered = !!(city || person || model || includeOut);
+  const filtered = !!(city.length || person.length || model.length || includeOut);
   const clearHref = `/dashboard?${new URLSearchParams(keep)}#field-usage`;
   const quick = (days: number) => {
-    const q = new URLSearchParams({ ...keep, ...(city && { ucity: city }), ...(person && { uperson: person }), ...(model && { umodel: model }), ...(includeOut && { uout: "1" }) });
+    const q = new URLSearchParams({
+      ...keep,
+      ...(city.length && { ucity: city.join(",") }),
+      ...(person.length && { uperson: person.join(",") }),
+      ...(model.length && { umodel: model.join(",") }),
+      ...(includeOut && { uout: "1" }),
+    });
     q.set("ufrom", new Date(Date.parse(`${today}T00:00:00Z`) - (days - 1) * 86_400_000).toISOString().slice(0, 10));
     q.set("uto", today);
     return `/dashboard?${q}#field-usage`;
@@ -152,40 +159,28 @@ export function FieldUsageCard({
         {Object.entries(keep).map(([k, v]) => (
           <input key={k} type="hidden" name={k} value={v} />
         ))}
-        <label>
-          City
-          <select name="ucity" defaultValue={city}>
-            <option value="">All cities</option>
-            {cities.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          FO
-          <select name="uperson" defaultValue={person}>
-            <option value="">All FOs</option>
-            {fos.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <MultiSelect
+          name="ucity"
+          label="City"
+          allLabel="All cities"
+          options={cities.map((c) => ({ value: c, label: c }))}
+          selected={city}
+        />
+        <MultiSelect
+          name="uperson"
+          label="FO"
+          allLabel="All FOs"
+          options={fos.map((p) => ({ value: p.id, label: p.label }))}
+          selected={person}
+        />
         {models.length > 1 && (
-          <label>
-            Model
-            <select name="umodel" defaultValue={model}>
-              <option value="">All models</option>
-              {models.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </label>
+          <MultiSelect
+            name="umodel"
+            label="Model"
+            allLabel="All models"
+            options={models.map((m) => ({ value: m, label: m }))}
+            selected={model}
+          />
         )}
         <label>
           From
@@ -258,7 +253,7 @@ export function FieldUsageCard({
           <h3>Never used on field ({n(never.length)})</h3>
           <p className={styles.muted}>
             Not checked out to an FO in this period
-            {person ? " (the FO filter does not apply here)" : ""}. Longest since last use first: check, recall or
+            {person.length ? " (the FO filter does not apply here)" : ""}. Longest since last use first: check, recall or
             retire.
           </p>
           {never.length ? table(never.slice(0, TOP), false) : <p className={styles.muted}>Every {unit.replace(/s$/, "")} in view was used.</p>}

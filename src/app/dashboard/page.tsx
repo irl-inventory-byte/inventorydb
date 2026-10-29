@@ -672,9 +672,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
   // Field usage (most / least / never used on field): ?ufrom=&uto=&ucity=&uperson=&umodel=&uout=1. Default: last 30 days.
   const usageRange = pickRange(one(sp.ufrom), one(sp.uto), now, 30, 366);
-  const usageCity = one(sp.ucity);
-  const usagePerson = one(sp.uperson);
-  const usageModel = one(sp.umodel);
+  const usageCity = many("ucity");
+  const usagePerson = many("uperson");
+  const usageModel = many("umodel");
   const usageOut = one(sp.uout) === "1";
   const usage = fieldUsage(items, events, hubs, people, usageRange, { city: usageCity, person: usagePerson, model: usageModel, includeOut: usageOut }, now);
   const usageOptions = usageFilterOptions(items, events, hubs, people);

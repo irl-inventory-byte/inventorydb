@@ -1,5 +1,5 @@
 import type { Hub, Item, ItemEvent, Person } from "./schema";
-import { hubCityMap, type DayRange } from "./daily-moves";
+import { hubCityMap, manyValues, type DayRange, type Many } from "./daily-moves";
 import { istDate } from "./time";
 
 /**
@@ -19,9 +19,9 @@ const DAY = 86_400_000;
 export const OUT_OF_SERVICE = new Set(["lost", "damaged", "retired", "rnd"]);
 
 export interface UsageFilter {
-  city?: string; // FO check-outs at a hub in this city; for never-used items, home or current hub in this city
-  person?: string; // person_id of an FO: only check-outs to this FO
-  model?: string; // "Brand Model" as shown in the Model filter
+  city?: Many; // FO check-outs at a hub in one of these cities; never-used items: home or current hub there
+  person?: Many; // person_id(s) of FOs: only check-outs to these FOs
+  model?: Many; // "Brand Model" as shown in the Model filter (one or several)
   includeOut?: boolean; // include lost / damaged / retired / R&D items
 }
 
@@ -74,13 +74,16 @@ export function fieldUsage(
     return Number.isNaN(t) ? 0 : t;
   };
 
+  const cities = new Set(manyValues(f.city));
+  const persons = new Set(manyValues(f.person));
+  const models = new Set(manyValues(f.model));
   const used: UsageRow[] = [];
   const never: UsageRow[] = [];
   let totalUses = 0;
   let inScope = 0;
   for (const item of items) {
     if (!f.includeOut && OUT_OF_SERVICE.has(item.status)) continue;
-    if (f.model && modelLabel(item) !== f.model) continue;
+    if (models.size && !models.has(modelLabel(item))) continue;
     const history = (byItem.get(item.item_id) ?? []).slice().sort((a, b) => time(a) - time(b));
 
     let uses = 0;
@@ -94,8 +97,8 @@ export function fieldUsage(
       lastFo = name.get(e.to_id) || e.to_person || e.to_id;
       const day = istDate(new Date(time(e)));
       if (day < range.from || day > range.to) return;
-      if (f.person && e.to_id !== f.person) return;
-      if (f.city && cityOf(e.hub) !== f.city && cityOf(e.from_hub) !== f.city) return;
+      if (persons.size && !persons.has(e.to_id)) return;
+      if (cities.size && !cities.has(cityOf(e.hub)) && !cities.has(cityOf(e.from_hub))) return;
       uses++;
       fos.add(e.to_id || e.to_person);
       const next = history.slice(idx + 1).find((n) => time(n) >= time(e) && n.action !== "correct");
@@ -104,7 +107,7 @@ export function fieldUsage(
 
     if (uses === 0) {
       // Never used: the FO filter cannot apply; the city filter uses the item's home or current hub.
-      if (f.city && cityOf(item.home_hub) !== f.city && cityOf(item.current_hub) !== f.city) continue;
+      if (cities.size && !cities.has(cityOf(item.home_hub)) && !cities.has(cityOf(item.current_hub))) continue;
     }
     inScope++;
     const row = { item, uses, fieldDays: Math.round((ms / DAY) * 10) / 10, lastUsed, lastFo, fos: fos.size };

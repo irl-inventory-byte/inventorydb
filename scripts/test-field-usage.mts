@@ -55,6 +55,12 @@ const blr = fieldUsage(items, events, hubs, people, range, { city: "Bangalore" }
 assert.deepEqual(blr.used.map((r) => r.item.item_id), [], "all FO check-outs were in Kadapa");
 assert.deepEqual(blr.never.map((r) => r.item.item_id).sort(), ["A", "B", "C"], "never-used uses home/current hub city");
 
+// Several FOs / cities at once
+const twoFos = fieldUsage(items, events, hubs, people, range, { person: ["fo1", "fo2"] }, now);
+assert.deepEqual(twoFos.used.map((r) => [r.item.item_id, r.uses]), [["A", 2], ["B", 1]]);
+const twoCities = fieldUsage(items, events, hubs, people, range, { city: ["Bangalore", "Kadapa"] }, now);
+assert.deepEqual(twoCities.used.map((r) => r.item.item_id), ["A", "B"]);
+
 const opts = usageFilterOptions(items, events, hubs, people);
 assert.deepEqual(opts.fos.map((f) => f.id), ["fo1", "fo2"]);
 assert.deepEqual(opts.cities, ["Bangalore", "Kadapa"]);
