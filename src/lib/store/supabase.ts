@@ -22,6 +22,9 @@ const PARALLEL = 16; // page requests at the same time when reading a big table
 // Events only ever grow (a send or receive adds rows), so after one full download only the new rows are
 // fetched. A full download still happens this often, and whenever the row count shows rows were removed.
 const EVENTS_FULL_MS = 10 * 60 * 1000;
+// Other tables: a kept copy is used for at most this long even if its change counter did not move (in case
+// a counter is missing for a table), so a change made on another server always shows within a minute.
+const KEEP_MAX_MS = 60 * 1000;
 const VERSIONS_MS = 1000; // reads within this time share one check of the change counters
 
 const tabs = Object.keys(TABS) as TabName[];
@@ -95,7 +98,7 @@ export class SupabaseBackend implements TableBackend {
   // A table is downloaded again only when its change counter (table_versions, kept by triggers in
   // setup.sql) moved. Without that table (setup.sql not run again yet) nothing is kept: same as before.
 
-  private kept = new Map<TabName, { v: string; rows: Row[] }>();
+  private kept = new Map<TabName, { v: string; rows: Row[]; at: number }>();
   private versions: { at: number; map: Promise<Map<string, string> | null> } | null = null;
 
   /** The change counters, shared by all reads in the same moment (one small request per page). */
@@ -183,10 +186,10 @@ export class SupabaseBackend implements TableBackend {
 
     const v = map.get(tab) ?? "0"; // "0" = never written since the counters were added
     const hit = this.kept.get(tab);
-    if (hit && hit.v === v) return hit.rows.map((r) => ({ ...r }));
+    if (hit && hit.v === v && Date.now() - hit.at < KEEP_MAX_MS) return hit.rows.map((r) => ({ ...r }));
 
     const { rows } = await this.download(tab);
-    this.kept.set(tab, { v, rows });
+    this.kept.set(tab, { v, rows, at: Date.now() });
     return rows.map((r) => ({ ...r }));
   }
 

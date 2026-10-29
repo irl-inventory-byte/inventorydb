@@ -1,5 +1,9 @@
 import type { Person } from "./schema";
 
+// People rows can carry "QC", " qc " etc.; compare roles and flags the same way everywhere.
+const norm = (v: string | undefined) => String(v ?? "").trim().toLowerCase();
+const isActive = (p: Person) => norm(p.active) !== "false";
+
 export type LoginRole = "admin" | "im" | "rig" | "fo" | "hardware" | "qc" | "internal";
 
 // The person role a login role must be linked to. An admin login may be linked to anyone, or no one.
@@ -21,7 +25,7 @@ export function resolveLinkedPerson(
   const need = NEEDS[user.role] ?? MAY_LINK[user.role];
   if (!need) return "";
   const email = user.email.toLowerCase();
-  return people.find((p) => p.active !== "false" && p.role === need && p.linked_user.toLowerCase() === email)?.person_id ?? "";
+  return people.find((p) => isActive(p) && norm(p.role) === need && norm(p.linked_user) === email)?.person_id ?? "";
 }
 
 /**
@@ -34,10 +38,12 @@ export function checkUserLink(role: LoginRole, personId: string, people: Person[
   const need = NEEDS[role];
   const may = MAY_LINK[role];
   if (!personId) return "";
-  const person = people.find((p) => p.person_id === personId && p.active !== "false");
+  const person = people.find((p) => p.person_id === personId && isActive(p));
   if (!person) return undefined;
-  const required = need ?? may;
-  return required && person.role !== required ? undefined : personId;
+  // IM, Rig and Internal logins must be linked to a person of that role. QC, hardware and FO logins may be
+  // linked to any active person: the admin chose them on purpose, so receives are recorded under that name.
+  if (need) return norm(person.role) !== need ? undefined : personId;
+  return may || !need ? personId : undefined;
 }
 const ROLE_NAME: Record<string, string> = {
   admin: "Admin",

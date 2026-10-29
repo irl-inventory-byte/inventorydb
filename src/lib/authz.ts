@@ -26,9 +26,10 @@ async function currentRoles(
     const people = await store.list("people");
     // If there is no link for the primary role, the second role may find one by email
     // (e.g. an Admin who is also QC: the QC person in People whose email is this login).
+    // The saved link is tried for both roles (e.g. a Rig login whose second role is QC, linked to a QC person).
     const personId =
       resolveLinkedPerson({ ...row, role: primary as LoginRole }, people) ||
-      (secondary ? resolveLinkedPerson({ ...row, role: secondary as LoginRole, person_id: "" }, people) : "");
+      (secondary ? resolveLinkedPerson({ ...row, role: secondary as LoginRole }, people) : "");
     return { role: primary, secondaryRole: secondary && secondary !== primary ? secondary : undefined, personId };
   } catch {
     return atSignIn;
