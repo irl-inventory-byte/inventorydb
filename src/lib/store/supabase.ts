@@ -20,11 +20,15 @@ const PAGE = 1000; // Supabase returns at most 1000 rows per request
 const CHUNK = 500; // rows per write request
 const PARALLEL = 16; // page requests at the same time when reading a big table
 // Events only ever grow (a send or receive adds rows), so after one full download only the new rows are
-// fetched. A full download still happens this often, and whenever the row count shows rows were removed.
-const EVENTS_FULL_MS = 10 * 60 * 1000;
-// Other tables: a kept copy is used for at most this long even if its change counter did not move (in case
-// a counter is missing for a table), so a change made on another server always shows within a minute.
+// fetched. The whole history is downloaded again only when the row count shows rows were removed, after an
+// event is edited on this server, or this often (to pick up a rare edit made on another server). Each full
+// download is the history's whole size in Supabase egress, so this is kept long.
+const EVENTS_FULL_MS = 12 * 60 * 60 * 1000;
+// Small settings tables (logins, people, hubs): a kept copy is used for at most this long even if its change
+// counter did not move, so a role or link saved on another server shows within a minute. Big tables (items)
+// rely on the change counter only, so they are not downloaded again every minute.
 const KEEP_MAX_MS = 60 * 1000;
+const SMALL_TABLES = new Set<string>(["users", "people", "hubs"]);
 const VERSIONS_MS = 1000; // reads within this time share one check of the change counters
 
 const tabs = Object.keys(TABS) as TabName[];
@@ -40,6 +44,8 @@ export class SupabaseBackend implements TableBackend {
     const h: Record<string, string> = {
       apikey: this.cfg.key,
       "Content-Type": "application/json",
+      // Ask for compressed answers: big reads (the event history) are several times smaller on the wire.
+      "Accept-Encoding": "gzip",
       ...extra,
     };
     // Old-style keys are JWTs and also go in Authorization. New sb_secret_ keys work from apikey alone.
@@ -165,6 +171,8 @@ export class SupabaseBackend implements TableBackend {
     }
     const full = await this.download("events");
     this.events = { rows: full.rows, maxSeq: full.maxSeq, at: Date.now() };
+    // Shows in Vercel → Logs: how often the whole history is downloaded (each one counts as egress).
+    console.log(`[supabase] full events download: ${full.rows.length} rows${kept ? "" : " (server start)"}`);
     return full.rows;
   }
 
@@ -186,7 +194,8 @@ export class SupabaseBackend implements TableBackend {
 
     const v = map.get(tab) ?? "0"; // "0" = never written since the counters were added
     const hit = this.kept.get(tab);
-    if (hit && hit.v === v && Date.now() - hit.at < KEEP_MAX_MS) return hit.rows.map((r) => ({ ...r }));
+    const fresh = !SMALL_TABLES.has(tab) || (hit !== undefined && Date.now() - hit.at < KEEP_MAX_MS);
+    if (hit && hit.v === v && fresh) return hit.rows.map((r) => ({ ...r }));
 
     const { rows } = await this.download(tab);
     this.kept.set(tab, { v, rows, at: Date.now() });
