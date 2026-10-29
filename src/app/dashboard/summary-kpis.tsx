@@ -529,18 +529,6 @@ export async function SummaryKpis({
                 </span>
               )}
 
-              {ages && fleet.ageUnknown > 0 && (
-                <span
-                  style={{
-                    display: "block",
-                    marginTop: 8,
-                    fontSize: 12,
-                  }}
-                >
-                  New / Old not set in the sheet: {n(fleet.ageUnknown)}
-                </span>
-              )}
-
               {hasSd && !ages && (
                 <span
                   style={{
