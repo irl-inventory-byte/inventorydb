@@ -14,10 +14,14 @@ const add = (n: number) => {
     rows.push(r);
   }
 };
-globalThis.fetch = (async (input: string, init?: { headers?: Record<string, string> }) => {
+globalThis.fetch = (async (input: string, init?: { method?: string; body?: string; headers?: Record<string, string> }) => {
   const url = new URL(input);
   const tab = url.pathname.split("/").pop();
-  requests.push(`${tab}?${url.searchParams.toString()}`);
+  requests.push(`${init?.method ?? "GET"} ${tab}?${url.searchParams.toString()}`);
+  if (init?.method === "POST" && tab === "events") {
+    for (const r of JSON.parse(init.body ?? "[]") as Record<string, unknown>[]) rows.push({ ...r, _seq: ++seq });
+    return new Response(null, { status: 201 });
+  }
   if (tab === "table_versions") return new Response(JSON.stringify([]), { status: 200 });
   if (tab !== "events") return new Response("[]", { status: 200 });
   const gt = url.searchParams.get("_seq");
@@ -75,5 +79,15 @@ const [x, y] = await Promise.all([b.readAll("events"), b.readAll("events")]);
 assert.equal(x.length, 2504);
 assert.equal(y.length, 2504);
 assert.equal(requests.filter((r) => r.includes("_seq=gt.")).length, 1);
+
+// A send or receive (rows added through this server) does not download the whole history again
+const newRow: Record<string, string> = {};
+for (const c of TABS.events) newRow[c] = "sent-now";
+requests.length = 0;
+await b.append("events", [newRow]);
+got = await b.readAll("events");
+assert.equal(got.length, 2505);
+assert.equal(got[got.length - 1].event_id, "sent-now");
+assert.ok(!requests.some((r) => r.startsWith("GET events") && !r.includes("_seq=gt.") && !r.includes("select=_seq&limit=1")), "no full download after an add");
 
 console.log("supabase events: all checks passed");

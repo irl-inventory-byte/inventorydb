@@ -120,21 +120,24 @@ export class SupabaseBackend implements TableBackend {
     return map;
   }
 
-  /** Forget kept copies (and the counters) so the next read cannot miss a write. */
-  private forget(...tabs: TabName[]) {
+  /**
+   * Forget kept copies (and the counters) so the next read cannot miss a write. `edited` = rows were changed
+   * or removed (not only added): kept events are then downloaded again in full. Added events need no full
+   * download: the next read fetches the new rows, so a send or receive does not reload the whole history.
+   */
+  private forget(tabs: TabName[], edited: boolean) {
     for (const t of tabs) this.kept.delete(t);
-    // New events are picked up by the next read anyway; edits and deletions need a full download.
-    if (tabs.includes("events")) this.events = this.events && { ...this.events, at: 0 };
+    if (edited && tabs.includes("events")) this.events = this.events && { ...this.events, at: 0 };
     this.versions = null;
   }
 
   /** Run a write; forget before AND after, so the page shown right after saving is fresh. */
-  private async writing<T>(tabs: TabName[], fn: () => Promise<T>): Promise<T> {
-    this.forget(...tabs);
+  private async writing<T>(tabs: TabName[], fn: () => Promise<T>, edited = true): Promise<T> {
+    this.forget(tabs, edited);
     try {
       return await fn();
     } finally {
-      this.forget(...tabs);
+      this.forget(tabs, edited);
     }
   }
 
@@ -263,12 +266,16 @@ export class SupabaseBackend implements TableBackend {
   }
 
   async append(tab: TabName, rows: Row[]) {
-    await this.writing([tab], async () => {
-      const clean = this.clean(tab, rows);
-      for (let i = 0; i < clean.length; i += CHUNK) {
-        await this.call("POST", tab, "", clean.slice(i, i + CHUNK), { Prefer: "return=minimal" });
-      }
-    });
+    await this.writing(
+      [tab],
+      async () => {
+        const clean = this.clean(tab, rows);
+        for (let i = 0; i < clean.length; i += CHUNK) {
+          await this.call("POST", tab, "", clean.slice(i, i + CHUNK), { Prefer: "return=minimal" });
+        }
+      },
+      false, // rows only added
+    );
   }
 
   /** Update rows whose key exists, add the rest. Existing rows keep their place in the order. */

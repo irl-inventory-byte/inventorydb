@@ -105,8 +105,11 @@ async function run(
   // Two spellings of the same card (SD-1 and sd-1) count once, and the stored serial is what gets used.
   const targets = [...new Map(ids.map((id) => [found.get(id)!.item_id, found.get(id)!])).values()];
 
-  // The sender's role decides the rig rules (an admin's email has no person row).
-  const senderRole: Role | "admin" = people.find((p) => p.person_id === actor)?.role ?? "admin";
+  // The sender's role decides the rig rules (an admin's email has no person row). A QC or hardware login acts
+  // as QC / hardware even if the person it is linked to has another role in People.
+  const personRole = people.find((p) => p.person_id === actor)?.role;
+  const senderRole: Role | "admin" =
+    user.role === "qc" || user.role === "hardware" ? user.role : (personRole ?? "admin");
 
   const plan = await build(
     targets,
@@ -223,12 +226,16 @@ export async function sendCards(formData: FormData) {
         }
         // IM → QC team: the rig's QC goes back to "QC pending" until QC records Pass or Fail.
         // Hardware team → IM: the rig is "Repaired · Ready for field".
-        const toRole = ctx.people.find((p) => p.person_id === input.recipient)?.role;
+        const toRole = String(ctx.people.find((p) => p.person_id === input.recipient)?.role ?? "").toLowerCase() || undefined;
+        // Rigs that were with the hardware team count as repaired when they go to an IM, whoever sends them.
+        const rigs = targets.filter((t) => t.item_type === "rig");
+        const fromHardware =
+          ctx.senderRole === "hardware" || (rigs.length > 0 && rigs.every((t) => t.status === "with_hardware"));
         const mark =
-          toRole === "qc" && ctx.senderRole !== "hardware"
+          toRole === "qc" && !fromHardware
             ? { status: "qc_pending" as const, comment: "Sent to QC for checking" }
-            : ctx.senderRole === "hardware" && toRole === "im"
-              ? { status: "repaired" as const, comment: "Repaired by hardware team" }
+            : fromHardware && toRole === "im"
+              ? { status: "repaired" as const, comment: "Repaired by hardware team · QC passed" }
               : undefined;
         if (ctx.senderRole === "hardware" && toRole === "im") {
           // On the receipt (the send note) and in each rig's hardware updates.
