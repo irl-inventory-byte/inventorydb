@@ -823,7 +823,14 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
         <TypeSwitch role={user.role} current={type} path="/dashboard" includeAll={false} />
 
         {/* Mobiles: no SD card storage / colour summary; the tiles below start with the total. */}
-        {!mobileView && <SummaryKpis d={d} items={items} rigView={rigView} />}
+        {!mobileView && (
+          <SummaryKpis
+            d={d}
+            items={items}
+            rigView={rigView}
+            attentionHref={`/dashboard${rigView ? "?type=rig" : ""}#attention`}
+          />
+        )}
 
         {/* Mobile tiles: an even 3-column grid (3 + 3 on a laptop, 2 per row on a tablet, 1 on a phone). */}
         {mobileView && (

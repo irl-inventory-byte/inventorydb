@@ -147,11 +147,11 @@ export default function SendToFields({
           Send to (location)
         </label>
         <div className={styles.control}>
-          {bangalore && (alwaysBangalore || role === "qc" || role === "hardware") ? (
+          {bangalore && (alwaysBangalore || role === "qc" || role === "hardware" || role === "rig") ? (
             <>
               <input type="hidden" name="hub" value={bangalore.id} />
               <strong id="hub">{bangalore.name}</strong>
-              <p className={styles.hint}>The QC and hardware teams always work at {bangalore.name}.</p>
+              <p className={styles.hint}>The QC, hardware and rig teams always work at {bangalore.name}.</p>
             </>
           ) : (
           <>

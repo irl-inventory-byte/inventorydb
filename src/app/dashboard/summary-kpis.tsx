@@ -58,6 +58,12 @@ interface SummaryKpisProps {
   items?: readonly Item[];
   /** Rigs view: the first card is "Rigs" and its links show rigs only. */
   rigView?: boolean;
+  /**
+   * Where the "Late items" tile links to. When given, used instead of the default inventory list link —
+   * e.g. the dashboard's own "#attention" section, showing every delayed card with no filter applied.
+   * Omit on a page with no Needs attention table (the hub dashboard), where the default inventory link stays.
+   */
+  attentionHref?: string;
 }
 
 interface SummaryCard {
@@ -184,6 +190,7 @@ export async function SummaryKpis({
   hubParam,
   items,
   rigView = false,
+  attentionHref,
 }: SummaryKpisProps) {
   const list = (params: Record<string, string> = {}) =>
     `/inventory?${new URLSearchParams({
@@ -363,12 +370,14 @@ export async function SummaryKpis({
               d.oldestLateHours ?? 0
             )}`
           : `Nothing over ${LATE_AFTER_HOURS} hours`,
-      // Opens the inventory list with ONLY the late items
-      // (and only this city's hubs when clicked from a city page).
-      href: list({
-        status: "with_fo,traveling,pending",
-        late: "1",
-      }),
+      // Opens the dashboard's own Needs attention table (every delayed card, unfiltered) when given one;
+      // else the inventory list with ONLY the late items (and only this city's hubs from a city page).
+      href:
+        attentionHref ??
+        list({
+          status: "with_fo,traveling,pending",
+          late: "1",
+        }),
       warn: d.lateCards > 0,
     },
   ];
