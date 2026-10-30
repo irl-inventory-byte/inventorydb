@@ -15,10 +15,8 @@ export default function HolderPicker({
 }) {
   const [role, setRole] = useState("");
   const [holder, setHolder] = useState("");
-  const [query, setQuery] = useState("");
-  const q = query.trim().toLowerCase();
-  const shown = people.filter((p) => (!role || p.role === role) && (!q || p.name.toLowerCase().includes(q)));
-  // Keep the chosen holder selectable even if a later search hides them from the visible list.
+  const shown = people.filter((p) => !role || p.role === role);
+  // Keep the chosen holder selectable even if a later role choice hides them from the visible list.
   const chosenHolder = people.find((p) => p.id === holder);
   const holderOptions = chosenHolder && !shown.some((p) => p.id === holder) ? [chosenHolder, ...shown] : shown;
 
@@ -39,16 +37,8 @@ export default function HolderPicker({
           </option>
         ))}
       </select>
-      <input
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search name…"
-        aria-label="Search holder name"
-        style={{ width: 130, padding: "6px 8px", border: "1px solid #b5b5b5", borderRadius: 6, font: "inherit" }}
-      />
       <select name="holder" aria-label="Holder" value={holder} onChange={(e) => setHolder(e.target.value)}>
-        <option value="">{role || q ? `Holder: none (${shown.length} ${shown.length === 1 ? "person" : "people"})` : "Holder: none"}</option>
+        <option value="">{role ? `Holder: none (${shown.length} ${shown.length === 1 ? "person" : "people"})` : "Holder: none"}</option>
         {holderOptions.map((p) => (
           <option key={p.id} value={p.id}>
             {p.name} ({p.roleLabel})
