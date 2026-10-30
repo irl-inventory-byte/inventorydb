@@ -149,12 +149,18 @@ export default function SendToFields({
           Send to (location)
         </label>
         <div className={styles.control}>
-          {role === "rig" && rigTeam ? (
-            <>
-              <input type="hidden" name="hub" value={rigTeam.id} />
-              <strong id="hub">{rigTeam.name}</strong>
-              <p className={styles.hint}>The rig team always works at {rigTeam.name}.</p>
-            </>
+          {role === "rig" ? (
+            rigTeam ? (
+              <>
+                <input type="hidden" name="hub" value={rigTeam.id} />
+                <strong id="hub">{rigTeam.name}</strong>
+                <p className={styles.hint}>The rig team always works at {rigTeam.name}.</p>
+              </>
+            ) : (
+              <p className={styles.error}>
+                No &quot;Rig team&quot; hub found. Add one in Manage hubs (named &quot;Rig team&quot;) before sending to the rig team.
+              </p>
+            )
           ) : bangalore && (alwaysBangalore || role === "qc" || role === "hardware") ? (
             <>
               <input type="hidden" name="hub" value={bangalore.id} />
