@@ -26,12 +26,14 @@ export default function SendToFields({
   hubs,
   allowInternal = true,
   bangalore,
+  rigTeam,
   alwaysBangalore = false,
 }: {
   groups: PersonGroup[];
   hubs: { id: string; name: string }[];
   allowInternal?: boolean;
   bangalore?: { id: string; name: string }; // QC and hardware teams always work here
+  rigTeam?: { id: string; name: string }; // the rig team's own location (falls back to Bangalore if not set up)
   alwaysBangalore?: boolean; // the sender is the QC or hardware team: every send stays at Bangalore
 }) {
   const [role, setRole] = useState("");
@@ -147,11 +149,17 @@ export default function SendToFields({
           Send to (location)
         </label>
         <div className={styles.control}>
-          {bangalore && (alwaysBangalore || role === "qc" || role === "hardware" || role === "rig") ? (
+          {role === "rig" && rigTeam ? (
+            <>
+              <input type="hidden" name="hub" value={rigTeam.id} />
+              <strong id="hub">{rigTeam.name}</strong>
+              <p className={styles.hint}>The rig team always works at {rigTeam.name}.</p>
+            </>
+          ) : bangalore && (alwaysBangalore || role === "qc" || role === "hardware") ? (
             <>
               <input type="hidden" name="hub" value={bangalore.id} />
               <strong id="hub">{bangalore.name}</strong>
-              <p className={styles.hint}>The QC, hardware and rig teams always work at {bangalore.name}.</p>
+              <p className={styles.hint}>The QC and hardware teams always work at {bangalore.name}.</p>
             </>
           ) : (
           <>
