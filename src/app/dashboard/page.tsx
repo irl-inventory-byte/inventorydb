@@ -364,6 +364,32 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     ...(k === "in_stock" && { cities: citiesForRigState("in_stock", ["in_stock", "pending"]) }),
     ...(k === "transit" && { cities: citiesForRigState("transit", ["traveling"]) }),
   }));
+  // Sanitization: each rig's latest "Sanitization" hardware update (Yes / No), oldest first so the last one wins.
+  const latestSanitization = new Map<string, "Yes" | "No">();
+  for (const h of hardwareUpdates) {
+    if (h.update_type === "Sanitization" && (h.comment === "Yes" || h.comment === "No")) {
+      latestSanitization.set(h.item_id, h.comment);
+    }
+  }
+  let sanitizedYes = 0;
+  let sanitizedNo = 0;
+  for (const i of items) {
+    if (i.item_type !== "rig") continue;
+    const san = latestSanitization.get(i.item_id);
+    if (san === "Yes") sanitizedYes++;
+    else if (san === "No") sanitizedNo++;
+  }
+  if (sanitizedYes + sanitizedNo > 0) {
+    rigKpis.push({
+      label: "Sanitization",
+      value: sanitizedYes + sanitizedNo,
+      hint: `${n(sanitizedYes)} Yes · ${n(sanitizedNo)} No`,
+      href: inventory({ type: "rig" }),
+      icon: "shield",
+      color: "var(--series-5)",
+    });
+  }
+
   // Admin only: every rig sent and not received yet (to IMs, QC or hardware), and every rig the hardware team
   // has (received or still on its way to them).
   if (user.role === "admin") {
