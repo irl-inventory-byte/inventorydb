@@ -228,12 +228,17 @@ export async function SummaryKpis({
       ? null
       : Math.round(d.utilization);
 
+  // Share of the SD card total, e.g. 903 of 1479 = 61%. Shown next to each tile's count so the two
+  // sides of a split (512 vs 256, Black vs Green, New vs Old) are easy to compare at a glance.
+  const share = (count: number) => (fleet.sdCards > 0 ? `${Math.round((count / fleet.sdCards) * 100)}%` : "");
+
   // Each tile has its own colour so the four are easy to tell apart:
   // storage in blues, card colour in the card's real colour.
   const sdDetails = [
     {
       label: "512 GB",
       count: fleet.storage512,
+      pct: share(fleet.storage512),
       bg: "#e0e7ff",
       border: "#6366f1",
       text: "#312e81",
@@ -241,6 +246,7 @@ export async function SummaryKpis({
     {
       label: "256 GB",
       count: fleet.storage256,
+      pct: share(fleet.storage256),
       bg: "#e0e7ff",
       border: "#6366f1",
       text: "#312e81",
@@ -248,6 +254,7 @@ export async function SummaryKpis({
     {
       label: "Black cards",
       count: fleet.black,
+      pct: share(fleet.black),
       bg: "#dcfce7",
       border: "#16a34a",
       text: "#14532d",
@@ -255,6 +262,7 @@ export async function SummaryKpis({
     {
       label: "Green cards",
       count: fleet.green,
+      pct: share(fleet.green),
       bg: "#dcfce7",
       border: "#16a34a",
       text: "#14532d",
@@ -265,6 +273,7 @@ export async function SummaryKpis({
           {
             label: "New cards",
             count: fleet.newCards,
+            pct: share(fleet.newCards),
             bg: "#e0f2fe",
             border: "#0284c7",
             text: "#0c4a6e",
@@ -272,6 +281,7 @@ export async function SummaryKpis({
           {
             label: "Old cards",
             count: fleet.oldCards,
+            pct: share(fleet.oldCards),
             bg: "#f3f4f6",
             border: "#6b7280",
             text: "#1f2937",
@@ -288,6 +298,7 @@ export async function SummaryKpis({
           {
             label: "Rigs",
             count: fleet.rigs,
+            pct: "",
             bg: "#fef3c7",
             border: "#d97706",
             text: "#78350f",
@@ -507,9 +518,17 @@ export async function SummaryKpis({
                       style={{
                         fontSize: 20,
                         lineHeight: 1.3,
+                        display: "flex",
+                        alignItems: "baseline",
+                        gap: 6,
                       }}
                     >
                       {n(detail.count)}
+                      {detail.pct && (
+                        <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.75 }}>
+                          {detail.pct}
+                        </span>
+                      )}
                     </strong>
                   </span>
                 ))}

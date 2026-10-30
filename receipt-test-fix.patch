@@ -1,0 +1,40 @@
+From b7497ec2f6fda9bad05a1e89f2dbf7a6fc766d40 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 29 Oct 2026 10:13:04 +0000
+Subject: [PATCH] Fix broken receipt-test diagnostic route
+
+/api/receipt-test defined its own local saveReceipt() stub that always
+threw "Function not implemented.", shadowing the real saveReceipt from
+receipt-archive.ts. This made the admin diagnostic page useless for
+seeing why a receipt (PDF/Drive/Sheet/email) step failed. Now it calls
+the real saveReceipt so the exact failing step and error show up.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01SoAkN5J764jQsdzgKYvAXY
+---
+ src/app/api/receipt-test/route.ts | 5 +----
+ 1 file changed, 1 insertion(+), 4 deletions(-)
+
+diff --git a/src/app/api/receipt-test/route.ts b/src/app/api/receipt-test/route.ts
+index 340f59a..8477bc1 100644
+--- a/src/app/api/receipt-test/route.ts
++++ b/src/app/api/receipt-test/route.ts
+@@ -1,6 +1,7 @@
+ import { headers } from "next/headers";
+ import { requireRole } from "@/lib/authz";
+ import { getStore } from "@/lib/store";
++import { saveReceipt } from "@/lib/receipt-archive";
+ 
+ // Admin-only check for the receipt archive.
+ // Open /api/receipt-test in the browser to save the latest send's receipt,
+@@ -39,7 +40,3 @@ export async function GET(request: Request) {
+     });
+   }
+ }
+-
+-function saveReceipt(batch: string, arg1: string): Record<string, unknown> {
+-  throw new Error("Function not implemented.");
+-}
+-- 
+2.43.0
+

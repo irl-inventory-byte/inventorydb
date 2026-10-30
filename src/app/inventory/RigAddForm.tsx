@@ -30,6 +30,7 @@ export default function RigAddForm({ homeHub }: { homeHub?: Hub }) {
   const [details, setDetails] = useState<[string, string][]>([]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sanitized, setSanitized] = useState("");
 
   const requestId = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -187,6 +188,15 @@ export default function RigAddForm({ homeHub }: { homeHub?: Hub }) {
             required
             style={inputStyle}
           />
+        </label>
+
+        <label style={fieldStyle}>
+          <span>Sanitization</span>
+          <select name="sanitized" value={sanitized} onChange={(e) => setSanitized(e.target.value)} style={inputStyle}>
+            <option value="">Not set</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
         </label>
       </div>
 

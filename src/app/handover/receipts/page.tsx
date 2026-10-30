@@ -238,14 +238,19 @@ export default async function ReceiptsPage({
             </option>
           ))}
         </select>
-        <select name="person" defaultValue={personF} aria-label="Name" style={{ maxWidth: 240 }}>
-          <option value="">All names</option>
+        <input
+          name="person"
+          list="receipt-names"
+          defaultValue={personF}
+          aria-label="Name"
+          placeholder="All names"
+          style={{ maxWidth: 240 }}
+        />
+        <datalist id="receipt-names">
           {nameOptions.map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
+            <option key={n} value={n} />
           ))}
-        </select>
+        </datalist>
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           From
           <input type="date" name="from" defaultValue={fromF} max={toF || undefined} aria-label="From date" />

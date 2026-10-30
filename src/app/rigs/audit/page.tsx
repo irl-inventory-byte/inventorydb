@@ -1,4 +1,5 @@
 import Link from "next/link";
+import SearchableSelect from "../../SearchableSelect";
 import { storeFor } from "@/lib/access";
 import { requireRole } from "@/lib/authz";
 import { QC_LABELS, one } from "@/lib/labels";
@@ -155,14 +156,13 @@ export default async function RigAuditPage({
 
         <label>
           Person
-          <select name="person" defaultValue={filter.person}>
-            <option value="">Anyone</option>
-            {people.map((p) => (
-              <option key={p.key} value={p.key}>
-                {p.name} ({numberText(p.count)})
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            name="person"
+            ariaLabel="Person"
+            allLabel="Anyone"
+            defaultValue={filter.person}
+            options={people.map((p) => ({ value: p.key, label: `${p.name} (${numberText(p.count)})` }))}
+          />
         </label>
 
         <input

@@ -86,6 +86,8 @@ export async function addRig(formData: FormData) {
 
   const rigId = String(formData.get("itemId") ?? "").trim();
   const penalty = String(formData.get("price") ?? "").replace(/[^0-9]/g, "");
+  const sanitized = String(formData.get("sanitized") ?? "");
+  const sanitizedText = sanitized === "yes" ? "Yes" : sanitized === "no" ? "No" : "";
 
   if (!rigId) reject("Scan or type the rig ID.");
   if (!penalty || Number(penalty) <= 0) reject("Enter the penalty amount for this rig.");
@@ -144,6 +146,22 @@ export async function addRig(formData: FormData) {
       comment: "Added to inventory",
     },
   ]);
+
+  // Sanitization status, if given, is saved to the rig's hardware updates (same as when the hardware team
+  // records it on a send), so it shows up in the rig's history and the audit trail.
+  if (sanitizedText) {
+    await store.appendRows("hardware_updates", [
+      {
+        update_id: newId("hw"),
+        item_id: plan.item!.item_id,
+        recorded_at: istTimestamp(),
+        recorded_by: me.email,
+        recorded_by_name: me.name,
+        update_type: "Sanitization",
+        comment: sanitizedText,
+      },
+    ]);
+  }
 
   refresh(plan.item!.item_id);
   redirect(`/inventory?${new URLSearchParams({ type: "rig", added: plan.item!.item_id })}`);

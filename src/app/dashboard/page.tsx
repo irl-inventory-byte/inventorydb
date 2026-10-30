@@ -294,6 +294,29 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       });
   };
 
+  // City-wise count of rigs in a given RIG STATE (in_stock, transit, …). A rig state can come from more
+  // than one raw status (e.g. "in_stock" = status in_stock not yet repaired, or status pending not yet QC
+  // passed), so this re-runs rigState() per item rather than matching a simple status set like citiesFor.
+  const citiesForRigState = (state: RigState, hrefStatuses: Status[]) => {
+    const count = new Map<string, number>();
+    for (const i of items) {
+      if (i.item_type !== "rig" || rigState(i.status, latestQc.get(i.item_id)) !== state) continue;
+      const c = cityOfHub.get(i.current_hub) || i.current_hub || "Not set";
+      count.set(c, (count.get(c) ?? 0) + 1);
+    }
+    return [...count.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([city, c], _, all) => {
+        const total = all.reduce((t, [, v]) => t + v, 0);
+        return {
+          city,
+          count: c,
+          pct: total ? Math.round((c / total) * 100) : 0,
+          href: inventory({ status: hrefStatuses.join(","), city: city.toLowerCase(), type: "rig" }),
+        };
+      });
+  };
+
   // RIGS: one tile per rig state (see RIG_STATES in lib/rig-state.ts). Each opens Rig checks filtered to it.
   const rigCount = Object.fromEntries(RIG_STATES.map((k) => [k, 0])) as Record<RigState, number>;
   // QC passed tile: who passed those rigs (the QC person on each rig's latest result).
@@ -337,6 +360,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     color: RIG_TILE[k].color,
     // Rigs with field officers: city-wise list too, like SD cards and mobiles.
     ...(k === "fo" && { cities: citiesFor("with_fo", "rig") }),
+    // In stock, and in transit to an IFO: city-wise too.
+    ...(k === "in_stock" && { cities: citiesForRigState("in_stock", ["in_stock", "pending"]) }),
+    ...(k === "transit" && { cities: citiesForRigState("transit", ["traveling"]) }),
   }));
   // Admin only: every rig sent and not received yet (to IMs, QC or hardware), and every rig the hardware team
   // has (received or still on its way to them).

@@ -172,6 +172,7 @@ export function FieldUsageCard({
           allLabel="All FOs"
           options={fos.map((p) => ({ value: p.id, label: p.label }))}
           selected={person}
+          searchable
         />
         {models.length > 1 && (
           <MultiSelect

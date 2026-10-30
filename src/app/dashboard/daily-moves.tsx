@@ -102,6 +102,7 @@ function MoveFilters({
         allLabel="All people"
         options={shownPeople.map((p) => ({ value: p.id, label: p.role ? `${p.label} (${roleName(p.role)})` : p.label }))}
         selected={person}
+        searchable
       />
       <MultiSelect
         name={`${prefix}city`}
