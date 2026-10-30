@@ -8,7 +8,7 @@ import styles from "../form.module.css";
 import { sendCards } from "../actions";
 import SendScanFields from "./SendScanFields";
 import { rigCondition } from "@/lib/rig-state";
-import { rigHomeHub } from "@/lib/rig-hub";
+import { rigHomeHub, rigTeamHub } from "@/lib/rig-hub";
 import HardwareSendFields from "./HardwareSendFields";
 import QcSendFields from "./QcSendFields";
 import SendToFields from "./SendToFields";
@@ -76,6 +76,9 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
   // QC and hardware teams always work at Bangalore.
   const bangaloreHub = rigHomeHub(hubs);
   const bangalore = bangaloreHub ? { id: bangaloreHub.hub_id, name: bangaloreHub.name } : undefined;
+  // The rig team has its own location, "Rig team" (falls back to Bangalore if that hub hasn't been added yet).
+  const rigTeamHubRow = rigTeamHub(hubs);
+  const rigTeam = rigTeamHubRow ? { id: rigTeamHubRow.hub_id, name: rigTeamHubRow.name } : bangalore;
 
   // Start at the IM's own hub. Someone with no hub (an admin) starts where most cards are in stock.
   const stockByHub = new Map<string, number>();
@@ -168,6 +171,7 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
             hubs={activeHubs.map((h) => ({ id: h.hub_id, name: h.name }))}
             allowInternal={!held}
             bangalore={bangalore}
+            rigTeam={rigTeam}
             alwaysBangalore={false}
           />
         )}
