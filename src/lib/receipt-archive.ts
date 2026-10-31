@@ -605,11 +605,13 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
   let step = "reading the batch";
   try {
     const store = getStore();
-    const [events, items, hubs] = await Promise.all([
+    const [events, items, hubs, people] = await Promise.all([
       store.list("events"),
       store.list("items"),
       store.list("hubs"),
+      store.list("people"),
     ]);
+    const roleOf = new Map(people.map((p) => [p.person_id, p.role]));
 
     const summary = summarizeBatch(events, items, hubs, batchId);
     if (!summary) {
@@ -706,15 +708,19 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
 
     // Email the PDF to the person who now holds the items (sender on a send, receiver on a receive —
     // see lib/receipt-email.ts), with a one-click "Yes, I acknowledge" to confirm they received
-    // everything in good condition. Two cases get the email with no acknowledgment ask: corrections (no real "To"
-    // person taking custody) and a return to stock (every item ends this batch back "In stock" — the
-    // person recording it isn't taking personal custody of anything, just putting it away).
+    // everything in good condition. The ask is only for FO / IFO recipients (field staff actually
+    // taking custody of physical kit) -- other roles (admin, IM, QC, hardware, rig, internal) still
+    // get the receipt, just without the acknowledgment block. Also skipped for corrections (no real
+    // "To" person taking custody) and a return to stock (every item ends this batch back "In stock" --
+    // the person recording it isn't taking personal custody of anything, just putting it away).
     step = "emailing the receipt to the person who now holds the items";
     const allReturned = summary.items.length > 0 && penalties.returnedCount === summary.items.length;
+    const toRole = roleOf.get(summary.toId);
     const canAcknowledge =
       (summary.action === "check_out" || summary.action === "receive") &&
       (summary.toId || summary.toName) &&
-      !allReturned;
+      !allReturned &&
+      (toRole === "fo" || toRole === "ifo");
 
     let acknowledgment: { yesUrl: string } | undefined;
     if (canAcknowledge) {
