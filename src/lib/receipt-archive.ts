@@ -13,6 +13,7 @@ import { STATUS_LABELS } from "./labels";
 import { LOGO_HEIGHT, LOGO_PATHS, LOGO_WIDTH } from "./receipt-logo";
 import { formatPrice, summarizeBatch, type BatchSummary } from "./receipt";
 import { sendReceiptEmail, type ReceiptEmailResult } from "./receipt-email";
+import { createAcknowledgment } from "./acknowledgment";
 import { getStore } from "./store";
 import { formatIst } from "./time";
 
@@ -703,21 +704,33 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
       },
     });
 
-    // Email the PDF to the person who sent the items and the person who received them.
-    step = "emailing the receipt to the people on the batch";
-    // Everyone on the batch: a receive can take items back from several FOs / IFOs at once, and each of
-    // them gets the receipt, as does the person who sent or received.
-    const onBatch = new Map<string, string>();
-    for (const e of events) {
-      if (e.batch_id !== batchId) continue;
-      for (const [id, name] of [
-        [e.from_id, e.from_person],
-        [e.to_id, e.to_person],
-      ]) {
-        const key = id || name;
-        if (key && !onBatch.has(key)) onBatch.set(key, name || id);
-      }
+    // Email the PDF to the person who now holds the items (sender on a send, receiver on a receive —
+    // see lib/receipt-email.ts), with a one-click Yes/No to acknowledge they received everything in
+    // good condition. Two cases get the email with no acknowledgment ask: corrections (no real "To"
+    // person taking custody) and a return to stock (every item ends this batch back "In stock" — the
+    // person recording it isn't taking personal custody of anything, just putting it away).
+    step = "emailing the receipt to the person who now holds the items";
+    const allReturned = summary.items.length > 0 && penalties.returnedCount === summary.items.length;
+    const canAcknowledge =
+      (summary.action === "check_out" || summary.action === "receive") &&
+      (summary.toId || summary.toName) &&
+      !allReturned;
+
+    let acknowledgment: { yesUrl: string; noUrl: string } | undefined;
+    if (canAcknowledge) {
+      const ack = await createAcknowledgment({
+        batchId,
+        action: summary.action,
+        toId: summary.toId,
+        toPerson: summary.toName,
+        fromId: summary.fromId,
+        fromPerson: summary.fromName,
+        itemCount: summary.items.length,
+      });
+      const ackBase = `${baseUrl}/handover/ack/${encodeURIComponent(ack.token)}`;
+      acknowledgment = { yesUrl: `${ackBase}?a=yes`, noUrl: `${ackBase}?a=no` };
     }
+
     const email: ReceiptEmailResult = await sendReceiptEmail({
       summary,
       title: ACTION_TITLE[summary.action] ?? "Batch record",
@@ -725,7 +738,7 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
       fileName,
       receiptUrl,
       totalPenalty: rupeeTotal(penalties.total),
-      people: [...onBatch.entries()].map(([id, name]) => ({ id: id === name ? "" : id, name })),
+      acknowledgment,
     });
 
     if (email.missing.length > 0) {

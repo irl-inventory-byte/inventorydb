@@ -180,6 +180,28 @@ create table if not exists public.receipt_edits (
 create index if not exists receipt_edits_seq_idx on public.receipt_edits (_seq);
 alter table public.receipt_edits enable row level security;
 
+-- One row per handover receipt emailed out: whether the person who received the items has
+-- acknowledged them (Yes/No, clicked in that email). answer is '' until they answer.
+create table if not exists public.acknowledgments (
+  _seq bigint generated always as identity,
+  ack_id text primary key,
+  batch_id text not null default '',
+  action text not null default '',
+  token text not null default '',
+  to_id text not null default '',
+  to_person text not null default '',
+  from_id text not null default '',
+  from_person text not null default '',
+  item_count text not null default '',
+  created_at text not null default '',
+  answer text not null default '',
+  answered_at text not null default ''
+);
+create index if not exists acknowledgments_seq_idx on public.acknowledgments (_seq);
+create unique index if not exists acknowledgments_token_idx on public.acknowledgments (token);
+create index if not exists acknowledgments_batch_id_idx on public.acknowledgments (batch_id);
+alter table public.acknowledgments enable row level security;
+
 -- Change counters: every write to a table adds 1 to its number here (done by the triggers below, so
 -- edits made in the Supabase Table Editor count too). The app reads these few numbers first and only
 -- downloads a table again when its number changed, so pages and the Back button do not re-download
@@ -203,7 +225,7 @@ do $$
 declare t text;
 begin
   foreach t in array array['items','events','people','hubs','item_types','users','status_limits',
-    'deletions','hardware_updates','qc_checks','rig_reports','receipt_edits'] loop
+    'deletions','hardware_updates','qc_checks','rig_reports','receipt_edits','acknowledgments'] loop
     execute format('drop trigger if exists bump_version on public.%I', t);
     execute format(
       'create trigger bump_version after insert or update or delete or truncate on public.%I '

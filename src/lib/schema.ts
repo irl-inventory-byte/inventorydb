@@ -104,6 +104,23 @@ export const TABS = {
     "old_value",
     "new_value",
   ],
+  // One row per handover receipt emailed out: whether the person who received the items has
+  // acknowledged them yet. Created when the receipt email is sent, updated when they click
+  // Yes/No in that email (see lib/acknowledgment.ts).
+  acknowledgments: [
+    "ack_id",
+    "batch_id",
+    "action", // check_out | receive — which kind of handover this was
+    "token", // secret, in the email link; the only way to answer
+    "to_id", // person_id of the person who must acknowledge (who now holds the items)
+    "to_person",
+    "from_id", // person_id of whoever handed the items over (named in the acknowledgment wording)
+    "from_person",
+    "item_count",
+    "created_at",
+    "answer", // "" (not yet answered) | "yes" | "no"
+    "answered_at",
+  ],
 } as const;
 
 export type TabName = keyof typeof TABS;
@@ -279,6 +296,21 @@ export interface RigReport extends Row {
   person_name: string;
 }
 
+export interface Acknowledgment extends Row {
+  ack_id: string;
+  batch_id: string;
+  action: string;
+  token: string;
+  to_id: string;
+  to_person: string;
+  from_id: string;
+  from_person: string;
+  item_count: string;
+  created_at: string;
+  answer: string; // "" | "yes" | "no"
+  answered_at: string;
+}
+
 export interface TabRows {
   items: Item;
   events: ItemEvent;
@@ -292,4 +324,5 @@ export interface TabRows {
   hardware_updates: HardwareUpdate;
   qc_checks: QcCheck;
   rig_reports: RigReport;
+  acknowledgments: Acknowledgment;
 }

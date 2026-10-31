@@ -53,10 +53,14 @@ export class Store {
   async list<T extends TabName>(
     tab: T
   ): Promise<TabRows[T][]> {
-    const optional = tab === "hardware_updates" || tab === "qc_checks" || tab === "rig_reports";
+    // Acknowledgments are per-batch, not per-item, so they are optional (the tab may not exist yet)
+    // but are never filtered by item type below.
+    const optional = tab === "hardware_updates" || tab === "qc_checks" || tab === "rig_reports" || tab === "acknowledgments";
     const rows = optional
       ? await this.readOptional(tab)
       : await this.backend.readAll(tab);
+
+    if (tab === "acknowledgments") return rows as unknown as TabRows[T][];
 
     const types = this.types;
     if (!types) return rows as unknown as TabRows[T][];

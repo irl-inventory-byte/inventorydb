@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/authz";
 import { QC_LABELS, ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
-import { OUT_STATUSES, type HardwareUpdate, type Item, type QcCheck, type Status } from "@/lib/schema";
+import { OUT_STATUSES, type Acknowledgment, type HardwareUpdate, type Item, type QcCheck, type Status } from "@/lib/schema";
 import { MY_DASHBOARD_ROLES, RECEIVE_ROLES, storeFor } from "@/lib/access";
 import { formatIst } from "@/lib/time";
 import styles from "../dashboard.module.css";
@@ -124,7 +124,7 @@ export default async function MyDashboardPage({
   const sp = await searchParams;
   const store = storeFor(user.role);
 
-  const [events, items, people, hubs, users, qcChecks, hardwareUpdates] = await Promise.all([
+  const [events, items, people, hubs, users, qcChecks, hardwareUpdates, acknowledgments] = await Promise.all([
     store.list("events"),
     store.list("items"),
     store.list("people"),
@@ -132,6 +132,7 @@ export default async function MyDashboardPage({
     store.list("users"),
     isQc || isHardware ? store.list("qc_checks") : Promise.resolve([] as QcCheck[]),
     isHardware ? store.list("hardware_updates") : Promise.resolve([] as HardwareUpdate[]),
+    !isQc && !isHardware ? store.list("acknowledgments") : Promise.resolve([] as Acknowledgment[]),
   ]);
 
   // Latest QC result per rig (rows are oldest first, so the last one wins).
@@ -245,6 +246,20 @@ export default async function MyDashboardPage({
     (event) => event.action === "receive"
   ).length;
 
+  /*
+   * Acknowledgments of batches I sent (action = check_out, from_id = me): how many items the
+   * receiver has confirmed they got in good condition, out of how many I sent in total.
+   */
+  const mySentAcks = linkedPersonId
+    ? acknowledgments.filter((a) => a.action === "check_out" && a.from_id === linkedPersonId)
+    : [];
+  const sentItemsTotal = mySentAcks.reduce((sum, a) => sum + (Number(a.item_count) || 0), 0);
+  const sentItemsAcked = mySentAcks
+    .filter((a) => a.answer === "yes")
+    .reduce((sum, a) => sum + (Number(a.item_count) || 0), 0);
+  const sentItemsFlagged = mySentAcks
+    .filter((a) => a.answer === "no")
+    .reduce((sum, a) => sum + (Number(a.item_count) || 0), 0);
 
   /*
    * Cards still with me: their latest event is a receive I recorded
@@ -505,6 +520,18 @@ export default async function MyDashboardPage({
       label: "Received events",
       value: numberText(receivedCount),
     },
+    {
+      label: "Acknowledged",
+      value: sentItemsTotal ? `${numberText(sentItemsAcked)} of ${numberText(sentItemsTotal)}` : "—",
+    },
+    ...(sentItemsFlagged > 0
+      ? [
+          {
+            label: "Flagged as a problem",
+            value: numberText(sentItemsFlagged),
+          },
+        ]
+      : []),
     {
       label: "Correction events",
       value: numberText(correctionCount),
