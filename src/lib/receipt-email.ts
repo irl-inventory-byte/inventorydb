@@ -3,6 +3,7 @@ import type { BatchSummary } from "./receipt";
 import { getStore } from "./store";
 import { formatIst } from "./time";
 import { acknowledgmentText } from "./acknowledgment-text";
+import { assetHandoverPosterPdf } from "./asset-handover-poster";
 
 /**
  * Emails the receipt PDF to both people on a batch: the person who sent the
@@ -201,6 +202,10 @@ export type ReceiptEmailResult = {
  * acknowledged immediately (see app/handover/ack/[token]), no extra confirmation step. Omit it for a
  * copy sent to someone else on the same batch (e.g. whoever handed the items over), who isn't being
  * asked to acknowledge anything.
+ *
+ * Every send also attaches the "Asset Handover & Custody Notice" poster (the document the
+ * acknowledgment text points to for the penalty amounts), so recipients always have it on hand.
+ *
  * Throws if sending fails; returns who it was sent to and who had no email.
  */
 export async function sendReceiptEmail(options: {
@@ -263,7 +268,7 @@ export async function sendReceiptEmail(options: {
     "",
     `View the receipt online: ${receiptUrl}`,
     "",
-    "The PDF receipt is attached.",
+    "The PDF receipt is attached, along with the Asset Handover & Custody Notice for reference.",
     ...(acknowledgment
       ? [
           "",
@@ -288,7 +293,7 @@ export async function sendReceiptEmail(options: {
     ${row("Total listed penalty amount", totalPenalty)}
   </table>
   <p style="margin:16px 0"><a href="${escapeHtml(receiptUrl)}">View the receipt online</a></p>
-  <p style="color:#666;margin:0 0 16px">The PDF receipt is attached.</p>
+  <p style="color:#666;margin:0 0 16px">The PDF receipt is attached, along with the Asset Handover &amp; Custody Notice for reference.</p>
   ${
     acknowledgment
       ? `
@@ -310,6 +315,11 @@ export async function sendReceiptEmail(options: {
       {
         filename: fileName,
         content: Buffer.from(pdf),
+        contentType: "application/pdf",
+      },
+      {
+        filename: "Asset-Handover-and-Custody-Notice.pdf",
+        content: assetHandoverPosterPdf(),
         contentType: "application/pdf",
       },
     ],
