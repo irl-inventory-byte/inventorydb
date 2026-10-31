@@ -62,13 +62,19 @@ export default async function ReceiptsPage({
   const requestedPage = Number(one(sp.page)) || 1;
 
   const store = storeForAll(user.role); // SD cards, rigs and mobiles together
-  const [events, hubs, people, edits] = await Promise.all([
+  const [events, hubs, people, edits, acknowledgments] = await Promise.all([
     store.list("events"),
     store.list("hubs"),
     store.list("people"),
     // The tab is created on the first edit, so it may not exist yet.
     store.list("receipt_edits").catch(() => []),
+    store.list("acknowledgments").catch(() => []),
   ]);
+
+  // One acknowledgment row per batch at most (see lib/acknowledgment.ts). Batches that never got an
+  // acknowledgment ask (corrections, returns to stock, and anything before this feature existed) have
+  // no row here at all.
+  const ackByBatch = new Map(acknowledgments.map((a) => [a.batch_id, a]));
 
   const hubName = new Map(hubs.map((h) => [h.hub_id, h.name]));
   const hub = (id: string) => (id ? (hubName.get(id) ?? id) : "");
@@ -121,6 +127,7 @@ export default async function ReceiptsPage({
       items: rows.map((r) => r.item_id),
       recordedBy: first.recorded_by,
       note: first.note,
+      ack: ackByBatch.get(batchId),
       deleted,
       deletedBy: deleted ? lastDelete : undefined,
       lastNoteEdit,
@@ -300,6 +307,7 @@ export default async function ReceiptsPage({
               <th scope="col">Items</th>
               <th scope="col">Recorded by</th>
               <th scope="col">Note</th>
+              <th scope="col">Acknowledged</th>
               <th scope="col">Actions</th>
             </tr>
           </thead>
@@ -307,7 +315,7 @@ export default async function ReceiptsPage({
           <tbody>
             {shown.length === 0 ? (
               <tr>
-                <td colSpan={9} className={styles.muted}>
+                <td colSpan={10} className={styles.muted}>
                   No receipts match.
                 </td>
               </tr>
@@ -343,6 +351,16 @@ export default async function ReceiptsPage({
                           {formatIst(r.deletedBy.edited_at)}
                           {r.deletedBy.new_value.length > 3 && ` (${r.deletedBy.new_value.slice(6)})`}
                         </div>
+                      )}
+                    </td>
+
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      {!r.ack ? (
+                        <span className={styles.muted}>—</span>
+                      ) : r.ack.answer === "yes" ? (
+                        <span style={{ color: "#15803D", fontWeight: 600 }}>Yes, acknowledged</span>
+                      ) : (
+                        <span style={{ color: "#B42318", fontWeight: 600 }}>Pending</span>
                       )}
                     </td>
 
