@@ -705,8 +705,8 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
     });
 
     // Email the PDF to the person who now holds the items (sender on a send, receiver on a receive —
-    // see lib/receipt-email.ts), with a one-click Yes/No to acknowledge they received everything in
-    // good condition. Two cases get the email with no acknowledgment ask: corrections (no real "To"
+    // see lib/receipt-email.ts), with a one-click "Yes, I acknowledge" to confirm they received
+    // everything in good condition. Two cases get the email with no acknowledgment ask: corrections (no real "To"
     // person taking custody) and a return to stock (every item ends this batch back "In stock" — the
     // person recording it isn't taking personal custody of anything, just putting it away).
     step = "emailing the receipt to the person who now holds the items";
@@ -716,7 +716,7 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
       (summary.toId || summary.toName) &&
       !allReturned;
 
-    let acknowledgment: { yesUrl: string; noUrl: string } | undefined;
+    let acknowledgment: { yesUrl: string } | undefined;
     if (canAcknowledge) {
       const ack = await createAcknowledgment({
         batchId,
@@ -727,8 +727,8 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
         fromPerson: summary.fromName,
         itemCount: summary.items.length,
       });
-      const ackBase = `${baseUrl}/handover/ack/${encodeURIComponent(ack.token)}`;
-      acknowledgment = { yesUrl: `${ackBase}?a=yes`, noUrl: `${ackBase}?a=no` };
+      // One click marks it acknowledged immediately — no second "Confirm" step, no "No" option.
+      acknowledgment = { yesUrl: `${baseUrl}/handover/ack/${encodeURIComponent(ack.token)}` };
     }
 
     const email: ReceiptEmailResult = await sendReceiptEmail({
@@ -741,17 +741,35 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
       acknowledgment,
     });
 
-    if (email.missing.length > 0) {
-      console.warn(
-        `[receipt-archive] No email found for ${email.missing.join(", ")} (batch ${batchId}).`
-      );
+    // On a receive, the person who handed the items over gets the same receipt too — just as a copy
+    // for their own records, with no acknowledgment ask (that's only for whoever is now holding the
+    // items). Skipped if there's no "from" person on this batch, or they're the same person as "to"
+    // (nothing to copy them on).
+    const sentTo = [...email.sentTo];
+    const missing = [...email.missing];
+    if (summary.action === "receive" && (summary.fromId || summary.fromName) && summary.fromId !== summary.toId) {
+      const fromEmail = await sendReceiptEmail({
+        summary,
+        title: ACTION_TITLE[summary.action] ?? "Batch record",
+        pdf,
+        fileName,
+        receiptUrl,
+        totalPenalty: rupeeTotal(penalties.total),
+        people: [{ id: summary.fromId, name: summary.fromName }],
+      });
+      sentTo.push(...fromEmail.sentTo);
+      missing.push(...fromEmail.missing);
+    }
+
+    if (missing.length > 0) {
+      console.warn(`[receipt-archive] No email found for ${missing.join(", ")} (batch ${batchId}).`);
     }
 
     return {
       fileName,
       pdfLink,
-      emailedTo: email.sentTo,
-      noEmailFor: email.missing,
+      emailedTo: [...new Set(sentTo)],
+      noEmailFor: [...new Set(missing)],
       peopleTab: email.tab || "not found",
     };
   } catch (error) {

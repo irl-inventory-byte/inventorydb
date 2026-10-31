@@ -1,28 +1,20 @@
-import { findAcknowledgment } from "@/lib/acknowledgment";
-import { acknowledgmentText } from "@/lib/acknowledgment-text";
+import { findAcknowledgment, recordAcknowledgmentAnswer } from "@/lib/acknowledgment";
 import { formatIst } from "@/lib/time";
-import { one } from "@/lib/labels";
-import { confirmAcknowledgment } from "../actions";
 import styles from "../../../admin/admin.module.css";
 
 /**
- * Public page opened from the Yes/No links in a receipt email. No login — the token in the URL is
- * the credential, exactly like an unsubscribe link. Clicking Yes or No here lands on this same page
- * with ?a= set, which just pre-selects the matching button; the actual answer is only recorded when
- * they press Confirm (a real form submit), so an email client or scanner prefetching the links in the
- * email itself can never record a false answer.
+ * Public page opened by the single "Yes, I acknowledge" link in a receipt email. No login — the
+ * token in the URL is the credential, exactly like an unsubscribe link. Visiting this page IS the
+ * acknowledgment: there's no second "Confirm" step and nothing else to click, so it's recorded the
+ * moment the page loads, not on a separate action. (Trade-off: an email client or security scanner
+ * that opens links automatically before a person does could record a false acknowledgment — accepted
+ * here in exchange for a true one-click flow with no extra page in the way.)
  */
-export default async function AcknowledgePage({
-  params,
-  searchParams,
-}: PageProps<"/handover/ack/[token]">) {
+export default async function AcknowledgePage({ params }: PageProps<"/handover/ack/[token]">) {
   const { token } = await params;
-  const sp = await searchParams;
-  const preselect = one(sp.a) === "no" ? "no" : "yes";
 
-  const ack = await findAcknowledgment(token);
-
-  if (!ack) {
+  const existing = await findAcknowledgment(token);
+  if (!existing) {
     return (
       <main className={styles.page}>
         <h1>Link not found</h1>
@@ -34,49 +26,17 @@ export default async function AcknowledgePage({
     );
   }
 
-  if (ack.answer) {
-    return (
-      <main className={styles.page}>
-        <h1>Already recorded</h1>
-        <p>
-          You already answered <strong>{ack.answer === "yes" ? "Yes" : "No"}</strong> for batch{" "}
-          {ack.batch_id}, at {formatIst(ack.answered_at)} IST. No further action is needed.
-        </p>
-      </main>
-    );
-  }
+  // Idempotent: if this link was already opened, this just shows the same result again.
+  const ack = existing.answer ? existing : (await recordAcknowledgmentAnswer(token, "yes")) ?? existing;
 
   return (
-    <main className={styles.page} style={{ maxWidth: 560 }}>
-      <h1>Acknowledge receipt</h1>
-      <p className={styles.muted}>
-        Batch {ack.batch_id} · {ack.item_count} item{ack.item_count === "1" ? "" : "s"}
+    <main className={styles.page}>
+      <h1>Acknowledged</h1>
+      <p>
+        Thanks — batch {ack.batch_id} ({ack.item_count} item{ack.item_count === "1" ? "" : "s"}) is
+        recorded as acknowledged, at {formatIst(ack.answered_at)} IST.
       </p>
-
-      <div
-        style={{
-          margin: "16px 0",
-          padding: "14px 16px",
-          background: "#f8fafc",
-          border: "1px solid #e2e8f0",
-          borderRadius: 8,
-        }}
-      >
-        <p style={{ margin: 0 }}>{acknowledgmentText(ack.from_person)}</p>
-      </div>
-
-      <form action={confirmAcknowledgment} className={styles.row}>
-        <input type="hidden" name="token" value={token} />
-        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <input type="radio" name="answer" value="yes" defaultChecked={preselect === "yes"} required />
-          Yes, I received everything in satisfactory condition
-        </label>
-        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <input type="radio" name="answer" value="no" defaultChecked={preselect === "no"} required />
-          No, something&apos;s wrong
-        </label>
-        <button type="submit">Confirm</button>
-      </form>
+      <p className={styles.muted}>No further action is needed.</p>
     </main>
   );
 }

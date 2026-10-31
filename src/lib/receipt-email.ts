@@ -196,10 +196,11 @@ export type ReceiptEmailResult = {
 };
 
 /**
- * Sends the receipt PDF to the person who now holds the items (the "To" person — whoever is sending
- * or receiving, the items are always shared TO someone). They're the one asked to acknowledge, so
- * they're the one the email goes to; the "From" person is named inside the acknowledgment line, not
- * emailed a copy.
+ * Sends the receipt PDF to the given recipient(s). Pass `acknowledgment` to add a one-click
+ * "Yes, I acknowledge" link for whoever is now personally holding the items — clicking it marks it
+ * acknowledged immediately (see app/handover/ack/[token]), no extra confirmation step. Omit it for a
+ * copy sent to someone else on the same batch (e.g. whoever handed the items over), who isn't being
+ * asked to acknowledge anything.
  * Throws if sending fails; returns who it was sent to and who had no email.
  */
 export async function sendReceiptEmail(options: {
@@ -211,8 +212,8 @@ export async function sendReceiptEmail(options: {
   totalPenalty: string;
   /** Who to email (person_id + name). Default: just the To person of the receipt. */
   people?: { id: string; name: string }[];
-  /** One-click Yes/No acknowledgment links, shown under the receipt details. Omit to leave them out. */
-  acknowledgment?: { yesUrl: string; noUrl: string };
+  /** One-click acknowledgment link, shown under the receipt details. Omit to leave it out. */
+  acknowledgment?: { yesUrl: string };
 }): Promise<ReceiptEmailResult> {
   const { summary, title, pdf, fileName, receiptUrl, totalPenalty, acknowledgment } = options;
 
@@ -269,7 +270,6 @@ export async function sendReceiptEmail(options: {
           acknowledgmentText(summary.fromName),
           "",
           `Yes, I acknowledge: ${acknowledgment.yesUrl}`,
-          `No, something's wrong: ${acknowledgment.noUrl}`,
         ]
       : []),
   ].join("\n");
@@ -294,8 +294,7 @@ export async function sendReceiptEmail(options: {
       ? `
   <div style="margin:20px 0;padding:14px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px">
     <p style="margin:0 0 14px">${escapeHtml(acknowledgmentText(summary.fromName))}</p>
-    <a href="${escapeHtml(acknowledgment.yesUrl)}" style="display:inline-block;margin:0 10px 0 0;padding:10px 18px;background:#15803D;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold">Yes, I acknowledge</a>
-    <a href="${escapeHtml(acknowledgment.noUrl)}" style="display:inline-block;padding:10px 18px;background:#B42318;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold">No, something's wrong</a>
+    <a href="${escapeHtml(acknowledgment.yesUrl)}" style="display:inline-block;padding:10px 18px;background:#15803D;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold">Yes, I acknowledge</a>
   </div>`
       : ""
   }
