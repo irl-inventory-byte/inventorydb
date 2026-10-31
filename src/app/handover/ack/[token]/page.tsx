@@ -10,7 +10,7 @@ import styles from "../../../admin/admin.module.css";
  * that opens links automatically before a person does could record a false acknowledgment — accepted
  * here in exchange for a true one-click flow with no extra page in the way.)
  */
-export default async function AcknowledgePage({ params }: PageProps<"/handover/ack/[token]">) {
+export default async function AcknowledgePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
 
   const existing = await findAcknowledgment(token);
@@ -31,10 +31,10 @@ export default async function AcknowledgePage({ params }: PageProps<"/handover/a
 
   return (
     <main className={styles.page}>
-      <h1>Acknowledged</h1>
+      <h1>Successfully acknowledged</h1>
       <p>
-        Thanks — batch {ack.batch_id} ({ack.item_count} item{ack.item_count === "1" ? "" : "s"}) is
-        recorded as acknowledged, at {formatIst(ack.answered_at)} IST.
+        Batch {ack.batch_id} ({ack.item_count} item{ack.item_count === "1" ? "" : "s"}) is recorded as
+        acknowledged, at {formatIst(ack.answered_at)} IST.
       </p>
       <p className={styles.muted}>No further action is needed.</p>
     </main>

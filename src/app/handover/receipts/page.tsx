@@ -358,9 +358,9 @@ export default async function ReceiptsPage({
                       {!r.ack ? (
                         <span className={styles.muted}>—</span>
                       ) : r.ack.answer === "yes" ? (
-                        <span style={{ color: "#15803D", fontWeight: 600 }}>Yes, acknowledged</span>
+                        <span style={{ color: "#15803D", fontWeight: 600 }}>Acknowledged successfully</span>
                       ) : (
-                        <span style={{ color: "#B42318", fontWeight: 600 }}>Pending</span>
+                        <span style={{ color: "#B42318", fontWeight: 600 }}>Acknowledgement pending</span>
                       )}
                     </td>
 
