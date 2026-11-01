@@ -624,14 +624,6 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
     step = "building the PDF";
     const pdf = await buildReceiptPdf(summary, receiptUrl);
 
-    step = "signing in to Google";
-    const auth = googleAuth();
-    const drive = google.drive({ version: "v3", auth });
-    const sheets = google.sheets({ version: "v4", auth });
-
-    const folderId = process.env.RECEIPTS_DRIVE_FOLDER_ID || DEFAULT_FOLDER_ID;
-    const spreadsheetId = process.env.RECEIPTS_SHEET_ID || DEFAULT_SHEET_ID;
-
     // File name: "<person receiving the items> - <date> - <batch>.pdf",
     // e.g. "Aryyaneel Saikia - 08 Oct 2026 - b-737e2401.pdf".
     // The batch ID keeps names unique when one person gets several receipts on the same day.
@@ -654,58 +646,6 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
 
     const fileName = `${personName} - ${datePart} - ${batchId}.pdf`;
 
-    step = `uploading the PDF to Drive folder ${folderId}`;
-    const uploaded = await drive.files.create({
-      requestBody: {
-        name: fileName,
-        parents: [folderId],
-        mimeType: "application/pdf",
-      },
-      media: {
-        mimeType: "application/pdf",
-        body: Readable.from(Buffer.from(pdf)),
-      },
-      fields: "id, webViewLink",
-      supportsAllDrives: true,
-    });
-
-    const pdfLink =
-      uploaded.data.webViewLink ??
-      `https://drive.google.com/file/d/${uploaded.data.id}/view`;
-
-    step = `opening the Receipts tab in sheet ${spreadsheetId}`;
-    await ensureReceiptsTab(sheets, spreadsheetId);
-
-    const firstEvent = events.find((e) => e.batch_id === batchId);
-
-    step = "adding the row to the Receipts tab";
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: `'${RECEIPTS_TAB}'!A1`,
-      valueInputOption: "USER_ENTERED",
-      insertDataOption: "INSERT_ROWS",
-      requestBody: {
-        values: [
-          [
-            cell(batchId),
-            cell(ACTION_TITLE[summary.action] ?? summary.action),
-            cell(formatIst(summary.occurredAt)),
-            cell(summary.fromName),
-            cell(summary.toName),
-            cell(summary.hubName),
-            summary.items.length,
-            cell(summary.items.map((i) => i.itemId).join(", ")),
-            penalties.total ?? "",
-            cell(summary.note),
-            cell(firstEvent?.recorded_by ?? ""),
-            `=HYPERLINK("${receiptUrl}", "Open receipt")`,
-            `=HYPERLINK("${pdfLink}", "${fileName.replace(/"/g, "")}")`,
-            cell(formatIst(new Date().toISOString())),
-          ],
-        ],
-      },
-    });
-
     // Email the PDF to the person who now holds the items (sender on a send, receiver on a receive —
     // see lib/receipt-email.ts), with a one-click "Yes, I acknowledge" to confirm they received
     // everything in good condition. The ask is only for FO / IFO recipients (field staff actually
@@ -713,6 +653,11 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
     // get the receipt, just without the acknowledgment block. Also skipped for corrections (no real
     // "To" person taking custody) and a return to stock (every item ends this batch back "In stock" --
     // the person recording it isn't taking personal custody of anything, just putting it away).
+    //
+    // This runs BEFORE the Drive upload / Sheets logging below on purpose: those two Google API calls
+    // are the slowest part of this whole function (several seconds each), and the person waiting for
+    // their receipt email shouldn't wait on back-office archiving that doesn't concern them. If the
+    // archiving further down fails, the email has already gone out — that's the intended trade-off.
     step = "emailing the receipt to the person who now holds the items";
     const allReturned = summary.items.length > 0 && penalties.returnedCount === summary.items.length;
     const toRole = roleOf.get(summary.toId);
@@ -770,6 +715,69 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
     if (missing.length > 0) {
       console.warn(`[receipt-archive] No email found for ${missing.join(", ")} (batch ${batchId}).`);
     }
+
+    // Everything below is back-office archiving (Drive + Sheets) — not needed to get the email out,
+    // so it happens after. Still awaited: the caller (archiveReceipt) needs it done before this
+    // function returns, and saveReceipt's own callers rely on a complete result or a thrown error.
+    step = "signing in to Google";
+    const auth = googleAuth();
+    const drive = google.drive({ version: "v3", auth });
+    const sheets = google.sheets({ version: "v4", auth });
+
+    const folderId = process.env.RECEIPTS_DRIVE_FOLDER_ID || DEFAULT_FOLDER_ID;
+    const spreadsheetId = process.env.RECEIPTS_SHEET_ID || DEFAULT_SHEET_ID;
+
+    step = `uploading the PDF to Drive folder ${folderId}`;
+    const uploaded = await drive.files.create({
+      requestBody: {
+        name: fileName,
+        parents: [folderId],
+        mimeType: "application/pdf",
+      },
+      media: {
+        mimeType: "application/pdf",
+        body: Readable.from(Buffer.from(pdf)),
+      },
+      fields: "id, webViewLink",
+      supportsAllDrives: true,
+    });
+
+    const pdfLink =
+      uploaded.data.webViewLink ??
+      `https://drive.google.com/file/d/${uploaded.data.id}/view`;
+
+    step = `opening the Receipts tab in sheet ${spreadsheetId}`;
+    await ensureReceiptsTab(sheets, spreadsheetId);
+
+    const firstEvent = events.find((e) => e.batch_id === batchId);
+
+    step = "adding the row to the Receipts tab";
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: `'${RECEIPTS_TAB}'!A1`,
+      valueInputOption: "USER_ENTERED",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: {
+        values: [
+          [
+            cell(batchId),
+            cell(ACTION_TITLE[summary.action] ?? summary.action),
+            cell(formatIst(summary.occurredAt)),
+            cell(summary.fromName),
+            cell(summary.toName),
+            cell(summary.hubName),
+            summary.items.length,
+            cell(summary.items.map((i) => i.itemId).join(", ")),
+            penalties.total ?? "",
+            cell(summary.note),
+            cell(firstEvent?.recorded_by ?? ""),
+            `=HYPERLINK("${receiptUrl}", "Open receipt")`,
+            `=HYPERLINK("${pdfLink}", "${fileName.replace(/"/g, "")}")`,
+            cell(formatIst(new Date().toISOString())),
+          ],
+        ],
+      },
+    });
 
     return {
       fileName,
