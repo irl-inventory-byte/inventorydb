@@ -26,6 +26,7 @@ import { getStore } from "@/lib/store";
 import { MonthlyReportCard } from "./monthly-report";
 import { buildMonthlyReport, pickFilter } from "@/lib/monthly-report";
 import type { Item } from "@/lib/schema";
+import { productivityTeamHub, rigTeamHub } from "@/lib/rig-hub";
 
 const inventory = (params: Record<string, string>) => `/inventory?${new URLSearchParams(params)}`;
 
@@ -287,6 +288,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     color: string;
     cities?: { city: string; count: number; pct: number; href: string }[]; // city-wise list, opened from the tile
     storage?: { storage: string; count: number; pct: number; href: string }[]; // SD card 256/512 GB breakdown, opened from the tile
+    teamSwitch?: { label: string; href: string; on: boolean }[]; // Rig team / Productivity team toggle, under the tile
   };
   // City-wise count of items with a status (city of the hub the item is at), biggest first.
   const cityOfHub = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
@@ -421,6 +423,20 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     });
   }
 
+  // "With rig team" tile: a dropdown between the Rig team hub and the Productivity team hub. Counts items
+  // physically at that hub — either checked out to it (status "with_rig") or sitting in stock there (status
+  // "in_stock" with that hub as current_hub) — so stock kept at the team's own hub counts as "with" them too.
+  const rigHubObj = rigTeamHub(hubs);
+  const prodHubObj = productivityTeamHub(hubs);
+  const team = one(sp.team) === "productivity" ? "productivity" : "rig";
+  const teamHub = team === "productivity" ? prodHubObj : rigHubObj;
+  const teamCount = teamHub
+    ? items.filter((i) => i.current_hub === teamHub.hub_id && (i.status === "with_rig" || i.status === "in_stock")).length
+    : s.with_rig;
+  const teamHref = teamHub
+    ? inventory({ status: "with_rig,in_stock", hub: teamHub.hub_id })
+    : inventory({ status: "with_rig" });
+
   // SD CARDS (and the "All" view): unchanged.
   const sdKpis: Kpi[] = [
     {
@@ -443,7 +459,18 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       cities: citiesFor("with_fo"),
       storage: storageFor("with_fo"),
     },
-    { label: "With rig team", value: s.with_rig, hint: share(s.with_rig), href: inventory({ status: "with_rig" }), icon: "database", color: "var(--series-7)" },
+    {
+      label: team === "productivity" ? "With productivity team" : "With rig team",
+      value: teamCount,
+      hint: share(teamCount),
+      href: teamHref,
+      icon: "database",
+      color: "var(--series-7)",
+      teamSwitch: [
+        { label: "Rig team", href: `/dashboard?${new URLSearchParams({ ...(type && { type }), team: "rig" })}`, on: team === "rig" },
+        { label: "Productivity team", href: `/dashboard?${new URLSearchParams({ ...(type && { type }), team: "productivity" })}`, on: team === "productivity" },
+      ],
+    },
     { label: "Internal", value: s.with_internal, hint: share(s.with_internal), href: inventory({ status: "with_internal" }), icon: "user", color: "var(--series-1)" },
     {
       label: "In transit",
@@ -498,7 +525,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       color: "var(--series-1)",
     },
     ...sdKpis
-      .filter((k) => k.label !== "With rig team" && k.label !== "Internal")
+      .filter((k) => !k.teamSwitch && k.label !== "Internal")
       .map((k) => ({
         ...k,
         href: `${k.href}&type=mobile`,
@@ -889,7 +916,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 .kpi-tile > a{flex:1;min-width:0}
 `}</style>
           {kpis.map((k) =>
-            k.cities || k.storage ? (
+            k.cities || k.storage || k.teamSwitch ? (
               <div key={k.label} className={styles.kpi} style={{ "--kpi": k.color, overflow: "visible" } as CSSProperties}>
                 <span className={styles.kpiIcon}>
                   <Icon name={k.icon} size={22} />
@@ -931,6 +958,15 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                         ))}
                       </div>
                     </details>
+                  )}
+                  {k.teamSwitch && (
+                    <span style={{ display: "flex", gap: 10, marginTop: 4, fontSize: "0.82rem" }}>
+                      {k.teamSwitch.map((t) => (
+                        <Link key={t.label} href={t.href} style={{ color: t.on ? "#1d4ed8" : "#64748b", fontWeight: t.on ? 700 : 500, textDecoration: t.on ? "underline" : "none" }}>
+                          {t.label}
+                        </Link>
+                      ))}
+                    </span>
                   )}
                 </span>
               </div>

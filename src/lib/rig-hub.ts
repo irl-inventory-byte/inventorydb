@@ -21,6 +21,18 @@ export function rigTeamHub(hubs: Pick<Hub, "hub_id" | "name" | "active">[]) {
   const is = (v: string) => norm(v).startsWith("rigteam");
   return active.find((h) => is(h.hub_id)) ?? active.find((h) => is(h.name));
 }
+/**
+ * The productivity team's own location: a hub whose ID or name starts with "productivity team" (any letter
+ * case, spaces, underscores and hyphens all ignored) — so "Productivity team", "productivity_team" and
+ * "Productivity_team_BLR" all match. undefined if no such hub has been added yet (Manage hubs → + Add a hub).
+ */
+export function productivityTeamHub(hubs: Pick<Hub, "hub_id" | "name" | "active">[]) {
+  const active = hubs.filter((h) => h.active !== "false");
+  const norm = (v: string) => (v ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "");
+  const is = (v: string) => norm(v).startsWith("productivityteam");
+  return active.find((h) => is(h.hub_id)) ?? active.find((h) => is(h.name));
+}
+
 /** The home hub of every mobile: "Instawork Robotics Labs" (by ID or name, any letter case). */
 export const MOBILE_HUB_NAME = "Instawork Robotics Labs";
 export function mobileHomeHub(hubs: Pick<Hub, "hub_id" | "name" | "active">[]) {
