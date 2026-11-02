@@ -60,7 +60,8 @@ export class Store {
       tab === "qc_checks" ||
       tab === "rig_reports" ||
       tab === "acknowledgments" ||
-      tab === "lost_notes";
+      tab === "lost_notes" ||
+      tab === "audits";
     const rows = optional
       ? await this.readOptional(tab)
       : await this.backend.readAll(tab);

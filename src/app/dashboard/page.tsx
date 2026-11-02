@@ -446,29 +446,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const teamHref = teamHub
     ? inventory({ status: "with_rig,in_stock", hub: teamHub.hub_id })
     : inventory({ status: "with_rig" });
-  // Hub-wise breakdown of whichever team's item list is currently selected (most of these items sit at one
-  // city, so "Bangalore 100%" isn't useful — which hub within that city is).
-  const hubNameOf = new Map(hubs.map((h) => [h.hub_id, h.name || h.hub_id]));
-  const hubsForList = (list: Item[]) => {
-    const count = new Map<string, number>();
-    for (const i of list) {
-      const h = hubNameOf.get(i.current_hub) || i.current_hub || "Not set";
-      count.set(h, (count.get(h) ?? 0) + 1);
-    }
-    return [...count.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([hubLabel, c], _, all) => {
-        const total = all.reduce((t, [, v]) => t + v, 0);
-        const hubId = hubs.find((h) => (h.name || h.hub_id) === hubLabel)?.hub_id ?? hubLabel;
-        return {
-          hub: hubLabel,
-          count: c,
-          pct: total ? Math.round((c / total) * 100) : 0,
-          href: inventory({ status: "with_rig,in_stock", hub: hubId }),
-        };
-      });
-  };
-  const teamHubs = hubsForList(team === "productivity" ? prodTeamItemsList : rigTeamItemsList);
 
   // SD CARDS (and the "All" view): unchanged.
   const sdKpis: Kpi[] = [
@@ -499,7 +476,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       href: teamHref,
       icon: "database",
       color: "var(--series-7)",
-      hubs: teamHubs,
       teamSwitch: true,
     },
     { label: "Internal", value: s.with_internal, hint: share(s.with_internal), href: inventory({ status: "with_internal" }), icon: "user", color: "var(--series-1)" },
@@ -834,6 +810,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const qcTo = one(sp.qcto);
   const qcKeep: Record<string, string> = { ...keepParams };
 
+  // Sanitization table filter (Rig dashboard): "" = all, "yes" or "no" narrows the table to that result.
+  const san = one(sp.san) === "yes" || one(sp.san) === "no" ? one(sp.san) : "";
+  const sanKeep: Record<string, string> = { ...keepParams };
+
   // Who has items: longest out first, then most items.
   const holdersSorted = [...d.holders].sort(
     (a, b) => (b.oldestDays ?? -1) - (a.oldestDays ?? -1) || b.count - a.count || a.name.localeCompare(b.name),
@@ -1017,17 +997,12 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                       <select
                         name="team"
                         defaultValue={team}
-                        style={{ fontSize: "0.8rem", padding: "3px 6px", borderRadius: 6, border: "1px solid #cbd5e1", background: "#fff", color: "#334155" }}
+                        aria-label="Team"
+                        style={{ maxWidth: "100%", padding: "4px 8px", border: "1px solid #cbd5e1", borderRadius: 6 }}
                       >
-                        <option value="rig">Rig team · {n(rigTeamCount)}</option>
-                        <option value="productivity">Productivity team · {n(prodTeamCount)}</option>
+                        <option value="rig">{`Rig team · ${n(rigTeamCount)}`}</option>
+                        <option value="productivity">{`Productivity team · ${n(prodTeamCount)}`}</option>
                       </select>
-                      <button
-                        type="submit"
-                        style={{ fontSize: "0.75rem", padding: "4px 10px", borderRadius: 6, border: "1px solid #1e293b", background: "#1e293b", color: "#fff", cursor: "pointer" }}
-                      >
-                        Go
-                      </button>
                     </form>
                   )}
                 </span>
@@ -1162,6 +1137,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             qcFrom={qcFrom}
             qcTo={qcTo}
             qcKeep={qcKeep}
+            sanKeep={sanKeep}
           />
         )}
 

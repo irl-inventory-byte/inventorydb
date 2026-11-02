@@ -108,6 +108,8 @@ export function RigMetrics({
   qcFrom = "",
   qcTo = "",
   qcKeep = {},
+  san = "",
+  sanKeep = {},
 }: {
   items: Item[];
   events: ItemEvent[];
@@ -119,6 +121,8 @@ export function RigMetrics({
   qcFrom?: string; // "YYYY-MM-DD" (IST), filters QC counts / leaderboard below. Empty = no filter.
   qcTo?: string;
   qcKeep?: Record<string, string>; // other query params to preserve when the QC date filter is submitted
+  san?: "" | "yes" | "no"; // Sanitization table filter: "" = all, otherwise narrows to that result
+  sanKeep?: Record<string, string>; // other query params to preserve when the Sanitization filter is clicked
 }) {
   const rigs = items.filter((i) => i.item_type === "rig");
   const rigIds = new Set(rigs.map((i) => i.item_id));
@@ -172,20 +176,38 @@ export function RigMetrics({
   const sanitization = sanitizationList(rigs, hardwareUpdates);
   const sanitizedYes = sanitization.filter((r) => r.status === "Yes").length;
   const sanitizedNo = sanitization.filter((r) => r.status === "No").length;
-  const sanitizedNotSet = sanitization.filter((r) => r.status === "Not set").length;
+  const sanitizationShown = san === "yes" ? sanitization.filter((r) => r.status === "Yes") : san === "no" ? sanitization.filter((r) => r.status === "No") : sanitization;
+  const sanLink = (value: "" | "yes" | "no") =>
+    `/dashboard?${new URLSearchParams({ ...sanKeep, ...(value && { san: value }) })}#sanitization`;
 
 
   return (
     <>
       {/* 7. SANITIZATION, PER RIG */}
       <Card title="Sanitization" note={`${rigWord(sanitization.length)} total`}>
-        <div className={styles.leaders}>
-          <Leader label="Sanitized (Yes)" who="" value={`${n(sanitizedYes)} rig${sanitizedYes === 1 ? "" : "s"}`} />
-          <Leader label="Not sanitized (No)" who="" value={`${n(sanitizedNo)} rig${sanitizedNo === 1 ? "" : "s"}`} />
-          <Leader label="Not recorded" who="" value={`${n(sanitizedNotSet)} rig${sanitizedNotSet === 1 ? "" : "s"}`} />
+        <div id="sanitization" className={styles.leaders}>
+          <Link href={sanLink(san === "yes" ? "" : "yes")} style={{ textDecoration: "none", color: "inherit" }}>
+            <Leader
+              label={san === "yes" ? "Sanitized (Yes) ✓" : "Sanitized (Yes)"}
+              who=""
+              value={`${n(sanitizedYes)} rig${sanitizedYes === 1 ? "" : "s"}`}
+            />
+          </Link>
+          <Link href={sanLink(san === "no" ? "" : "no")} style={{ textDecoration: "none", color: "inherit" }}>
+            <Leader
+              label={san === "no" ? "Not sanitized (No) ✓" : "Not sanitized (No)"}
+              who=""
+              value={`${n(sanitizedNo)} rig${sanitizedNo === 1 ? "" : "s"}`}
+            />
+          </Link>
         </div>
-        {sanitization.length === 0 ? (
-          <p className={styles.muted}>No rigs yet.</p>
+        {san && (
+          <p className={styles.muted}>
+            Showing {san === "yes" ? "sanitized" : "not sanitized"} rigs only. <Link href={sanLink("")}>Show all →</Link>
+          </p>
+        )}
+        {sanitizationShown.length === 0 ? (
+          <p className={styles.muted}>No rigs match.</p>
         ) : (
           <div className={styles.tableScroll} style={SCROLL} tabIndex={0} role="region" aria-label="Sanitization by rig">
             <table className={styles.table}>
@@ -199,7 +221,7 @@ export function RigMetrics({
                 </tr>
               </thead>
               <tbody>
-                {sanitization.map((r, idx) => (
+                {sanitizationShown.map((r, idx) => (
                   <tr key={r.item_id}>
                     <td>{idx + 1}</td>
                     <td>{rigLink(r.item_id)}</td>
@@ -212,7 +234,7 @@ export function RigMetrics({
             </table>
           </div>
         )}
-        <p className={styles.muted}>From each rig&apos;s latest Sanitization hardware update (Yes / No). &quot;Not recorded&quot; = no Sanitization update has ever been logged for that rig.</p>
+        <p className={styles.muted}>From each rig&apos;s latest Sanitization hardware update (Yes / No).</p>
       </Card>
 
       {/* 3. QC TEAM LEADERBOARD */}

@@ -22,15 +22,53 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/inv
   const isRig = itemType(item) === "rig";
   const isMobile = itemType(item) === "mobile";
 
-  const [hubs, people, history, hardware, qc] = await Promise.all([
+  const [hubs, people, history, hardware, qc, audits] = await Promise.all([
     store.list("hubs"),
     store.list("people"),
     store.getHistory(id),
     isRig ? store.list("hardware_updates") : Promise.resolve([] as HardwareUpdate[]),
     isRig ? store.list("qc_checks") : Promise.resolve([] as QcCheck[]),
+    store.list("audits"),
   ]);
   const hardwareUpdates = hardware.filter((h) => h.item_id === item.item_id);
   const qcChecks = qc.filter((c) => c.item_id === item.item_id);
+  const auditRows = audits.filter((a) => a.item_id === item.item_id);
+  // City/Hub Audit confirmations merged into History as their own kind of row (no status change).
+  type HistoryRow = {
+    key: string;
+    when: string;
+    action: string;
+    from: string;
+    to: string;
+    hub: string;
+    status: string;
+    by: string;
+    note: string;
+  };
+  const historyRows: HistoryRow[] = [
+    ...history.map((e) => ({
+      key: e.event_id,
+      when: e.occurred_at,
+      action: e.action,
+      from: personName.get(e.from_person) ?? (e.from_person || "—"),
+      to: personName.get(e.to_person) ?? (e.to_person || "—"),
+      hub: hubName.get(e.hub) ?? e.hub,
+      status: STATUS_LABELS[e.status_after] ?? e.status_after,
+      by: e.recorded_by,
+      note: e.note,
+    })),
+    ...auditRows.map((a) => ({
+      key: a.audit_id,
+      when: a.audited_at,
+      action: "audited",
+      from: "—",
+      to: "—",
+      hub: hubName.get(item.current_hub) ?? item.current_hub,
+      status: STATUS_LABELS[item.status] ?? item.status,
+      by: a.audited_by_name || a.audited_by,
+      note: "Confirmed present during a City / Hub Audit.",
+    })),
+  ].sort((a, b) => Date.parse(a.when || "0") - Date.parse(b.when || "0"));
   const latestQc = qcChecks.at(-1);
   const hubName = new Map(hubs.map((h) => [h.hub_id, h.name]));
   const personName = new Map(people.map((p) => [p.person_id, p.name]));
@@ -115,8 +153,8 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/inv
       )}
 
       <h2>History</h2>
-      {history.length === 0 ? (
-        <p className={styles.muted}>No events yet. History starts with the first handover or correction.</p>
+      {historyRows.length === 0 ? (
+        <p className={styles.muted}>No events yet. History starts with the first handover, correction or audit.</p>
       ) : (
         <table className={styles.table}>
           <thead>
@@ -131,17 +169,17 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/inv
             </tr>
           </thead>
           <tbody>
-            {[...history].reverse().map((e) => (
-              <tr key={e.event_id}>
-                <td>{formatIst(e.occurred_at)} IST</td>
-                <td>{e.action}</td>
+            {[...historyRows].reverse().map((r) => (
+              <tr key={r.key}>
+                <td>{formatIst(r.when)} IST</td>
+                <td>{r.action}</td>
                 <td>
-                  {personName.get(e.from_person) ?? (e.from_person || "—")} → {personName.get(e.to_person) ?? (e.to_person || "—")}
+                  {r.from} → {r.to}
                 </td>
-                <td>{hubName.get(e.hub) ?? e.hub}</td>
-                <td>{STATUS_LABELS[e.status_after] ?? e.status_after}</td>
-                <td>{e.recorded_by}</td>
-                <td>{e.note}</td>
+                <td>{r.hub}</td>
+                <td>{r.status}</td>
+                <td>{r.by}</td>
+                <td>{r.note}</td>
               </tr>
             ))}
           </tbody>

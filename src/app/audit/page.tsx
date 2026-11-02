@@ -3,22 +3,22 @@ import type { CSSProperties } from "react";
 import { storeForAll, VIEW_ROLES } from "@/lib/access";
 import { requireRole } from "@/lib/authz";
 import { STATUS_LABELS, one } from "@/lib/labels";
-import { unusedByCity, unusedByHub, unusedItems } from "@/lib/item-audit";
+import { lastAuditedAt, unusedByCity, unusedByHub, unusedItems } from "@/lib/item-audit";
 import { formatIst } from "@/lib/time";
 import styles from "../admin/admin.module.css";
+import { markAudited } from "./actions";
+import SelectAllCheckbox from "./Selectallcheckbox";
 
 const TYPE_NAME: Record<string, string> = { sd_card: "SD card", rig: "Rig", mobile: "Mobile" };
 const MIN_DAYS = 1;
+const FORM_ID = "audit-select-form";
 
 /**
- * CITY / HUB AUDIT: every item (SD card, rig or mobile) with no status change (handover) for
- * MIN_DAYS+ days, grouped by city and hub. Read-only — no reports, unlike Rig Audit.
+ * CITY / HUB AUDIT: every in-stock item (SD card, rig or mobile) with no status change (handover)
+ * for MIN_DAYS+ days, grouped by city and hub. Tick items that were physically checked and confirm
+ * them — that's logged (who, when) and shows up in the item's History, without changing its status.
  */
-export default async function AuditPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+export default async function AuditPage({ searchParams }: PageProps<"/audit">) {
   const user = await requireRole(...VIEW_ROLES);
   const sp = await searchParams;
   const q = one(sp.q).trim().toLowerCase();
@@ -27,11 +27,19 @@ export default async function AuditPage({
   const typeFilter = one(sp.type); // "" (all), "sd_card", "rig" or "mobile"
   const dateFrom = one(sp.from); // "YYYY-MM-DD", filters by last-activity date
   const dateTo = one(sp.to); // "YYYY-MM-DD", filters by last-activity date
+  const auditedMsg = one(sp.audited);
+  const auditError = one(sp.error);
 
   const store = storeForAll(user.role);
-  const [items, events, hubs] = await Promise.all([store.list("items"), store.list("events"), store.list("hubs")]);
+  const [items, events, hubs, audits] = await Promise.all([
+    store.list("items"),
+    store.list("events"),
+    store.list("hubs"),
+    store.list("audits"),
+  ]);
   const now = new Date();
   const unused = unusedItems(items, events, hubs, now, MIN_DAYS);
+  const auditedAt = lastAuditedAt(audits);
 
   // The date filter applies first (it's the broadest), then item-type, then city/hub.
   const inDateRange = (u: { lastActivity: string }) => {
@@ -80,11 +88,15 @@ export default async function AuditPage({
       </p>
       <h1>City / Hub Audit ({unused.length})</h1>
       <p className={styles.muted}>
-        Every SD card, rig and mobile with no status change for {MIN_DAYS}+ day{MIN_DAYS === 1 ? "" : "s"}, by city and
-        hub. &quot;No activity&quot; = no handover recorded since the item&apos;s last status change (or since it was
-        added, if it has never moved). Use the date filter below to show only items whose last activity falls in a
-        given range.
+        Every in-stock SD card, rig and mobile with no status change for {MIN_DAYS}+ day{MIN_DAYS === 1 ? "" : "s"}, by
+        city and hub. &quot;No activity&quot; = no handover recorded since the item&apos;s last status change (or
+        since it was added, if it has never moved). Use the date filter below to show only items whose last activity
+        falls in a given range. Tick the items you&apos;ve physically checked and press &quot;Mark as audited&quot; —
+        it&apos;s logged (who, when) in the item&apos;s History; status and no-activity count stay unchanged.
       </p>
+
+      {auditedMsg && <p className={styles.ok}>Marked {auditedMsg} item(s) as audited.</p>}
+      {auditError && <p className={styles.error}>{auditError}</p>}
 
       {(() => {
         const chip = (on: boolean): CSSProperties => ({
@@ -185,40 +197,54 @@ export default async function AuditPage({
       </form>
 
       {shown.length === 0 ? (
-        <p className={styles.muted}>{typeFiltered.length ? "No items match." : "Every item has had activity in the last day."}</p>
+        <p className={styles.muted}>{typeFiltered.length ? "No items match." : "Every in-stock item has had activity in the last day."}</p>
       ) : (
-        <div role="region" aria-label="City / hub audit" tabIndex={0} style={{ overflowX: "auto" }}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Item</th>
-                <th>Type</th>
-                <th>Status</th>
-                <th>City</th>
-                <th>Hub</th>
-                <th>Last activity</th>
-                <th>No activity for</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((u) => (
-                <tr key={u.item_id}>
-                  <td>
-                    <Link href={`/inventory/${encodeURIComponent(u.item_id)}`} style={{ fontWeight: 600 }}>
-                      {u.item_id}
-                    </Link>
-                  </td>
-                  <td>{TYPE_NAME[u.item_type] ?? u.item_type}</td>
-                  <td>{STATUS_LABELS[u.status] ?? u.status}</td>
-                  <td>{u.city}</td>
-                  <td>{u.hub || "—"}</td>
-                  <td>{u.lastActivity ? formatIst(u.lastActivity) : "—"}</td>
-                  <td>{u.days} day{u.days === 1 ? "" : "s"}</td>
+        <form id={FORM_ID} action={markAudited}>
+          <input type="hidden" name="back" value={keep({})} />
+          <div role="region" aria-label="City / hub audit" tabIndex={0} style={{ overflowX: "auto" }}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>
+                    <SelectAllCheckbox formId={FORM_ID} />
+                  </th>
+                  <th>Item</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>City</th>
+                  <th>Hub</th>
+                  <th>Last activity</th>
+                  <th>No activity for</th>
+                  <th>Last audited</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {shown.map((u) => (
+                  <tr key={u.item_id}>
+                    <td>
+                      <input type="checkbox" name="ids" value={u.item_id} aria-label={`Select ${u.item_id} to audit`} />
+                    </td>
+                    <td>
+                      <Link href={`/inventory/${encodeURIComponent(u.item_id)}`} style={{ fontWeight: 600 }}>
+                        {u.item_id}
+                      </Link>
+                    </td>
+                    <td>{TYPE_NAME[u.item_type] ?? u.item_type}</td>
+                    <td>{STATUS_LABELS[u.status] ?? u.status}</td>
+                    <td>{u.city}</td>
+                    <td>{u.hub || "—"}</td>
+                    <td>{u.lastActivity ? formatIst(u.lastActivity) : "—"}</td>
+                    <td>{u.days} day{u.days === 1 ? "" : "s"}</td>
+                    <td>{auditedAt.has(u.item_id) ? formatIst(auditedAt.get(u.item_id)!) : "Never"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <button type="submit">Mark selected as audited</button>
+          </div>
+        </form>
       )}
     </main>
   );

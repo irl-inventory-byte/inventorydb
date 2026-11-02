@@ -1,9 +1,12 @@
-import type { Hub, Item, ItemEvent, Status } from "./schema";
+import type { Audit, Hub, Item, ItemEvent, Status } from "./schema";
 
 /**
- * CITY / HUB AUDIT: every item (SD card, rig or mobile) that hasn't had a status change (handover) for
- * `minDays` days or more. "Activity" here means the item's last handover event; if it has never had one,
- * its `updated_at` is used instead (e.g. a freshly added item that has sat untouched since).
+ * CITY / HUB AUDIT: every IN-STOCK item (SD card, rig or mobile) that hasn't had a status change
+ * (handover) for `minDays` days or more. Only "in_stock" items are listed — this page is for
+ * physically checking stock sitting at a hub, so an item that's out with someone (traveling, with an
+ * FO, with the rig team, etc.) isn't something you can walk up to and audit. "Activity" here means
+ * the item's last handover event; if it has never had one, its `updated_at` is used instead (e.g. a
+ * freshly added item that has sat untouched since).
  */
 export interface UnusedItem {
   item_id: string;
@@ -27,6 +30,7 @@ export function unusedItems(items: Item[], events: ItemEvent[], hubs: Hub[], now
 
   const out: UnusedItem[] = [];
   for (const i of items) {
+    if (i.status !== "in_stock") continue;
     const last = lastEventAt.get(i.item_id) || i.updated_at || "";
     const t = Date.parse(last);
     if (!Number.isFinite(t)) continue;
@@ -43,6 +47,16 @@ export function unusedItems(items: Item[], events: ItemEvent[], hubs: Hub[], now
     });
   }
   return out.sort((a, b) => b.days - a.days || a.city.localeCompare(b.city) || a.item_id.localeCompare(b.item_id));
+}
+
+/** The most recent audit date per item, "" if never audited. */
+export function lastAuditedAt(audits: Audit[]): Map<string, string> {
+  const last = new Map<string, string>();
+  for (const a of audits) {
+    const prev = last.get(a.item_id);
+    if (!prev || Date.parse(a.audited_at) > Date.parse(prev)) last.set(a.item_id, a.audited_at);
+  }
+  return last;
 }
 
 /** City-wise counts, biggest first. */

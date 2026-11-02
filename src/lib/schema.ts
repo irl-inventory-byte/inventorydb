@@ -96,6 +96,9 @@ export const TABS = {
   // Investigation notes for lost (or broken) items: a free-text note per entry, oldest first,
   // shown on the Lost items page. One row per note added.
   lost_notes: ["note_id", "item_id", "note", "recorded_at", "recorded_by", "recorded_by_name"],
+  // City/Hub Audit confirmations: someone physically checked that an in-stock item is really
+  // there. Doesn't change status or location — just a log entry, shown in the item's History.
+  audits: ["audit_id", "item_id", "audited_at", "audited_by", "audited_by_name"],
   // Audit log of admin edits to past receipts: who changed what, and when.
   receipt_edits: [
     "edit_id",
@@ -308,6 +311,14 @@ export interface LostNote extends Row {
   recorded_by_name: string;
 }
 
+export interface Audit extends Row {
+  audit_id: string;
+  item_id: string;
+  audited_at: string;
+  audited_by: string;
+  audited_by_name: string;
+}
+
 export interface Acknowledgment extends Row {
   ack_id: string;
   batch_id: string;
@@ -338,4 +349,5 @@ export interface TabRows {
   rig_reports: RigReport;
   acknowledgments: Acknowledgment;
   lost_notes: LostNote;
+  audits: Audit;
 }
