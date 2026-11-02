@@ -20,6 +20,7 @@ import { mobileHomeHub, rigHomeHub } from "@/lib/rig-hub";
 import BulkAddForm from "./BulkAddForm";
 import { applyCorrection } from "./actions";
 import CorrectionPanel from "./CorrectionPanel";
+import OfflineForm from "../OfflineForm";
 import SearchBox from "./SearchBox";
 
 const PAGE_SIZE = 100;
@@ -187,6 +188,10 @@ export default async function InventoryPage({
   const cities = many(sp.city).map((c) => c.toLowerCase());
   const city = cities.join(",");
 
+  // SD card storage (256 GB / 512 GB), from the saved "capacity" attribute.
+  const storages = many(sp.storage);
+  const storage = storages.join(",");
+
   // Date range (YYYY-MM-DD, IST) on each item's last movement.
   const isDay = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
   const from = isDay(one(sp.from)) ? one(sp.from) : "";
@@ -268,6 +273,7 @@ export default async function InventoryPage({
       (!to || (lastDay(item) !== "" && lastDay(item) <= to)) &&
       (!lateOnly || isLate(item)) &&
       (!statuses.length || statuses.includes(item.status)) &&
+      (!storages.length || storages.includes(readCardDetails(item.attributes).storage)) &&
       (!hubIds.length || hubIds.includes(item.current_hub)) &&
       (!cities.length || cities.includes(hubCity.get(item.current_hub) ?? "")) &&
       (!holder || item.current_holder === holder) &&
@@ -318,6 +324,7 @@ export default async function InventoryPage({
     const params = new URLSearchParams({
       ...(q && { q }),
       ...(status && { status }),
+      ...(storage && { storage }),
       ...(hub && { hub }),
       ...(city && { city }),
       ...(from && { from }),
@@ -857,6 +864,19 @@ export default async function InventoryPage({
           selected={statuses}
         />
 
+        {type === "sd_card" && (
+          <MultiSelect
+            name="storage"
+            label="Storage"
+            allLabel="All storage"
+            options={[
+              { value: "256 GB", label: "256 GB" },
+              { value: "512 GB", label: "512 GB" },
+            ]}
+            selected={storages}
+          />
+        )}
+
         <MultiSelect
           name="city"
           label="City"
@@ -899,7 +919,7 @@ export default async function InventoryPage({
 
         <button type="submit">Filter</button>
 
-        {(statuses.length > 0 || cities.length > 0 || hubIds.length > 0 || from || to || q) && (
+        {(statuses.length > 0 || storages.length > 0 || cities.length > 0 || hubIds.length > 0 || from || to || q) && (
           <Link href={type ? `/inventory?type=${type}` : "/inventory"}>Clear filters</Link>
         )}
 
@@ -937,7 +957,7 @@ export default async function InventoryPage({
 
       {/* Corrections and selection checkboxes remain Admin-only. */}
       {isAdmin ? (
-        <form action={applyCorrection} className={styles.list} data-progress="1">
+        <OfflineForm action={applyCorrection} kind="correction" className={styles.list} data-progress="1">
           <input
             type="hidden"
             name="back"
@@ -951,7 +971,7 @@ export default async function InventoryPage({
           />
 
           {table}
-        </form>
+        </OfflineForm>
       ) : (
         table
       )}
