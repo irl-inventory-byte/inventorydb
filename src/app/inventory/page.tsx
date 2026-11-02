@@ -20,7 +20,6 @@ import { mobileHomeHub, rigHomeHub } from "@/lib/rig-hub";
 import BulkAddForm from "./BulkAddForm";
 import { applyCorrection } from "./actions";
 import CorrectionPanel from "./CorrectionPanel";
-import OfflineForm from "../OfflineForm";
 import SearchBox from "./SearchBox";
 
 const PAGE_SIZE = 100;
@@ -957,7 +956,7 @@ export default async function InventoryPage({
 
       {/* Corrections and selection checkboxes remain Admin-only. */}
       {isAdmin ? (
-        <OfflineForm action={applyCorrection} kind="correction" className={styles.list} data-progress="1">
+        <form action={applyCorrection} className={styles.list} data-progress="1">
           <input
             type="hidden"
             name="back"
@@ -971,7 +970,7 @@ export default async function InventoryPage({
           />
 
           {table}
-        </OfflineForm>
+        </form>
       ) : (
         table
       )}
