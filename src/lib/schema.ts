@@ -99,6 +99,9 @@ export const TABS = {
   // City/Hub Audit confirmations: someone physically checked that an in-stock item is really
   // there. Doesn't change status or location — just a log entry, shown in the item's History.
   audits: ["audit_id", "item_id", "audited_at", "audited_by", "audited_by_name"],
+  // Small flat key/value store for admin-set overrides, e.g. a manual storage-breakdown number for
+  // the Broken dashboard tile when item attributes don't reliably have it. One row per key.
+  settings: ["key", "value", "updated_at", "updated_by", "updated_by_name"],
   // Audit log of admin edits to past receipts: who changed what, and when.
   receipt_edits: [
     "edit_id",
@@ -319,6 +322,14 @@ export interface Audit extends Row {
   audited_by_name: string;
 }
 
+export interface Setting extends Row {
+  key: string;
+  value: string;
+  updated_at: string;
+  updated_by: string;
+  updated_by_name: string;
+}
+
 export interface Acknowledgment extends Row {
   ack_id: string;
   batch_id: string;
@@ -350,4 +361,5 @@ export interface TabRows {
   acknowledgments: Acknowledgment;
   lost_notes: LostNote;
   audits: Audit;
+  settings: Setting;
 }

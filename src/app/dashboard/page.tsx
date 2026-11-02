@@ -19,6 +19,7 @@ import { HubOrgChart, countHidden } from "./hub-tree-view";
 import AttentionFilter from "./attentionfilter";
 import { Icon, type IconName } from "./icons";
 import TeamSelect from "./Teamselect";
+import { setBrokenStorageOverride } from "./actions";
 import { SummaryKpis } from "./summary-kpis";
 import { RIG_STATES, RIG_STATE_LABELS, rigState, type RigState } from "@/lib/rig-state";
 import { NO_ACTIVITY_DAYS, RigMetrics } from "./rig-metrics";
@@ -202,15 +203,27 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // Mobile view: tiles and breakdowns only (mobiles are not sent or received).
   const mobileView = type === "mobile";
   const showQc = canSeeType(user.role, "rig") && type !== "sd_card" && !mobileView;
-  const [items, events, people, hubs, qcChecks, hardwareUpdates] = await Promise.all([
+  const [items, events, people, hubs, qcChecks, hardwareUpdates, settings] = await Promise.all([
     store.list("items"),
     store.list("events"),
     store.list("people"),
     store.list("hubs"),
     showQc ? store.list("qc_checks") : Promise.resolve([] as QcCheck[]),
     showQc ? store.list("hardware_updates") : Promise.resolve([] as HardwareUpdate[]),
+    store.list("settings"),
   ]);
   const now = new Date();
+
+  // Admin-set override for the Broken tile's storage breakdown (see dashboard/actions.ts) — used
+  // instead of the computed one when set, since broken cards often never had storage recorded.
+  let brokenStorageOverride: { gb256: number; gb512: number } | undefined;
+  try {
+    const raw = settings.find((s) => s.key === "broken_storage")?.value;
+    const parsed = raw ? JSON.parse(raw) : undefined;
+    if (parsed && Number.isFinite(parsed.gb256) && Number.isFinite(parsed.gb512)) brokenStorageOverride = parsed;
+  } catch {
+    // Malformed stored value — fall back to the computed breakdown.
+  }
 
   // Rig view: unknown rigs (no activity for more than NO_ACTIVITY_DAYS days), city-wise, with their reports.
   // Worked out twice on purpose: the first pass is free and tells us whether any rig is overdue at all, so
@@ -291,6 +304,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     storage?: { storage: string; count: number; pct: number; href: string }[]; // SD card 256/512 GB breakdown, opened from the tile
     hubs?: { hub: string; count: number; pct: number; href: string }[]; // hub-wise breakdown, opened from the tile
     defn?: string; // one-line definition shown under the tile (e.g. what "Lost" vs "Broken" means)
+    storageOverrideKey?: string; // settings key for an admin-editable manual override of `storage` (see dashboard/actions.ts)
+    storageOverrideValue?: { gb256: number; gb512: number }; // current override, if any — prefills the edit form
     teamSwitch?: boolean; // true: render the Rig team / Productivity team dropdown under this tile
   };
   // City-wise count of items with a status (city of the hub the item is at), biggest first.
@@ -509,8 +524,29 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       icon: "alert",
       color: "var(--critical)",
       cities: citiesFor("damaged"),
-      storage: storageFor("damaged"),
+      storage: brokenStorageOverride
+        ? [
+            {
+              storage: "256 GB",
+              count: brokenStorageOverride.gb256,
+              pct: brokenStorageOverride.gb256 + brokenStorageOverride.gb512
+                ? Math.round((brokenStorageOverride.gb256 / (brokenStorageOverride.gb256 + brokenStorageOverride.gb512)) * 100)
+                : 0,
+              href: inventory({ status: "damaged", type: "sd_card" }),
+            },
+            {
+              storage: "512 GB",
+              count: brokenStorageOverride.gb512,
+              pct: brokenStorageOverride.gb256 + brokenStorageOverride.gb512
+                ? Math.round((brokenStorageOverride.gb512 / (brokenStorageOverride.gb256 + brokenStorageOverride.gb512)) * 100)
+                : 0,
+              href: inventory({ status: "damaged", type: "sd_card" }),
+            },
+          ]
+        : storageFor("damaged"),
       defn: "Physically damaged and unusable, but its location is known.",
+      storageOverrideKey: "broken_storage",
+      storageOverrideValue: brokenStorageOverride,
     },
     {
       label: "Retired",
@@ -988,6 +1024,36 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                           <span>Total</span>
                           <b>{n(k.storage.reduce((t, st) => t + st.count, 0))}</b>
                         </span>
+                        {k.storageOverrideKey && user.role === "admin" && (
+                          <form
+                            action={setBrokenStorageOverride}
+                            style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8, paddingTop: 8, borderTop: "1px solid #e2e8f0", flexWrap: "wrap" }}
+                          >
+                            <input type="hidden" name="back" value={`/dashboard?${new URLSearchParams(keepParams)}`} />
+                            <span style={{ fontSize: "0.72rem", color: "#94a3b8", width: "100%" }}>
+                              {k.storageOverrideValue ? "Manual override — " : ""}set counts manually:
+                            </span>
+                            <input
+                              type="number"
+                              name="gb256"
+                              min={0}
+                              placeholder="256 GB"
+                              defaultValue={k.storageOverrideValue?.gb256 ?? ""}
+                              style={{ width: 70, fontSize: "0.78rem", padding: "3px 6px", borderRadius: 6, border: "1px solid #cbd5e1" }}
+                            />
+                            <input
+                              type="number"
+                              name="gb512"
+                              min={0}
+                              placeholder="512 GB"
+                              defaultValue={k.storageOverrideValue?.gb512 ?? ""}
+                              style={{ width: 70, fontSize: "0.78rem", padding: "3px 6px", borderRadius: 6, border: "1px solid #cbd5e1" }}
+                            />
+                            <button type="submit" style={{ fontSize: "0.75rem", padding: "3px 8px", borderRadius: 6, border: "1px solid #1e293b", background: "#1e293b", color: "#fff", cursor: "pointer" }}>
+                              Save
+                            </button>
+                          </form>
+                        )}
                       </div>
                     </details>
                   )}
