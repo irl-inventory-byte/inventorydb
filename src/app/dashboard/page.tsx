@@ -404,58 +404,21 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     ...(k === "in_stock" && { cities: citiesForRigState("in_stock", ["in_stock", "pending"]) }),
     ...(k === "transit" && { cities: citiesForRigState("transit", ["traveling"]) }),
   }));
-  // Sanitization: each rig's latest "Sanitization" hardware update (Yes / No), oldest first so the last one wins.
-  const latestSanitization = new Map<string, "Yes" | "No">();
-  for (const h of hardwareUpdates) {
-    if (h.update_type === "Sanitization" && (h.comment === "Yes" || h.comment === "No")) {
-      latestSanitization.set(h.item_id, h.comment);
-    }
-  }
-  let sanitizedYes = 0;
-  let sanitizedNo = 0;
-  for (const i of items) {
-    if (i.item_type !== "rig") continue;
-    const san = latestSanitization.get(i.item_id);
-    if (san === "Yes") sanitizedYes++;
-    else if (san === "No") sanitizedNo++;
-  }
-  if (sanitizedYes + sanitizedNo > 0) {
-    rigKpis.push({
-      label: "Sanitization",
-      value: sanitizedYes + sanitizedNo,
-      hint: `${n(sanitizedYes)} Yes · ${n(sanitizedNo)} No`,
-      href: inventory({ type: "rig" }),
-      icon: "shield",
-      color: "var(--series-5)",
-    });
-  }
-
-  // Admin only: every rig sent and not received yet (to IMs, QC or hardware), and every rig the hardware team
-  // has (received or still on its way to them).
+  // Admin only: every rig sent and not received yet (to IMs, QC or hardware).
+  // ("Hardware team (all)" and "Sanitization" tiles removed — replace with a new metric here if wanted.)
   if (user.role === "admin") {
     const rigsOnly = items.filter((i) => i.item_type === "rig");
     const toIm = rigsOnly.filter((i) => i.status === "pending").length;
     const toQc = rigsOnly.filter((i) => i.status === "pending_qc").length;
     const toHw = rigsOnly.filter((i) => i.status === "pending_hardware").length;
-    const atHw = rigsOnly.filter((i) => i.status === "with_hardware").length;
-    rigKpis.push(
-      {
-        label: "To be received",
-        value: toIm + toQc + toHw,
-        hint: `${toIm} to IMs · ${toQc} to QC · ${toHw} to hardware`,
-        href: inventory({ type: "rig", status: "pending,pending_qc,pending_hardware" }),
-        icon: "inbox",
-        color: "var(--series-4)",
-      },
-      {
-        label: "Hardware team (all)",
-        value: atHw + toHw,
-        hint: `${atHw} received · ${toHw} not received yet`,
-        href: inventory({ type: "rig", status: "with_hardware,pending_hardware" }),
-        icon: "wrench",
-        color: "var(--series-1)",
-      },
-    );
+    rigKpis.push({
+      label: "To be received",
+      value: toIm + toQc + toHw,
+      hint: `${toIm} to IMs · ${toQc} to QC · ${toHw} to hardware`,
+      href: inventory({ type: "rig", status: "pending,pending_qc,pending_hardware" }),
+      icon: "inbox",
+      color: "var(--series-4)",
+    });
   }
 
   // SD CARDS (and the "All" view): unchanged.
@@ -493,12 +456,24 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       storage: storageFor(["traveling", "pending"]),
     },
     {
-      label: "Lost or damaged",
-      value: s.lost + s.damaged,
-      hint: share(s.lost + s.damaged),
-      href: inventory({ status: "lost,damaged" }),
+      label: "Lost",
+      value: s.lost,
+      hint: share(s.lost),
+      href: inventory({ status: "lost" }),
       icon: "alert",
       color: "var(--critical)",
+      cities: citiesFor("lost"),
+      storage: storageFor("lost"),
+    },
+    {
+      label: "Broken",
+      value: s.damaged,
+      hint: share(s.damaged),
+      href: inventory({ status: "damaged" }),
+      icon: "alert",
+      color: "var(--critical)",
+      cities: citiesFor("damaged"),
+      storage: storageFor("damaged"),
     },
     {
       label: "Retired",
@@ -794,6 +769,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   if (showEmpty) keepParams.empty = "1";
   for (const k of [...MOVE_KEYS, ...EXTRA_KEYS]) if (val(k)) keepParams[k] = val(k);
 
+  // QC team leaderboard date filter (Rig dashboard): "" means no filter, show all-time.
+  const qcFrom = one(sp.qcfrom);
+  const qcTo = one(sp.qcto);
+  const qcKeep: Record<string, string> = { ...keepParams };
+
   // Who has items: longest out first, then most items.
   const holdersSorted = [...d.holders].sort(
     (a, b) => (b.oldestDays ?? -1) - (a.oldestDays ?? -1) || b.count - a.count || a.name.localeCompare(b.name),
@@ -921,7 +901,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                     {k.hint && <span className={styles.kpiHint}>{k.hint}</span>}
                   </Link>
                   {k.cities && k.cities.length > 0 && (
-                    <details className="kpi-city">
+                    <details className="kpi-city" name={`kpi-acc-${k.label}`}>
                       <summary>City wise ({k.cities.length}) ▾</summary>
                       <div>
                         {k.cities.map((c) => (
@@ -937,7 +917,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                     </details>
                   )}
                   {k.storage && k.storage.length > 0 && (
-                    <details className="kpi-city">
+                    <details className="kpi-city" name={`kpi-acc-${k.label}`}>
                       <summary>Storage wise ({k.storage.length}) ▾</summary>
                       <div>
                         {k.storage.map((st) => (
@@ -1081,6 +1061,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             qcChecks={qcChecks}
             hardwareUpdates={hardwareUpdates}
             now={now}
+            qcFrom={qcFrom}
+            qcTo={qcTo}
+            qcKeep={qcKeep}
           />
         )}
 

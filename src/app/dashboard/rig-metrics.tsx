@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import { ROLE_LABELS } from "@/lib/labels";
+import { istDate } from "@/lib/time";
 import { RIG_STATE_LABELS, rigState } from "@/lib/rig-state";
 import {
   fieldLeaderboard,
@@ -103,6 +104,9 @@ export function RigMetrics({
   qcChecks,
   hardwareUpdates,
   now,
+  qcFrom = "",
+  qcTo = "",
+  qcKeep = {},
 }: {
   items: Item[];
   events: ItemEvent[];
@@ -111,6 +115,9 @@ export function RigMetrics({
   qcChecks: QcCheck[];
   hardwareUpdates: HardwareUpdate[];
   now: Date;
+  qcFrom?: string; // "YYYY-MM-DD" (IST), filters QC counts / leaderboard below. Empty = no filter.
+  qcTo?: string;
+  qcKeep?: Record<string, string>; // other query params to preserve when the QC date filter is submitted
 }) {
   const rigs = items.filter((i) => i.item_type === "rig");
   const rigIds = new Set(rigs.map((i) => i.item_id));
@@ -123,13 +130,24 @@ export function RigMetrics({
   const latestQc = new Map<string, string>();
   for (const c of rigChecks) latestQc.set(c.item_id, c.qc_status);
 
+  // QC counts / leaderboard (1, 2, 3) only: scoped to qcFrom..qcTo (IST day of c.recorded_at) when set.
+  const qcChecksInRange =
+    qcFrom || qcTo
+      ? rigChecks.filter((c) => {
+          const t = Date.parse(c.recorded_at);
+          if (!Number.isFinite(t)) return false;
+          const day = istDate(new Date(t));
+          return (!qcFrom || day >= qcFrom) && (!qcTo || day <= qcTo);
+        })
+      : rigChecks;
+
   // 1, 2
-  const counts = qcCountsByRig(rigChecks);
+  const counts = qcCountsByRig(qcChecksInRange);
   const failed = mostFailed(counts);
   const passed = mostPassed(counts);
 
   // 3
-  const qcTeam = qcLeaderboard(rigChecks, 2);
+  const qcTeam = qcLeaderboard(qcChecksInRange, 2);
   const mostDone = topBy(qcTeam, "rigs");
   const mostPass = topBy(qcTeam, "pass");
   const mostFail = topBy(qcTeam, "fail");
@@ -154,8 +172,33 @@ export function RigMetrics({
     <>
       {/* 3. QC TEAM LEADERBOARD */}
       <Card title="QC team leaderboard" note="Pass and Fail recorded by each QC person">
+        <form method="get" action="/dashboard#qc" className="qc-date-filters">
+          {Object.entries(qcKeep).map(([k, v]) => (
+            <input key={k} type="hidden" name={k} value={v} />
+          ))}
+          <label>
+            From
+            <input type="date" name="qcfrom" defaultValue={qcFrom} max={qcTo || undefined} />
+          </label>
+          <label>
+            To
+            <input type="date" name="qcto" defaultValue={qcTo} min={qcFrom || undefined} />
+          </label>
+          <button type="submit">Show</button>
+          {(qcFrom || qcTo) && (
+            <Link href={`/dashboard?${new URLSearchParams(qcKeep)}#qc`} className={styles.muted}>
+              Clear dates
+            </Link>
+          )}
+        </form>
+        <style>{`
+.qc-date-filters{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin:2px 0 10px}
+.qc-date-filters label{display:flex;gap:6px;align-items:center;font-size:.9rem;color:var(--text-secondary)}
+.qc-date-filters input[type=date]{padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface-1);color:var(--text-primary);font:inherit}
+.qc-date-filters button{padding:7px 16px;border-radius:8px;border:1px solid #1e293b;background:#1e293b;color:#fff;font:inherit;font-weight:600;cursor:pointer}
+`}</style>
         {qcTeam.length === 0 ? (
-          <p className={styles.muted}>No QC results recorded yet.</p>
+          <p className={styles.muted}>{qcFrom || qcTo ? "No QC results recorded in this date range." : "No QC results recorded yet."}</p>
         ) : (
           <>
             <div className={styles.leaders}>

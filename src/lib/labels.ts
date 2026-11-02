@@ -12,7 +12,7 @@ export const STATUS_LABELS: Record<Status, string> = {
   pending_hardware: "Sent to hardware (not received)",
   with_hardware: "With hardware team",
   lost: "Lost",
-  damaged: "Damaged",
+  damaged: "Broken",
   retired: "Retired",
   rnd: "R&D",
 };
