@@ -288,6 +288,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     color: string;
     cities?: { city: string; count: number; pct: number; href: string }[]; // city-wise list, opened from the tile
     storage?: { storage: string; count: number; pct: number; href: string }[]; // SD card 256/512 GB breakdown, opened from the tile
+    hubs?: { hub: string; count: number; pct: number; href: string }[]; // hub-wise breakdown, opened from the tile
     teamSwitch?: { label: string; href: string; on: boolean }[]; // Rig team / Productivity team toggle, under the tile
   };
   // City-wise count of items with a status (city of the hub the item is at), biggest first.
@@ -444,26 +445,29 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const teamHref = teamHub
     ? inventory({ status: "with_rig,in_stock", hub: teamHub.hub_id })
     : inventory({ status: "with_rig" });
-  // City-wise breakdown of whichever team's item list is currently selected (same shape as citiesFor()).
-  const citiesForList = (list: Item[]) => {
+  // Hub-wise breakdown of whichever team's item list is currently selected (most of these items sit at one
+  // city, so "Bangalore 100%" isn't useful — which hub within that city is).
+  const hubNameOf = new Map(hubs.map((h) => [h.hub_id, h.name || h.hub_id]));
+  const hubsForList = (list: Item[]) => {
     const count = new Map<string, number>();
     for (const i of list) {
-      const c = cityOfHub.get(i.current_hub) || i.current_hub || "Not set";
-      count.set(c, (count.get(c) ?? 0) + 1);
+      const h = hubNameOf.get(i.current_hub) || i.current_hub || "Not set";
+      count.set(h, (count.get(h) ?? 0) + 1);
     }
     return [...count.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([city, c], _, all) => {
+      .map(([hubLabel, c], _, all) => {
         const total = all.reduce((t, [, v]) => t + v, 0);
+        const hubId = hubs.find((h) => (h.name || h.hub_id) === hubLabel)?.hub_id ?? hubLabel;
         return {
-          city,
+          hub: hubLabel,
           count: c,
           pct: total ? Math.round((c / total) * 100) : 0,
-          href: inventory({ status: "with_rig,in_stock", city: city.toLowerCase() }),
+          href: inventory({ status: "with_rig,in_stock", hub: hubId }),
         };
       });
   };
-  const teamCities = citiesForList(team === "productivity" ? prodTeamItemsList : rigTeamItemsList);
+  const teamHubs = hubsForList(team === "productivity" ? prodTeamItemsList : rigTeamItemsList);
 
   // SD CARDS (and the "All" view): unchanged.
   const sdKpis: Kpi[] = [
@@ -494,7 +498,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       href: teamHref,
       icon: "database",
       color: "var(--series-7)",
-      cities: teamCities,
+      hubs: teamHubs,
       teamSwitch: [
         { label: `Rig team · ${n(rigTeamCount)}`, href: `/dashboard?${new URLSearchParams({ ...(type && { type }), team: "rig" })}`, on: team === "rig" },
         { label: `Productivity team · ${n(prodTeamCount)}`, href: `/dashboard?${new URLSearchParams({ ...(type && { type }), team: "productivity" })}`, on: team === "productivity" },
@@ -945,7 +949,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 .kpi-tile > a{flex:1;min-width:0}
 `}</style>
           {kpis.map((k) =>
-            k.cities || k.storage || k.teamSwitch ? (
+            k.cities || k.storage || k.hubs || k.teamSwitch ? (
               <div key={k.label} className={styles.kpi} style={{ "--kpi": k.color, overflow: "visible" } as CSSProperties}>
                 <span className={styles.kpiIcon}>
                   <Icon name={k.icon} size={22} />
@@ -982,6 +986,22 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                             <span style={{ display: "inline-flex", gap: 10, alignItems: "baseline" }}>
                               <b>{n(st.count)}</b>
                               <span style={{ minWidth: 38, textAlign: "right", color: "#64748b", fontSize: "0.8rem" }}>{st.pct}%</span>
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                  {k.hubs && k.hubs.length > 0 && (
+                    <details className="kpi-city" name="kpi-dropdown">
+                      <summary>Hub wise ({k.hubs.length}) ▾</summary>
+                      <div>
+                        {k.hubs.map((h) => (
+                          <Link key={h.hub} href={h.href}>
+                            <span>{h.hub}</span>
+                            <span style={{ display: "inline-flex", gap: 10, alignItems: "baseline" }}>
+                              <b>{n(h.count)}</b>
+                              <span style={{ minWidth: 38, textAlign: "right", color: "#64748b", fontSize: "0.8rem" }}>{h.pct}%</span>
                             </span>
                           </Link>
                         ))}
