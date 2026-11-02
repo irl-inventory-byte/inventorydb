@@ -812,7 +812,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const qcKeep: Record<string, string> = { ...keepParams };
 
   // Sanitization table filter (Rig dashboard): "" = all, "yes" or "no" narrows the table to that result.
-  const san = one(sp.san) === "yes" || one(sp.san) === "no" ? one(sp.san) : "";
+  const sanValue = one(sp.san);
+  const san: "" | "yes" | "no" = sanValue === "yes" || sanValue === "no" ? sanValue : "";
   const sanKeep: Record<string, string> = { ...keepParams };
 
   // Who has items: longest out first, then most items.
@@ -1144,6 +1145,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             qcFrom={qcFrom}
             qcTo={qcTo}
             qcKeep={qcKeep}
+            san={san}
             sanKeep={sanKeep}
           />
         )}
