@@ -289,7 +289,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     cities?: { city: string; count: number; pct: number; href: string }[]; // city-wise list, opened from the tile
     storage?: { storage: string; count: number; pct: number; href: string }[]; // SD card 256/512 GB breakdown, opened from the tile
     hubs?: { hub: string; count: number; pct: number; href: string }[]; // hub-wise breakdown, opened from the tile
-    teamSwitch?: { label: string; href: string; on: boolean }[]; // Rig team / Productivity team toggle, under the tile
+    teamSwitch?: boolean; // true: render the Rig team / Productivity team dropdown under this tile
   };
   // City-wise count of items with a status (city of the hub the item is at), biggest first.
   const cityOfHub = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
@@ -499,10 +499,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       icon: "database",
       color: "var(--series-7)",
       hubs: teamHubs,
-      teamSwitch: [
-        { label: `Rig team · ${n(rigTeamCount)}`, href: `/dashboard?${new URLSearchParams({ ...(type && { type }), team: "rig" })}`, on: team === "rig" },
-        { label: `Productivity team · ${n(prodTeamCount)}`, href: `/dashboard?${new URLSearchParams({ ...(type && { type }), team: "productivity" })}`, on: team === "productivity" },
-      ],
+      teamSwitch: true,
     },
     { label: "Internal", value: s.with_internal, hint: share(s.with_internal), href: inventory({ status: "with_internal" }), icon: "user", color: "var(--series-1)" },
     {
@@ -1009,13 +1006,23 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                     </details>
                   )}
                   {k.teamSwitch && (
-                    <span style={{ display: "flex", gap: 10, marginTop: 4, fontSize: "0.82rem" }}>
-                      {k.teamSwitch.map((t) => (
-                        <Link key={t.label} href={t.href} style={{ color: t.on ? "#1d4ed8" : "#64748b", fontWeight: t.on ? 700 : 500, textDecoration: t.on ? "underline" : "none" }}>
-                          {t.label}
-                        </Link>
-                      ))}
-                    </span>
+                    <form method="get" style={{ display: "flex", gap: 6, marginTop: 4, alignItems: "center" }}>
+                      {type && <input type="hidden" name="type" value={type} />}
+                      <select
+                        name="team"
+                        defaultValue={team}
+                        style={{ fontSize: "0.8rem", padding: "3px 6px", borderRadius: 6, border: "1px solid #cbd5e1", background: "#fff", color: "#334155" }}
+                      >
+                        <option value="rig">Rig team · {n(rigTeamCount)}</option>
+                        <option value="productivity">Productivity team · {n(prodTeamCount)}</option>
+                      </select>
+                      <button
+                        type="submit"
+                        style={{ fontSize: "0.75rem", padding: "4px 10px", borderRadius: 6, border: "1px solid #1e293b", background: "#1e293b", color: "#fff", cursor: "pointer" }}
+                      >
+                        Go
+                      </button>
+                    </form>
                   )}
                 </span>
               </div>
