@@ -848,8 +848,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const qcKeep: Record<string, string> = { ...keepParams };
 
   // Sanitization table filter (Rig dashboard): "" = all, "yes" or "no" narrows the table to that result.
-  const sanValue = one(sp.san);
-  const san: "" | "yes" | "no" = sanValue === "yes" || sanValue === "no" ? sanValue : "";
+  const san = one(sp.san) === "yes" || one(sp.san) === "no" ? one(sp.san) : "";
   const sanKeep: Record<string, string> = { ...keepParams };
 
   // Who has items: longest out first, then most items.
@@ -1024,38 +1023,49 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                           <span>Total</span>
                           <b>{n(k.storage.reduce((t, st) => t + st.count, 0))}</b>
                         </span>
-                        {k.storageOverrideKey && user.role === "admin" && (
-                          <form
-                            action={setBrokenStorageOverride}
-                            style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8, paddingTop: 8, borderTop: "1px solid #e2e8f0", flexWrap: "wrap" }}
-                          >
-                            <input type="hidden" name="back" value={`/dashboard?${new URLSearchParams(keepParams)}`} />
-                            <span style={{ fontSize: "0.72rem", color: "#94a3b8", width: "100%" }}>
-                              {k.storageOverrideValue ? "Manual override — " : ""}set counts manually:
-                            </span>
-                            <input
-                              type="number"
-                              name="gb256"
-                              min={0}
-                              placeholder="256 GB"
-                              defaultValue={k.storageOverrideValue?.gb256 ?? ""}
-                              style={{ width: 70, fontSize: "0.78rem", padding: "3px 6px", borderRadius: 6, border: "1px solid #cbd5e1" }}
-                            />
-                            <input
-                              type="number"
-                              name="gb512"
-                              min={0}
-                              placeholder="512 GB"
-                              defaultValue={k.storageOverrideValue?.gb512 ?? ""}
-                              style={{ width: 70, fontSize: "0.78rem", padding: "3px 6px", borderRadius: 6, border: "1px solid #cbd5e1" }}
-                            />
-                            <button type="submit" style={{ fontSize: "0.75rem", padding: "3px 8px", borderRadius: 6, border: "1px solid #1e293b", background: "#1e293b", color: "#fff", cursor: "pointer" }}>
-                              Save
-                            </button>
-                          </form>
-                        )}
                       </div>
                     </details>
+                  )}
+                  {k.storageOverrideKey && user.role === "admin" && (
+                    <form
+                      action={setBrokenStorageOverride}
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        alignItems: "center",
+                        marginTop: 8,
+                        paddingTop: 8,
+                        borderTop: "1px dashed #cbd5e1",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <input type="hidden" name="back" value={`/dashboard?${new URLSearchParams(keepParams)}`} />
+                      <span style={{ fontSize: "0.72rem", color: "#94a3b8", width: "100%" }}>
+                        Admin · {k.storageOverrideValue ? "manual override — " : ""}set Storage wise counts manually:
+                      </span>
+                      <input
+                        type="number"
+                        name="gb256"
+                        min={0}
+                        placeholder="256 GB"
+                        defaultValue={k.storageOverrideValue?.gb256 ?? ""}
+                        style={{ width: 70, fontSize: "0.78rem", padding: "3px 6px", borderRadius: 6, border: "1px solid #cbd5e1" }}
+                      />
+                      <input
+                        type="number"
+                        name="gb512"
+                        min={0}
+                        placeholder="512 GB"
+                        defaultValue={k.storageOverrideValue?.gb512 ?? ""}
+                        style={{ width: 70, fontSize: "0.78rem", padding: "3px 6px", borderRadius: 6, border: "1px solid #cbd5e1" }}
+                      />
+                      <button
+                        type="submit"
+                        style={{ fontSize: "0.75rem", padding: "3px 8px", borderRadius: 6, border: "1px solid #1e293b", background: "#1e293b", color: "#fff", cursor: "pointer" }}
+                      >
+                        Save
+                      </button>
+                    </form>
                   )}
                   {k.hubs && k.hubs.length > 0 && (
                     <details className="kpi-city" name="kpi-dropdown">
@@ -1211,7 +1221,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             qcFrom={qcFrom}
             qcTo={qcTo}
             qcKeep={qcKeep}
-            san={san}
             sanKeep={sanKeep}
           />
         )}
