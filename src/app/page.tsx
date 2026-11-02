@@ -63,6 +63,13 @@ const WORK: Tile[] = [
     roles: ["admin", "im", "hardware","qc"],
   },
   {
+    href: "/audit",
+    title: "City / Hub Audit",
+    desc: "Every SD card, rig and mobile with no activity for 1+ day, by city and hub.",
+    icon: "pin",
+    roles: VIEW_ROLES,
+  },
+  {
     href: "/handover/send",
     title: "Send items",
     desc: "Hand items to an IM, IFO, FO, the rig team, QC or hardware team.",
