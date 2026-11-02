@@ -17,23 +17,33 @@ const MIN_DAYS = 1;
 export default async function AuditPage({
   searchParams,
 }: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
+  searchParams:
+    | Record<string, string | string[] | undefined>
+    | Promise<Record<string, string | string[] | undefined>>;
 }) {
   const user = await requireRole(...VIEW_ROLES);
   const sp = await searchParams;
   const q = one(sp.q).trim().toLowerCase();
   const city = one(sp.city);
   const hubFilter = one(sp.hub);
+  const typeFilter = one(sp.type); // "" (all), "sd_card", "rig" or "mobile"
 
   const store = storeForAll(user.role);
   const [items, events, hubs] = await Promise.all([store.list("items"), store.list("events"), store.list("hubs")]);
   const now = new Date();
   const unused = unusedItems(items, events, hubs, now, MIN_DAYS);
 
-  const byCity = unusedByCity(unused);
-  const byHub = unusedByHub(unused, hubs, city);
+  // Item-type counts (for the filter chips), from the full unfiltered list.
+  const byType = Object.entries(TYPE_NAME)
+    .map(([value, label]) => ({ value, label, count: unused.filter((u) => u.item_type === value).length }))
+    .filter((t) => t.count > 0);
 
-  const shown = unused.filter((u) => {
+  // City/hub breakdowns and the table reflect the item-type filter, so counts stay consistent with what's shown.
+  const typeFiltered = typeFilter ? unused.filter((u) => u.item_type === typeFilter) : unused;
+  const byCity = unusedByCity(typeFiltered);
+  const byHub = unusedByHub(typeFiltered, hubs, city);
+
+  const shown = typeFiltered.filter((u) => {
     if (city && u.city !== city) return false;
     if (hubFilter && u.hub !== hubFilter) return false;
     if (!q) return true;
@@ -41,7 +51,7 @@ export default async function AuditPage({
   });
 
   const keep = (extra: Record<string, string>) =>
-    `/audit?${new URLSearchParams({ ...(q && { q }), ...(city && { city }), ...(hubFilter && { hub: hubFilter }), ...extra })}`;
+    `/audit?${new URLSearchParams({ ...(q && { q }), ...(city && { city }), ...(hubFilter && { hub: hubFilter }), ...(typeFilter && { type: typeFilter }), ...extra })}`;
 
   return (
     <main className={styles.pageWide}>
@@ -68,14 +78,38 @@ export default async function AuditPage({
         });
         return (
           <>
+            <nav aria-label="Audit by item type" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "4px 0 8px" }}>
+              <Link
+                href={`/audit?${new URLSearchParams({ ...(q && { q }), ...(city && { city }), ...(hubFilter && { hub: hubFilter }) })}`}
+                aria-current={!typeFilter ? "true" : undefined}
+                style={chip(!typeFilter)}
+              >
+                All items · {unused.length}
+              </Link>
+              {byType.map((t) => (
+                <Link
+                  key={t.value}
+                  href={`/audit?${new URLSearchParams({ type: t.value, ...(q && { q }), ...(city && { city }), ...(hubFilter && { hub: hubFilter }) })}`}
+                  aria-current={t.value === typeFilter ? "true" : undefined}
+                  style={chip(t.value === typeFilter)}
+                >
+                  {t.label} · {t.count}
+                </Link>
+              ))}
+            </nav>
+
             <nav aria-label="Audit by city" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "4px 0 8px" }}>
-              <Link href={`/audit?${new URLSearchParams({ ...(q && { q }) })}`} aria-current={!city ? "true" : undefined} style={chip(!city)}>
-                All cities · {unused.length}
+              <Link
+                href={`/audit?${new URLSearchParams({ ...(q && { q }), ...(typeFilter && { type: typeFilter }) })}`}
+                aria-current={!city ? "true" : undefined}
+                style={chip(!city)}
+              >
+                All cities · {typeFiltered.length}
               </Link>
               {byCity.map(({ city: c, count }) => (
                 <Link
                   key={c}
-                  href={`/audit?${new URLSearchParams({ city: c, ...(q && { q }) })}`}
+                  href={`/audit?${new URLSearchParams({ city: c, ...(q && { q }), ...(typeFilter && { type: typeFilter }) })}`}
                   aria-current={c === city ? "true" : undefined}
                   style={chip(c === city)}
                 >
@@ -103,13 +137,14 @@ export default async function AuditPage({
       <form className={styles.row} method="get">
         {city && <input type="hidden" name="city" value={city} />}
         {hubFilter && <input type="hidden" name="hub" value={hubFilter} />}
+        {typeFilter && <input type="hidden" name="type" value={typeFilter} />}
         <input name="q" defaultValue={one(sp.q)} placeholder="Search item ID, hub or city" aria-label="Search items to audit" />
         <button type="submit">Search</button>
-        {(q || city || hubFilter) && <Link href="/audit">Clear</Link>}
+        {(q || city || hubFilter || typeFilter) && <Link href="/audit">Clear</Link>}
       </form>
 
       {shown.length === 0 ? (
-        <p className={styles.muted}>{unused.length ? "No items match." : "Every item has had activity in the last day."}</p>
+        <p className={styles.muted}>{typeFiltered.length ? "No items match." : "Every item has had activity in the last day."}</p>
       ) : (
         <div role="region" aria-label="City / hub audit" tabIndex={0} style={{ overflowX: "auto" }}>
           <table className={styles.table}>
