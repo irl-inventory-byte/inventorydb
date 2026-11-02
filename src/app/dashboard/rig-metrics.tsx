@@ -13,6 +13,7 @@ import {
   qcCountsByRig,
   qcLeaderboard,
   rankField,
+  sanitizationList,
   topBy,
   type RigQcCount,
 } from "@/lib/rig-metrics";
@@ -167,9 +168,53 @@ export function RigMetrics({
   // 6
   const noHardware = noHardwareFor(rigs, rigEvents, hardwareUpdates, people, now, NO_HARDWARE_DAYS);
 
+  // 7. Sanitization, per rig
+  const sanitization = sanitizationList(rigs, hardwareUpdates);
+  const sanitizedYes = sanitization.filter((r) => r.status === "Yes").length;
+  const sanitizedNo = sanitization.filter((r) => r.status === "No").length;
+  const sanitizedNotSet = sanitization.filter((r) => r.status === "Not set").length;
+
 
   return (
     <>
+      {/* 7. SANITIZATION, PER RIG */}
+      <Card title="Sanitization" note={`${rigWord(sanitization.length)} total`}>
+        <div className={styles.leaders}>
+          <Leader label="Sanitized (Yes)" who="" value={`${n(sanitizedYes)} rig${sanitizedYes === 1 ? "" : "s"}`} />
+          <Leader label="Not sanitized (No)" who="" value={`${n(sanitizedNo)} rig${sanitizedNo === 1 ? "" : "s"}`} />
+          <Leader label="Not recorded" who="" value={`${n(sanitizedNotSet)} rig${sanitizedNotSet === 1 ? "" : "s"}`} />
+        </div>
+        {sanitization.length === 0 ? (
+          <p className={styles.muted}>No rigs yet.</p>
+        ) : (
+          <div className={styles.tableScroll} style={SCROLL} tabIndex={0} role="region" aria-label="Sanitization by rig">
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th scope="col">#</th>
+                  <th scope="col">Rig</th>
+                  <th scope="col">Sanitized</th>
+                  <th scope="col">Recorded by</th>
+                  <th scope="col">Recorded</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sanitization.map((r, idx) => (
+                  <tr key={r.item_id}>
+                    <td>{idx + 1}</td>
+                    <td>{rigLink(r.item_id)}</td>
+                    <td style={{ fontWeight: 600, color: r.status === "Yes" ? GREEN : r.status === "No" ? RED : undefined }}>{r.status}</td>
+                    <td>{r.recordedBy || "—"}</td>
+                    <td>{r.recordedAt ? dateOnly(r.recordedAt) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className={styles.muted}>From each rig&apos;s latest Sanitization hardware update (Yes / No). &quot;Not recorded&quot; = no Sanitization update has ever been logged for that rig.</p>
+      </Card>
+
       {/* 3. QC TEAM LEADERBOARD */}
       <Card title="QC team leaderboard" note="Pass and Fail recorded by each QC person">
         <form method="get" action="/dashboard#qc" className="qc-date-filters">
