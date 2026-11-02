@@ -18,6 +18,7 @@ import styles from "./dashboard.module.css";
 import { HubOrgChart, countHidden } from "./hub-tree-view";
 import AttentionFilter from "./attentionfilter";
 import { Icon, type IconName } from "./icons";
+import TeamSelect from "./Teamselect";
 import { SummaryKpis } from "./summary-kpis";
 import { RIG_STATES, RIG_STATE_LABELS, rigState, type RigState } from "@/lib/rig-state";
 import { NO_ACTIVITY_DAYS, RigMetrics } from "./rig-metrics";
@@ -972,6 +973,20 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                             </span>
                           </Link>
                         ))}
+                        <span
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 16,
+                            padding: "6px 8px",
+                            marginTop: 4,
+                            borderTop: "1px solid #e2e8f0",
+                            fontWeight: 700,
+                          }}
+                        >
+                          <span>Total</span>
+                          <b>{n(k.storage.reduce((t, st) => t + st.count, 0))}</b>
+                        </span>
                       </div>
                     </details>
                   )}
@@ -994,15 +1009,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                   {k.teamSwitch && (
                     <form method="get" style={{ display: "flex", gap: 6, marginTop: 4, alignItems: "center" }}>
                       {type && <input type="hidden" name="type" value={type} />}
-                      <select
-                        name="team"
-                        defaultValue={team}
-                        aria-label="Team"
-                        style={{ maxWidth: "100%", padding: "4px 8px", border: "1px solid #cbd5e1", borderRadius: 6 }}
-                      >
-                        <option value="rig">{`Rig team · ${n(rigTeamCount)}`}</option>
-                        <option value="productivity">{`Productivity team · ${n(prodTeamCount)}`}</option>
-                      </select>
+                      <TeamSelect team={team} rigLabel={`Rig team · ${n(rigTeamCount)}`} prodLabel={`Productivity team · ${n(prodTeamCount)}`} />
                     </form>
                   )}
                 </span>

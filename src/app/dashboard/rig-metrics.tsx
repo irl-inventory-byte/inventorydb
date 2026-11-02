@@ -176,7 +176,10 @@ export function RigMetrics({
   const sanitization = sanitizationList(rigs, hardwareUpdates);
   const sanitizedYes = sanitization.filter((r) => r.status === "Yes").length;
   const sanitizedNo = sanitization.filter((r) => r.status === "No").length;
-  const sanitizationShown = san === "yes" ? sanitization.filter((r) => r.status === "Yes") : san === "no" ? sanitization.filter((r) => r.status === "No") : sanitization;
+  // "Not set" rigs never show in the table — only recorded (Yes/No) ones. Default is Yes + No together;
+  // clicking a tile narrows to just that one.
+  const sanitizationShown =
+    san === "yes" ? sanitization.filter((r) => r.status === "Yes") : san === "no" ? sanitization.filter((r) => r.status === "No") : sanitization.filter((r) => r.status !== "Not set");
   const sanLink = (value: "" | "yes" | "no") =>
     `/dashboard?${new URLSearchParams({ ...sanKeep, ...(value && { san: value }) })}#sanitization`;
 

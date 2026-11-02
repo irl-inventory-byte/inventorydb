@@ -661,11 +661,18 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
     step = "emailing the receipt to the person who now holds the items";
     const allReturned = summary.items.length > 0 && penalties.returnedCount === summary.items.length;
     const toRole = roleOf.get(summary.toId);
+    const fromRole = roleOf.get(summary.fromId);
+    // Receipt emails (and the acknowledgment ask) only go to FO / IFO — the field staff actually
+    // taking custody of physical kit. Every other role (admin, IM, QC, hardware, rig, internal) still
+    // gets the receipt archived (Drive + Sheets below), just no email. The receipt page itself
+    // (/handover/receipt/[batch]) is always viewable regardless of role.
+    const toCanEmail = toRole === "fo" || toRole === "ifo";
+    const fromCanEmail = fromRole === "fo" || fromRole === "ifo";
     const canAcknowledge =
       (summary.action === "check_out" || summary.action === "receive") &&
       (summary.toId || summary.toName) &&
       !allReturned &&
-      (toRole === "fo" || toRole === "ifo");
+      toCanEmail;
 
     let acknowledgment: { yesUrl: string } | undefined;
     if (canAcknowledge) {
@@ -682,23 +689,30 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
       acknowledgment = { yesUrl: `${baseUrl}/handover/ack/${encodeURIComponent(ack.token)}` };
     }
 
-    const email: ReceiptEmailResult = await sendReceiptEmail({
-      summary,
-      title: ACTION_TITLE[summary.action] ?? "Batch record",
-      pdf,
-      fileName,
-      receiptUrl,
-      totalPenalty: rupeeTotal(penalties.total),
-      acknowledgment,
-    });
+    const email: ReceiptEmailResult = toCanEmail
+      ? await sendReceiptEmail({
+          summary,
+          title: ACTION_TITLE[summary.action] ?? "Batch record",
+          pdf,
+          fileName,
+          receiptUrl,
+          totalPenalty: rupeeTotal(penalties.total),
+          acknowledgment,
+        })
+      : { sentTo: [], missing: [], tab: "" };
 
     // On a receive, the person who handed the items over gets the same receipt too — just as a copy
     // for their own records, with no acknowledgment ask (that's only for whoever is now holding the
-    // items). Skipped if there's no "from" person on this batch, or they're the same person as "to"
-    // (nothing to copy them on).
+    // items). Skipped if there's no "from" person on this batch, if they're the same person as "to"
+    // (nothing to copy them on), or if they're not FO/IFO either.
     const sentTo = [...email.sentTo];
     const missing = [...email.missing];
-    if (summary.action === "receive" && (summary.fromId || summary.fromName) && summary.fromId !== summary.toId) {
+    if (
+      summary.action === "receive" &&
+      (summary.fromId || summary.fromName) &&
+      summary.fromId !== summary.toId &&
+      fromCanEmail
+    ) {
       const fromEmail = await sendReceiptEmail({
         summary,
         title: ACTION_TITLE[summary.action] ?? "Batch record",
