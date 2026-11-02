@@ -14,7 +14,11 @@ const MIN_DAYS = 1;
  * CITY / HUB AUDIT: every item (SD card, rig or mobile) with no status change (handover) for
  * MIN_DAYS+ days, grouped by city and hub. Read-only — no reports, unlike Rig Audit.
  */
-export default async function AuditPage({ searchParams }: PageProps<"/rigs/audit">) {
+export default async function AuditPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await requireRole(...VIEW_ROLES);
   const sp = await searchParams;
   const q = one(sp.q).trim().toLowerCase();
