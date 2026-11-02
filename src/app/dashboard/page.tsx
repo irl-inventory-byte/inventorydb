@@ -430,9 +430,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const prodHubObj = productivityTeamHub(hubs);
   const team = one(sp.team) === "productivity" ? "productivity" : "rig";
   const teamHub = team === "productivity" ? prodHubObj : rigHubObj;
-  const teamCount = teamHub
-    ? items.filter((i) => i.current_hub === teamHub.hub_id && (i.status === "with_rig" || i.status === "in_stock")).length
-    : s.with_rig;
+  const countAtHub = (h: typeof rigHubObj) =>
+    h ? items.filter((i) => i.current_hub === h.hub_id && (i.status === "with_rig" || i.status === "in_stock")).length : 0;
+  const rigTeamCount = rigHubObj ? countAtHub(rigHubObj) : s.with_rig;
+  const prodTeamCount = countAtHub(prodHubObj);
+  const teamCount = team === "productivity" ? prodTeamCount : rigTeamCount;
   const teamHref = teamHub
     ? inventory({ status: "with_rig,in_stock", hub: teamHub.hub_id })
     : inventory({ status: "with_rig" });
@@ -467,8 +469,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       icon: "database",
       color: "var(--series-7)",
       teamSwitch: [
-        { label: "Rig team", href: `/dashboard?${new URLSearchParams({ ...(type && { type }), team: "rig" })}`, on: team === "rig" },
-        { label: "Productivity team", href: `/dashboard?${new URLSearchParams({ ...(type && { type }), team: "productivity" })}`, on: team === "productivity" },
+        { label: `Rig team · ${n(rigTeamCount)}`, href: `/dashboard?${new URLSearchParams({ ...(type && { type }), team: "rig" })}`, on: team === "rig" },
+        { label: `Productivity team · ${n(prodTeamCount)}`, href: `/dashboard?${new URLSearchParams({ ...(type && { type }), team: "productivity" })}`, on: team === "productivity" },
       ],
     },
     { label: "Internal", value: s.with_internal, hint: share(s.with_internal), href: inventory({ status: "with_internal" }), icon: "user", color: "var(--series-1)" },
