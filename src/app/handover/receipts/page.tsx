@@ -22,7 +22,7 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 // Fields in each filter (and the page links), in the address bar: ?q=&type=&city=&role=&person=&from=&to=
-const FILTER_KEYS = ["q", "type", "city", "role", "person", "from", "to"] as const;
+const FILTER_KEYS = ["q", "type", "city", "role", "person", "ack", "from", "to"] as const;
 const isDay = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
 
 const actionLink = {
@@ -58,6 +58,7 @@ export default async function ReceiptsPage({
   const personF = one(sp.person);
   const fromF = isDay(one(sp.from)) ? one(sp.from) : "";
   const toF = isDay(one(sp.to)) ? one(sp.to) : "";
+  const ackF = one(sp.ack); // "", "yes" (Successful) or "pending"
   const showDeleted = isAdmin && one(sp.deletedView) === "1";
   const requestedPage = Number(one(sp.page)) || 1;
 
@@ -143,6 +144,7 @@ export default async function ReceiptsPage({
     .filter((r) => !cityF || r.cities.includes(cityF))
     .filter((r) => !roleF || r.roles.includes(roleF as Role))
     .filter((r) => !personF || r.names.includes(personF))
+    .filter((r) => !ackF || (ackF === "yes" ? r.ack?.answer === "yes" : Boolean(r.ack) && r.ack?.answer !== "yes"))
     .filter((r) => (!fromF || (r.day && r.day >= fromF)) && (!toF || (r.day && r.day <= toF)))
     .filter(
       (r) =>
@@ -172,7 +174,7 @@ export default async function ReceiptsPage({
       : pool.flatMap((r) => r.names),
   );
   const typeOptions = sortText(pool.map((r) => r.action));
-  const filters: Record<string, string> = { q: one(sp.q).trim(), type, city: cityF, role: roleF, person: personF, from: fromF, to: toF };
+  const filters: Record<string, string> = { q: one(sp.q).trim(), type, city: cityF, role: roleF, person: personF, ack: ackF, from: fromF, to: toF };
   const filtered = FILTER_KEYS.some((k) => filters[k]);
 
   const link = (params: Record<string, string>) =>
@@ -253,6 +255,11 @@ export default async function ReceiptsPage({
           placeholder="All names"
           style={{ maxWidth: 240 }}
         />
+        <select name="ack" defaultValue={ackF} aria-label="Acknowledged">
+          <option value="">All acknowledgment</option>
+          <option value="yes">Successful</option>
+          <option value="pending">Pending</option>
+        </select>
         <datalist id="receipt-names">
           {nameOptions.map((n) => (
             <option key={n} value={n} />

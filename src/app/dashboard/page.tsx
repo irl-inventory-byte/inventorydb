@@ -423,21 +423,47 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     });
   }
 
-  // "With rig team" tile: a dropdown between the Rig team hub and the Productivity team hub. Counts items
-  // physically at that hub — either checked out to it (status "with_rig") or sitting in stock there (status
-  // "in_stock" with that hub as current_hub) — so stock kept at the team's own hub counts as "with" them too.
+  // "With rig team" tile: a dropdown between the Rig team hub and the Productivity team hub. Items counted:
+  // anything checked out to the rig team (status "with_rig", wherever it currently sits — rig team people can
+  // be at different hubs/cities), plus anything sitting in stock at that team's own hub (current_hub = the
+  // team's hub, status "in_stock"). Productivity team has no "with_rig"-style status of its own, so it only
+  // gets the in-stock-at-its-hub items.
   const rigHubObj = rigTeamHub(hubs);
   const prodHubObj = productivityTeamHub(hubs);
   const team = one(sp.team) === "productivity" ? "productivity" : "rig";
   const teamHub = team === "productivity" ? prodHubObj : rigHubObj;
-  const countAtHub = (h: typeof rigHubObj) =>
-    h ? items.filter((i) => i.current_hub === h.hub_id && (i.status === "with_rig" || i.status === "in_stock")).length : 0;
-  const rigTeamCount = rigHubObj ? countAtHub(rigHubObj) : s.with_rig;
-  const prodTeamCount = countAtHub(prodHubObj);
+  const teamItemsFor = (which: "rig" | "productivity") => {
+    const hubObj = which === "productivity" ? prodHubObj : rigHubObj;
+    return items.filter((i) => (which === "rig" && i.status === "with_rig") || (hubObj && i.current_hub === hubObj.hub_id && i.status === "in_stock"));
+  };
+  const rigTeamItemsList = teamItemsFor("rig");
+  const prodTeamItemsList = teamItemsFor("productivity");
+  const rigTeamCount = rigTeamItemsList.length;
+  const prodTeamCount = prodTeamItemsList.length;
   const teamCount = team === "productivity" ? prodTeamCount : rigTeamCount;
   const teamHref = teamHub
     ? inventory({ status: "with_rig,in_stock", hub: teamHub.hub_id })
     : inventory({ status: "with_rig" });
+  // City-wise breakdown of whichever team's item list is currently selected (same shape as citiesFor()).
+  const citiesForList = (list: Item[]) => {
+    const count = new Map<string, number>();
+    for (const i of list) {
+      const c = cityOfHub.get(i.current_hub) || i.current_hub || "Not set";
+      count.set(c, (count.get(c) ?? 0) + 1);
+    }
+    return [...count.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([city, c], _, all) => {
+        const total = all.reduce((t, [, v]) => t + v, 0);
+        return {
+          city,
+          count: c,
+          pct: total ? Math.round((c / total) * 100) : 0,
+          href: inventory({ status: "with_rig,in_stock", city: city.toLowerCase() }),
+        };
+      });
+  };
+  const teamCities = citiesForList(team === "productivity" ? prodTeamItemsList : rigTeamItemsList);
 
   // SD CARDS (and the "All" view): unchanged.
   const sdKpis: Kpi[] = [
@@ -468,6 +494,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       href: teamHref,
       icon: "database",
       color: "var(--series-7)",
+      cities: teamCities,
       teamSwitch: [
         { label: `Rig team · ${n(rigTeamCount)}`, href: `/dashboard?${new URLSearchParams({ ...(type && { type }), team: "rig" })}`, on: team === "rig" },
         { label: `Productivity team · ${n(prodTeamCount)}`, href: `/dashboard?${new URLSearchParams({ ...(type && { type }), team: "productivity" })}`, on: team === "productivity" },
