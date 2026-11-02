@@ -17,9 +17,7 @@ const MIN_DAYS = 1;
 export default async function AuditPage({
   searchParams,
 }: {
-  searchParams:
-    | Record<string, string | string[] | undefined>
-    | Promise<Record<string, string | string[] | undefined>>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const user = await requireRole(...VIEW_ROLES);
   const sp = await searchParams;
@@ -27,23 +25,37 @@ export default async function AuditPage({
   const city = one(sp.city);
   const hubFilter = one(sp.hub);
   const typeFilter = one(sp.type); // "" (all), "sd_card", "rig" or "mobile"
+  const dateFrom = one(sp.from); // "YYYY-MM-DD", filters by last-activity date
+  const dateTo = one(sp.to); // "YYYY-MM-DD", filters by last-activity date
 
   const store = storeForAll(user.role);
   const [items, events, hubs] = await Promise.all([store.list("items"), store.list("events"), store.list("hubs")]);
   const now = new Date();
   const unused = unusedItems(items, events, hubs, now, MIN_DAYS);
 
-  // Item-type counts (for the filter chips), from the full unfiltered list.
+  // The date filter applies first (it's the broadest), then item-type, then city/hub.
+  const inDateRange = (u: { lastActivity: string }) => {
+    if (!dateFrom && !dateTo) return true;
+    const activityDate = u.lastActivity ? u.lastActivity.slice(0, 10) : "";
+    if (!activityDate) return false;
+    if (dateFrom && activityDate < dateFrom) return false;
+    if (dateTo && activityDate > dateTo) return false;
+    return true;
+  };
+  const dateScoped = unused.filter(inDateRange);
+
+  // Item-type counts (for the filter chips), from the date-scoped list.
   const byType = Object.entries(TYPE_NAME)
-    .map(([value, label]) => ({ value, label, count: unused.filter((u) => u.item_type === value).length }))
+    .map(([value, label]) => ({ value, label, count: dateScoped.filter((u) => u.item_type === value).length }))
     .filter((t) => t.count > 0);
 
-  // City/hub breakdowns and the table reflect the item-type filter, so counts stay consistent with what's shown.
-  const typeFiltered = typeFilter ? unused.filter((u) => u.item_type === typeFilter) : unused;
-  const byCity = unusedByCity(typeFiltered);
-  const byHub = unusedByHub(typeFiltered, hubs, city);
+  // City/hub breakdowns and the table reflect the date and item-type filters, so counts stay consistent with what's shown.
+  const typeFiltered = typeFilter ? dateScoped.filter((u) => u.item_type === typeFilter) : dateScoped;
+  const dateFiltered = typeFiltered;
+  const byCity = unusedByCity(dateFiltered);
+  const byHub = unusedByHub(dateFiltered, hubs, city);
 
-  const shown = typeFiltered.filter((u) => {
+  const shown = dateFiltered.filter((u) => {
     if (city && u.city !== city) return false;
     if (hubFilter && u.hub !== hubFilter) return false;
     if (!q) return true;
@@ -51,7 +63,15 @@ export default async function AuditPage({
   });
 
   const keep = (extra: Record<string, string>) =>
-    `/audit?${new URLSearchParams({ ...(q && { q }), ...(city && { city }), ...(hubFilter && { hub: hubFilter }), ...(typeFilter && { type: typeFilter }), ...extra })}`;
+    `/audit?${new URLSearchParams({
+      ...(q && { q }),
+      ...(city && { city }),
+      ...(hubFilter && { hub: hubFilter }),
+      ...(typeFilter && { type: typeFilter }),
+      ...(dateFrom && { from: dateFrom }),
+      ...(dateTo && { to: dateTo }),
+      ...extra,
+    })}`;
 
   return (
     <main className={styles.pageWide}>
@@ -62,7 +82,8 @@ export default async function AuditPage({
       <p className={styles.muted}>
         Every SD card, rig and mobile with no status change for {MIN_DAYS}+ day{MIN_DAYS === 1 ? "" : "s"}, by city and
         hub. &quot;No activity&quot; = no handover recorded since the item&apos;s last status change (or since it was
-        added, if it has never moved).
+        added, if it has never moved). Use the date filter below to show only items whose last activity falls in a
+        given range.
       </p>
 
       {(() => {
@@ -80,16 +101,16 @@ export default async function AuditPage({
           <>
             <nav aria-label="Audit by item type" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "4px 0 8px" }}>
               <Link
-                href={`/audit?${new URLSearchParams({ ...(q && { q }), ...(city && { city }), ...(hubFilter && { hub: hubFilter }) })}`}
+                href={`/audit?${new URLSearchParams({ ...(q && { q }), ...(city && { city }), ...(hubFilter && { hub: hubFilter }), ...(dateFrom && { from: dateFrom }), ...(dateTo && { to: dateTo }) })}`}
                 aria-current={!typeFilter ? "true" : undefined}
                 style={chip(!typeFilter)}
               >
-                All items · {unused.length}
+                All items · {dateScoped.length}
               </Link>
               {byType.map((t) => (
                 <Link
                   key={t.value}
-                  href={`/audit?${new URLSearchParams({ type: t.value, ...(q && { q }), ...(city && { city }), ...(hubFilter && { hub: hubFilter }) })}`}
+                  href={`/audit?${new URLSearchParams({ type: t.value, ...(q && { q }), ...(city && { city }), ...(hubFilter && { hub: hubFilter }), ...(dateFrom && { from: dateFrom }), ...(dateTo && { to: dateTo }) })}`}
                   aria-current={t.value === typeFilter ? "true" : undefined}
                   style={chip(t.value === typeFilter)}
                 >
@@ -100,7 +121,7 @@ export default async function AuditPage({
 
             <nav aria-label="Audit by city" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "4px 0 8px" }}>
               <Link
-                href={`/audit?${new URLSearchParams({ ...(q && { q }), ...(typeFilter && { type: typeFilter }) })}`}
+                href={`/audit?${new URLSearchParams({ ...(q && { q }), ...(typeFilter && { type: typeFilter }), ...(dateFrom && { from: dateFrom }), ...(dateTo && { to: dateTo }) })}`}
                 aria-current={!city ? "true" : undefined}
                 style={chip(!city)}
               >
@@ -109,7 +130,7 @@ export default async function AuditPage({
               {byCity.map(({ city: c, count }) => (
                 <Link
                   key={c}
-                  href={`/audit?${new URLSearchParams({ city: c, ...(q && { q }), ...(typeFilter && { type: typeFilter }) })}`}
+                  href={`/audit?${new URLSearchParams({ city: c, ...(q && { q }), ...(typeFilter && { type: typeFilter }), ...(dateFrom && { from: dateFrom }), ...(dateTo && { to: dateTo }) })}`}
                   aria-current={c === city ? "true" : undefined}
                   style={chip(c === city)}
                 >
@@ -140,7 +161,27 @@ export default async function AuditPage({
         {typeFilter && <input type="hidden" name="type" value={typeFilter} />}
         <input name="q" defaultValue={one(sp.q)} placeholder="Search item ID, hub or city" aria-label="Search items to audit" />
         <button type="submit">Search</button>
-        {(q || city || hubFilter || typeFilter) && <Link href="/audit">Clear</Link>}
+        {(q || city || hubFilter || typeFilter || dateFrom || dateTo) && <Link href="/audit">Clear all</Link>}
+      </form>
+
+      <form
+        className={styles.row}
+        method="get"
+        style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", margin: "8px 0 16px" }}
+      >
+        {city && <input type="hidden" name="city" value={city} />}
+        {hubFilter && <input type="hidden" name="hub" value={hubFilter} />}
+        {typeFilter && <input type="hidden" name="type" value={typeFilter} />}
+        {q && <input type="hidden" name="q" value={one(sp.q)} />}
+        <label style={{ fontSize: "0.85rem", color: "#334155" }}>
+          Last activity from{" "}
+          <input type="date" name="from" defaultValue={dateFrom} aria-label="Last activity from" />
+        </label>
+        <label style={{ fontSize: "0.85rem", color: "#334155" }}>
+          to <input type="date" name="to" defaultValue={dateTo} aria-label="Last activity to" />
+        </label>
+        <button type="submit">Filter by date</button>
+        {(dateFrom || dateTo) && <Link href={keep({ from: "", to: "" })}>Clear dates</Link>}
       </form>
 
       {shown.length === 0 ? (

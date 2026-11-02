@@ -55,7 +55,12 @@ export class Store {
   ): Promise<TabRows[T][]> {
     // Acknowledgments are per-batch, not per-item, so they are optional (the tab may not exist yet)
     // but are never filtered by item type below.
-    const optional = tab === "hardware_updates" || tab === "qc_checks" || tab === "rig_reports" || tab === "acknowledgments";
+    const optional =
+      tab === "hardware_updates" ||
+      tab === "qc_checks" ||
+      tab === "rig_reports" ||
+      tab === "acknowledgments" ||
+      tab === "lost_notes";
     const rows = optional
       ? await this.readOptional(tab)
       : await this.backend.readAll(tab);

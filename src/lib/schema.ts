@@ -93,6 +93,9 @@ export const TABS = {
     "person_id", // the person the rig is with (People tab)
     "person_name",
   ],
+  // Investigation notes for lost (or broken) items: a free-text note per entry, oldest first,
+  // shown on the Lost items page. One row per note added.
+  lost_notes: ["note_id", "item_id", "note", "recorded_at", "recorded_by", "recorded_by_name"],
   // Audit log of admin edits to past receipts: who changed what, and when.
   receipt_edits: [
     "edit_id",
@@ -296,6 +299,15 @@ export interface RigReport extends Row {
   person_name: string;
 }
 
+export interface LostNote extends Row {
+  note_id: string;
+  item_id: string;
+  note: string;
+  recorded_at: string;
+  recorded_by: string;
+  recorded_by_name: string;
+}
+
 export interface Acknowledgment extends Row {
   ack_id: string;
   batch_id: string;
@@ -325,4 +337,5 @@ export interface TabRows {
   qc_checks: QcCheck;
   rig_reports: RigReport;
   acknowledgments: Acknowledgment;
+  lost_notes: LostNote;
 }

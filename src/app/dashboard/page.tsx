@@ -289,6 +289,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     cities?: { city: string; count: number; pct: number; href: string }[]; // city-wise list, opened from the tile
     storage?: { storage: string; count: number; pct: number; href: string }[]; // SD card 256/512 GB breakdown, opened from the tile
     hubs?: { hub: string; count: number; pct: number; href: string }[]; // hub-wise breakdown, opened from the tile
+    defn?: string; // one-line definition shown under the tile (e.g. what "Lost" vs "Broken" means)
     teamSwitch?: boolean; // true: render the Rig team / Productivity team dropdown under this tile
   };
   // City-wise count of items with a status (city of the hub the item is at), biggest first.
@@ -516,21 +517,23 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       label: "Lost",
       value: s.lost,
       hint: share(s.lost),
-      href: inventory({ status: "lost" }),
+      href: "/lost?status=lost",
       icon: "alert",
       color: "var(--critical)",
       cities: citiesFor("lost"),
       storage: storageFor("lost"),
+      defn: "Can't be found — not with any person or hub, and location is unknown.",
     },
     {
       label: "Broken",
       value: s.damaged,
       hint: share(s.damaged),
-      href: inventory({ status: "damaged" }),
+      href: "/lost?status=damaged",
       icon: "alert",
       color: "var(--critical)",
       cities: citiesFor("damaged"),
       storage: storageFor("damaged"),
+      defn: "Physically damaged and unusable, but its location is known.",
     },
     {
       label: "Retired",
@@ -957,6 +960,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                     <span className={styles.kpiValue}>{n(k.value)}</span>
                     {k.hint && <span className={styles.kpiHint}>{k.hint}</span>}
                   </Link>
+                  {k.defn && (
+                    <span style={{ display: "block", fontSize: "0.76rem", color: "#94a3b8", fontStyle: "italic", marginTop: 2 }}>{k.defn}</span>
+                  )}
                   {k.cities && k.cities.length > 0 && (
                     <details className="kpi-city" name="kpi-dropdown">
                       <summary>City wise ({k.cities.length}) ▾</summary>

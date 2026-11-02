@@ -15,6 +15,15 @@ const ALLOWED = {
 };
 const WRONG_HINT = { send: "not in stock, can't be sent", receive: "not waiting to be received" };
 
+// A scanned item in any of these statuses gets a distinct, unmissable warning instead of the usual
+// wrong-status message, since this is not just "not ready to send/receive" — it's missing, broken or
+// out of service, and whoever scanned it should know that clearly.
+const CRITICAL: Record<string, string> = {
+  lost: "⚠ LOST — this item can't be found. Location is unknown.",
+  damaged: "⚠ BROKEN — physically damaged and unusable.",
+  retired: "⚠ RETIRED — out of service.",
+};
+
 const MARK: Record<ScanState, string> = { ok: "✓", wrong: "✕", unknown: "✕", duplicate: "•" };
 
 /**
@@ -113,6 +122,7 @@ export default function ScanBox({
     const item = items.find((i) => i.id === r.id);
     const type = ITEM_TYPE_LABELS[item?.type ?? "sd_card"] ?? item?.type;
     const statusText = STATUS_LABELS[r.status as Status] ?? r.status ?? "";
+    if (r.status && CRITICAL[r.status]) return { id: r.id, type, ok: false, message: CRITICAL[r.status] };
     if (r.state === "wrong") return { id: r.id, type, ok: false, message: `${statusText}: ${WRONG_HINT[mode]}` };
     const elsewhere = mode === "send" || r.status === "pending";
     if (hub && elsewhere && item?.hub && item.hub !== hub) {
@@ -183,25 +193,33 @@ export default function ScanBox({
       )}
       {results.length > 0 && (
         <ul className={styles.list} aria-label="Scanned items">
-          {[...results].reverse().map((r, i) => (
-            <li key={`${r.code}-${i}`} className={r.state === "ok" ? styles.ok : r.state === "duplicate" ? styles.dup : styles.bad}>
-              <span aria-hidden>{MARK[r.state]}</span>
-              {r.id && typeOf.has(r.id) && <TypeBadge type={typeOf.get(r.id)} />}
-              <code>{r.id ?? r.code}</code>
-              <span className={styles.msg}>
-                {r.state === "ok" && (STATUS_LABELS[r.status as Status] ?? r.status)}
-                {r.id && qcOf.has(r.id) && ` · ${qcOf.get(r.id)}`}
-                {r.state === "wrong" &&
-                  (r.sentTo
-                    ? mode === "send"
-                      ? `at ${hubNames[r.sentTo] ?? r.sentTo}: choose that hub in "Sending from"`
-                      : `sent to ${hubNames[r.sentTo] ?? r.sentTo}: switch "Receiving at" to that hub`
-                    : `${STATUS_LABELS[r.status as Status] ?? r.status}: ${WRONG_HINT[mode]}`)}
-                {r.state === "unknown" && `not found in the inventory (${r.code.length} characters): ${r.code}`}
-                {r.state === "duplicate" && "scanned twice, counted once"}
-              </span>
-            </li>
-          ))}
+          {[...results].reverse().map((r, i) => {
+            const critical = r.status && CRITICAL[r.status];
+            return (
+              <li
+                key={`${r.code}-${i}`}
+                className={critical ? styles.critical : r.state === "ok" ? styles.ok : r.state === "duplicate" ? styles.dup : styles.bad}
+              >
+                <span aria-hidden>{critical ? "⚠" : MARK[r.state]}</span>
+                {r.id && typeOf.has(r.id) && <TypeBadge type={typeOf.get(r.id)} />}
+                <code>{r.id ?? r.code}</code>
+                <span className={styles.msg}>
+                  {critical && CRITICAL[r.status!]}
+                  {!critical && r.state === "ok" && (STATUS_LABELS[r.status as Status] ?? r.status)}
+                  {!critical && r.id && qcOf.has(r.id) && ` · ${qcOf.get(r.id)}`}
+                  {!critical &&
+                    r.state === "wrong" &&
+                    (r.sentTo
+                      ? mode === "send"
+                        ? `at ${hubNames[r.sentTo] ?? r.sentTo}: choose that hub in "Sending from"`
+                        : `sent to ${hubNames[r.sentTo] ?? r.sentTo}: switch "Receiving at" to that hub`
+                      : `${STATUS_LABELS[r.status as Status] ?? r.status}: ${WRONG_HINT[mode]}`)}
+                  {!critical && r.state === "unknown" && `not found in the inventory (${r.code.length} characters): ${r.code}`}
+                  {!critical && r.state === "duplicate" && "scanned twice, counted once"}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

@@ -89,9 +89,15 @@
 .bad {
   color: #b3261e;
 }
+.critical {
+  color: #b3261e;
+  background: #fef2f2;
+  font-weight: 600;
+}
 .ok code,
 .dup code,
-.bad code {
+.bad code,
+.critical code {
   color: inherit;
 }
 
