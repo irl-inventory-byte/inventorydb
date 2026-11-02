@@ -103,6 +103,39 @@ export function topBy(list: QcLeader[], field: "rigs" | "pass" | "fail"): QcLead
 }
 
 /* ------------------------------------------------------------------ */
+/* 3b. Sanitization: every rig's latest Sanitization hardware update   */
+/* ------------------------------------------------------------------ */
+
+export interface SanitizationRow {
+  item_id: string;
+  status: "Yes" | "No" | "Not set";
+  recordedAt: string; // "" when never recorded
+  recordedBy: string; // "" when never recorded
+}
+
+/** Every rig's latest "Sanitization" hardware update (Yes / No), or "Not set" if none was ever recorded. */
+export function sanitizationList(items: Item[], updates: HardwareUpdate[]): SanitizationRow[] {
+  const latest = new Map<string, { status: "Yes" | "No"; at: string; by: string }>();
+  for (const h of updates) {
+    if (h.update_type !== "Sanitization" || (h.comment !== "Yes" && h.comment !== "No")) continue;
+    const prev = latest.get(h.item_id);
+    if (prev && time(prev.at) >= time(h.recorded_at)) continue; // rows are oldest first, but guard anyway
+    latest.set(h.item_id, { status: h.comment, at: h.recorded_at, by: h.recorded_by_name || h.recorded_by || "" });
+  }
+  return items
+    .filter((i) => i.item_type === "rig")
+    .map((i): SanitizationRow => {
+      const found = latest.get(i.item_id);
+      const status: SanitizationRow["status"] = found?.status ?? "Not set";
+      return { item_id: i.item_id, status, recordedAt: found?.at ?? "", recordedBy: found?.by ?? "" };
+    })
+    .sort((a, b) => {
+      const order = { "Not set": 0, No: 1, Yes: 2 } as const;
+      return order[a.status] - order[b.status] || a.item_id.localeCompare(b.item_id);
+    });
+}
+
+/* ------------------------------------------------------------------ */
 /* 4. Rigs with the hardware team for more than N days                 */
 /* ------------------------------------------------------------------ */
 
