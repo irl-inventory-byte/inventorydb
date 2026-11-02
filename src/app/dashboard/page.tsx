@@ -901,7 +901,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                     {k.hint && <span className={styles.kpiHint}>{k.hint}</span>}
                   </Link>
                   {k.cities && k.cities.length > 0 && (
-                    <details className="kpi-city" name={`kpi-acc-${k.label}`}>
+                    <details className="kpi-city" name="kpi-dropdown">
                       <summary>City wise ({k.cities.length}) ▾</summary>
                       <div>
                         {k.cities.map((c) => (
@@ -917,7 +917,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                     </details>
                   )}
                   {k.storage && k.storage.length > 0 && (
-                    <details className="kpi-city" name={`kpi-acc-${k.label}`}>
+                    <details className="kpi-city" name="kpi-dropdown">
                       <summary>Storage wise ({k.storage.length}) ▾</summary>
                       <div>
                         {k.storage.map((st) => (
