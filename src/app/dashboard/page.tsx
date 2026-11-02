@@ -28,6 +28,23 @@ import { buildMonthlyReport, pickFilter } from "@/lib/monthly-report";
 import type { Item } from "@/lib/schema";
 
 const inventory = (params: Record<string, string>) => `/inventory?${new URLSearchParams(params)}`;
+
+/** SD card capacity ("256 GB" / "512 GB" / "Not set") from the saved "capacity" attribute, same normalization as the Inventory page. */
+function cardStorage(raw: string): string {
+  let attributes: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(raw || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) attributes = parsed as Record<string, unknown>;
+  } catch {
+    // Missing or invalid details count as "Not set".
+  }
+  const rawCapacity = attributes.capacity;
+  const capacityText = typeof rawCapacity === "string" || typeof rawCapacity === "number" ? String(rawCapacity).trim() : "";
+  const normalized = capacityText.replace(/\s+/g, "").toUpperCase();
+  if (normalized === "512GB" || normalized === "512") return "512 GB";
+  if (normalized === "256GB" || normalized === "256") return "256 GB";
+  return capacityText || "Not set";
+}
 const days = (d: number | null) => (d === null ? "—" : d === 0 ? "today" : `${d}d`);
 
 /** A time as an IST date, e.g. "8 Oct 2026". */
@@ -269,6 +286,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     icon: IconName;
     color: string;
     cities?: { city: string; count: number; pct: number; href: string }[]; // city-wise list, opened from the tile
+    storage?: { storage: string; count: number; pct: number; href: string }[]; // SD card 256/512 GB breakdown, opened from the tile
   };
   // City-wise count of items with a status (city of the hub the item is at), biggest first.
   const cityOfHub = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
@@ -290,6 +308,28 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           count: c,
           pct: total ? Math.round((c / total) * 100) : 0,
           href: inventory({ status: [...wanted].join(","), city: city.toLowerCase(), ...(onlyType && { type: onlyType }) }),
+        };
+      });
+  };
+
+  // SD card 256/512 GB breakdown for items with a status, biggest first (only item_type "sd_card").
+  const storageFor = (status: Status | Status[]) => {
+    const wanted = new Set<string>(Array.isArray(status) ? status : [status]);
+    const count = new Map<string, number>();
+    for (const i of items) {
+      if (i.item_type !== "sd_card" || !wanted.has(i.status)) continue;
+      const storage = cardStorage(i.attributes);
+      count.set(storage, (count.get(storage) ?? 0) + 1);
+    }
+    return [...count.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([storage, c], _, all) => {
+        const total = all.reduce((t, [, v]) => t + v, 0);
+        return {
+          storage,
+          count: c,
+          pct: total ? Math.round((c / total) * 100) : 0,
+          href: inventory({ status: [...wanted].join(","), type: "sd_card", ...(storage !== "Not set" && { storage }) }),
         };
       });
   };
@@ -428,6 +468,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       icon: "check",
       color: "var(--series-3)",
       cities: citiesFor("in_stock"),
+      storage: storageFor("in_stock"),
     },
     {
       label: "With field officers",
@@ -437,6 +478,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       icon: "user",
       color: "var(--series-2)",
       cities: citiesFor("with_fo"),
+      storage: storageFor("with_fo"),
     },
     { label: "With rig team", value: s.with_rig, hint: share(s.with_rig), href: inventory({ status: "with_rig" }), icon: "database", color: "var(--series-7)" },
     { label: "Internal", value: s.with_internal, hint: share(s.with_internal), href: inventory({ status: "with_internal" }), icon: "user", color: "var(--series-1)" },
@@ -448,6 +490,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       icon: "truck",
       color: "var(--series-4)",
       cities: citiesFor(["traveling", "pending"]),
+      storage: storageFor(["traveling", "pending"]),
     },
     {
       label: "Lost or damaged",
@@ -486,6 +529,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
         href: `${k.href}&type=mobile`,
         hint: k.hint.replace("of all items", "of all mobiles"),
         cities: k.cities?.map((c) => ({ ...c, href: `${c.href}&type=mobile` })),
+        storage: undefined, // SD card capacity breakdown doesn't apply to mobiles
       })),
   ];
   const kpis = rigView ? rigKpis : mobileView ? mobileKpis : sdKpis;
@@ -865,7 +909,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 .kpi-tile > a{flex:1;min-width:0}
 `}</style>
           {kpis.map((k) =>
-            k.cities ? (
+            k.cities || k.storage ? (
               <div key={k.label} className={styles.kpi} style={{ "--kpi": k.color, overflow: "visible" } as CSSProperties}>
                 <span className={styles.kpiIcon}>
                   <Icon name={k.icon} size={22} />
@@ -876,7 +920,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                     <span className={styles.kpiValue}>{n(k.value)}</span>
                     {k.hint && <span className={styles.kpiHint}>{k.hint}</span>}
                   </Link>
-                  {k.cities.length > 0 && (
+                  {k.cities && k.cities.length > 0 && (
                     <details className="kpi-city">
                       <summary>City wise ({k.cities.length}) ▾</summary>
                       <div>
@@ -886,6 +930,22 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                             <span style={{ display: "inline-flex", gap: 10, alignItems: "baseline" }}>
                               <b>{n(c.count)}</b>
                               <span style={{ minWidth: 38, textAlign: "right", color: "#64748b", fontSize: "0.8rem" }}>{c.pct}%</span>
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                  {k.storage && k.storage.length > 0 && (
+                    <details className="kpi-city">
+                      <summary>Storage wise ({k.storage.length}) ▾</summary>
+                      <div>
+                        {k.storage.map((st) => (
+                          <Link key={st.storage} href={st.href}>
+                            <span>{st.storage}</span>
+                            <span style={{ display: "inline-flex", gap: 10, alignItems: "baseline" }}>
+                              <b>{n(st.count)}</b>
+                              <span style={{ minWidth: 38, textAlign: "right", color: "#64748b", fontSize: "0.8rem" }}>{st.pct}%</span>
                             </span>
                           </Link>
                         ))}
