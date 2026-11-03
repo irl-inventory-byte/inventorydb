@@ -467,6 +467,38 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     ? inventory({ status: "with_rig,in_stock", hub: teamHub.hub_id })
     : inventory({ status: "with_rig" });
 
+  // The Broken tile's storage breakdown combines the admin's manual baseline (already-broken cards
+  // that predate storage tracking, or were never scanned into the system) with the LIVE counts of
+  // items actually recorded as broken (item_type sd_card, status damaged) — so scanning a card as
+  // broken bumps the 256/512 numbers automatically, on top of the baseline, with no re-entry needed.
+  const brokenReal = storageFor("damaged"); // real tracked sd_card items, by capacity (includes "Not set")
+  const brokenReal256 = brokenReal.find((r) => r.storage === "256 GB")?.count ?? 0;
+  const brokenReal512 = brokenReal.find((r) => r.storage === "512 GB")?.count ?? 0;
+  const brokenRealOther = brokenReal.filter((r) => r.storage !== "256 GB" && r.storage !== "512 GB");
+  const brokenBase256 = brokenStorageOverride?.gb256 ?? 0;
+  const brokenBase512 = brokenStorageOverride?.gb512 ?? 0;
+  const brokenCombined256 = brokenBase256 + brokenReal256;
+  const brokenCombined512 = brokenBase512 + brokenReal512;
+  const brokenCombinedTotal = brokenCombined256 + brokenCombined512 + brokenRealOther.reduce((t, r) => t + r.count, 0);
+  const brokenStorageMerged = [
+    {
+      storage: "256 GB",
+      count: brokenCombined256,
+      pct: brokenCombinedTotal ? Math.round((brokenCombined256 / brokenCombinedTotal) * 100) : 0,
+      href: inventory({ status: "damaged", type: "sd_card" }),
+    },
+    {
+      storage: "512 GB",
+      count: brokenCombined512,
+      pct: brokenCombinedTotal ? Math.round((brokenCombined512 / brokenCombinedTotal) * 100) : 0,
+      href: inventory({ status: "damaged", type: "sd_card" }),
+    },
+    ...brokenRealOther.map((r) => ({ ...r, pct: brokenCombinedTotal ? Math.round((r.count / brokenCombinedTotal) * 100) : 0 })),
+  ].sort((a, b) => b.count - a.count);
+  // Only switch to the combined baseline+live number once a baseline has actually been set;
+  // otherwise behave exactly as before (pure live count).
+  const brokenValue = brokenStorageOverride ? brokenCombinedTotal : s.damaged;
+
   // SD CARDS (and the "All" view): unchanged.
   const sdKpis: Kpi[] = [
     {
@@ -522,32 +554,13 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     },
     {
       label: "Broken",
-      value: s.damaged,
-      hint: share(s.damaged),
+      value: brokenValue,
+      hint: share(brokenValue),
       href: "/lost?status=damaged",
       icon: "alert",
       color: "var(--critical)",
       cities: citiesFor("damaged"),
-      storage: brokenStorageOverride
-        ? [
-            {
-              storage: "256 GB",
-              count: brokenStorageOverride.gb256,
-              pct: brokenStorageOverride.gb256 + brokenStorageOverride.gb512
-                ? Math.round((brokenStorageOverride.gb256 / (brokenStorageOverride.gb256 + brokenStorageOverride.gb512)) * 100)
-                : 0,
-              href: inventory({ status: "damaged", type: "sd_card" }),
-            },
-            {
-              storage: "512 GB",
-              count: brokenStorageOverride.gb512,
-              pct: brokenStorageOverride.gb256 + brokenStorageOverride.gb512
-                ? Math.round((brokenStorageOverride.gb512 / (brokenStorageOverride.gb256 + brokenStorageOverride.gb512)) * 100)
-                : 0,
-              href: inventory({ status: "damaged", type: "sd_card" }),
-            },
-          ]
-        : storageFor("damaged"),
+      storage: brokenStorageOverride ? brokenStorageMerged : brokenReal,
       defn: "Physically damaged and unusable, but its location is known.",
       storageOverrideKey: "broken_storage",
       storageOverrideValue: brokenStorageOverride,
@@ -852,8 +865,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const qcKeep: Record<string, string> = { ...keepParams };
 
   // Sanitization table filter (Rig dashboard): "" = all, "yes" or "no" narrows the table to that result.
-  const sanParam = one(sp.san);
-  const san = sanParam === "yes" || sanParam === "no" ? sanParam : "";
+  const sanValue = one(sp.san);
+  const san: "" | "yes" | "no" = sanValue === "yes" || sanValue === "no" ? sanValue : "";
   const sanKeep: Record<string, string> = { ...keepParams };
 
   // Acknowledgements chart: grouped by city (default) or by FO/IFO role.
@@ -1091,8 +1104,13 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                             display: "inline-block",
                           }}
                         />
-                        Admin override{k.storageOverrideValue ? " · active" : ""}
+                        Starting count (before tracking){k.storageOverrideValue ? " · active" : ""}
                       </span>
+                      <p style={{ margin: "0 0 2px", fontSize: "0.72rem", color: "#94a3b8", lineHeight: 1.4 }}>
+                        A one-time baseline for cards already broken before this system tracked them. Every card
+                        scanned as broken from here on adds to these numbers automatically — you don&apos;t need to
+                        keep updating this.
+                      </p>
                       <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
                         <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                           <span style={{ fontSize: "0.68rem", color: "#94a3b8" }}>256 GB</span>
