@@ -682,4 +682,4 @@ export async function SummaryKpis({
       ))}
     </section>
   );
-}g
+}
