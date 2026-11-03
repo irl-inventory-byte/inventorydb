@@ -18,7 +18,7 @@ import styles from "./dashboard.module.css";
 import { HubOrgChart, countHidden } from "./hub-tree-view";
 import AttentionFilter from "./attentionfilter";
 import { Icon, type IconName } from "./icons";
-import TeamSelect from "./Teamselect";
+import TeamSelect from "./TeamSelect";
 import { setBrokenStorageOverride } from "./actions";
 import { SummaryKpis } from "./summary-kpis";
 import { RIG_STATES, RIG_STATE_LABELS, rigState, type RigState } from "@/lib/rig-state";
@@ -848,7 +848,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const qcKeep: Record<string, string> = { ...keepParams };
 
   // Sanitization table filter (Rig dashboard): "" = all, "yes" or "no" narrows the table to that result.
-  const san = one(sp.san) === "yes" || one(sp.san) === "no" ? one(sp.san) : "";
+  const sanValue = one(sp.san);
+  const san = sanValue === "yes" || sanValue === "no" ? sanValue : "";
   const sanKeep: Record<string, string> = { ...keepParams };
 
   // Who has items: longest out first, then most items.
@@ -1034,8 +1035,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                         gap: 6,
                         alignItems: "center",
                         marginTop: 8,
-                        paddingTop: 8,
-                        borderTop: "1px dashed #cbd5e1",
+                        padding: 8,
+                        border: "1px solid #cbd5e1",
+                        borderRadius: 8,
+                        background: "#f8fafc",
                         flexWrap: "wrap",
                       }}
                     >
@@ -1221,6 +1224,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             qcFrom={qcFrom}
             qcTo={qcTo}
             qcKeep={qcKeep}
+            san={san}
             sanKeep={sanKeep}
           />
         )}
