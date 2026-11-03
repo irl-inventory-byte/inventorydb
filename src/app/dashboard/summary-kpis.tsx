@@ -331,18 +331,19 @@ export async function SummaryKpis({
       : []),
   ];
 
-  // SD card tiles only when there are SD cards; a Rigs tile when there are rigs.
+  // Order: storage (512/256), colour (Black/Green), age (New/Old) — all from sdDetails — then
+  // Unusable, then Broken, then Retired, then Rigs last.
   const fleetDetails = [
     ...(fleet.sdCards > 0 ? sdDetails : []),
-    ...(fleet.rigs > 0
+    ...(unusable > 0
       ? [
           {
-            label: "Rigs",
-            count: fleet.rigs,
-            pct: "",
-            bg: "#fef3c7",
-            border: "#d97706",
-            text: "#78350f",
+            label: "Unusable",
+            count: unusable,
+            pct: share(unusable),
+            bg: "#fef2f2",
+            border: "#ef4444",
+            text: "#7f1d1d",
           },
         ]
       : []),
@@ -367,6 +368,18 @@ export async function SummaryKpis({
             bg: "#f3f4f6",
             border: "#6b7280",
             text: "#1f2937",
+          },
+        ]
+      : []),
+    ...(fleet.rigs > 0
+      ? [
+          {
+            label: "Rigs",
+            count: fleet.rigs,
+            pct: "",
+            bg: "#fef3c7",
+            border: "#d97706",
+            text: "#78350f",
           },
         ]
       : []),
