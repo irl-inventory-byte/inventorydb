@@ -5,6 +5,7 @@ import { signOut } from "@/auth";
 import { requireRole } from "@/lib/authz";
 import { ROLE_LABELS, one } from "@/lib/labels";
 import type { Role } from "@/lib/schema";
+import { getStore } from "@/lib/store";
 import { istTimestamp } from "@/lib/time";
 import styles from "./dashboard/dashboard.module.css";
 import { Icon, type IconName } from "./dashboard/icons";
@@ -193,6 +194,19 @@ export default async function Home({
         ? "Good afternoon"
         : "Good evening";
 
+  // SD Card Duration counts for this week, shown on the IM / Rig team SD card details tiles below.
+  // Only fetched for logins that can actually see one of those tiles.
+  const showSdCounts = user.role === "admin" || user.role === "im" || user.role === "rig";
+  const sdDurations = showSdCounts ? await getStore().list("sd_card_durations").catch(() => []) : [];
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const sdCountThisWeek = (team: "im" | "rig") =>
+    sdDurations.filter((r) => r.team === team && Date.parse(r.recorded_at || "0") >= weekAgo).length;
+  const workTiles = WORK.map((t) => {
+    if (t.href === "/sd-details/im") return { ...t, desc: `${t.desc} ${sdCountThisWeek("im")} entries this week.` };
+    if (t.href === "/sd-details/rig") return { ...t, desc: `${t.desc} ${sdCountThisWeek("rig")} entries this week.` };
+    return t;
+  });
+
   return (
     <div className={styles.root}>
       <main className={styles.wrap}>
@@ -267,7 +281,7 @@ export default async function Home({
 
         <Section
           label="Work"
-          tiles={WORK.filter((t) =>
+          tiles={workTiles.filter((t) =>
             t.roles.includes(user.role)
           )}
         />

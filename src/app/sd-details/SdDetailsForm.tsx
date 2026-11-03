@@ -2,6 +2,15 @@ import type { CSSProperties } from "react";
 import type { SdCardDuration } from "@/lib/schema";
 import { formatIst } from "@/lib/time";
 
+// Hard-coded IC name list (given by the user directly — no admin page to manage this yet).
+const IC_NAMES = [
+  "Aditya", "Anshitha", "Bhavana", "Hari Prasad M S", "Hemanth", "Kavya", "Kusuma H",
+  "MALIAKA", "Mohit", "NAVEEN", "Niharika", "Prajakta", "Priyanshu", "Sohan", "Spoorthi",
+  "Sumit", "Tejash", "Yashaswini", "Ritika", "Sujay", "Arush", "Nishanth", "Devesh",
+  "Krishen", "Abhijnan", "Kshithi", "Shashwath", "Suhaib", "Kavin", "Smita", "Brunda",
+  "vinay", "Nandadeep", "Nikshitha", "Nancy", "Franklin", "Akshay", "Guru",
+];
+
 /**
  * Shared form for "SD Card Duration Hour" details — the same fields as the IM and Rig team Google
  * Forms, now saved to our own database (sd_card_durations tab) and also forwarded to that Google
@@ -90,7 +99,10 @@ export default function SdDetailsForm({
 
         <label style={field}>
           IC name *
-          <input type="text" name="ic_name" required placeholder="IC name" style={input} />
+          <select name="ic_name" required defaultValue="" style={input}>
+            <option value="" disabled>Select IC name</option>
+            {IC_NAMES.map((name) => (<option key={name} value={name}>{name}</option>))}
+          </select>
         </label>
 
         <label style={field}>
