@@ -24,14 +24,22 @@ export default function ReportLostScan({
   hubs: { id: string; name: string; city: string }[];
   people: { id: string; name: string; role: string }[];
 }) {
-  const [personRole, setPersonRole] = useState("");
+  const [personRoles, setPersonRoles] = useState<string[]>([]);
+  const toggleRole = (r: string) =>
+    setPersonRoles((prev) => (prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]));
   const peopleOptions = useMemo(
     () =>
       people
-        .filter((p) => !personRole || p.role === personRole)
+        .filter((p) => personRoles.length === 0 || personRoles.includes(p.role))
         .map((p) => ({ value: p.id, label: p.name })),
-    [people, personRole],
+    [people, personRoles],
   );
+  const roleSummary =
+    personRoles.length === 0
+      ? "Any role"
+      : personRoles.length <= 2
+        ? personRoles.map((r) => ROLE_LABELS[r as (typeof ROLES)[number]] ?? r).join(", ")
+        : `${personRoles.length} selected`;
   // Cities in display order, each with its hubs (a city may have more than one hub).
   const cities = useMemo(() => {
     const byCity = new Map<string, { id: string; name: string }[]>();
@@ -151,19 +159,75 @@ export default function ReportLostScan({
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: "0.72rem", color: "#64748b" }}>
-            Role (who had it)
-            <select
-              value={personRole}
-              onChange={(e) => setPersonRole(e.target.value)}
-              style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: "0.85rem", background: "#fff" }}
-            >
-              <option value="">Any role</option>
-              {ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {ROLE_LABELS[r]}
-                </option>
-              ))}
-            </select>
+            Role(s) (who had it)
+            <details style={{ position: "relative" }}>
+              <summary
+                aria-label={`Role: ${roleSummary}`}
+                style={{
+                  listStyle: "none",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  minHeight: 32,
+                  padding: "6px 8px",
+                  border: "1px solid #cbd5e1",
+                  borderRadius: 6,
+                  background: personRoles.length ? "#eef2ff" : "#fff",
+                  color: "#1a1a1a",
+                  fontSize: "0.85rem",
+                  whiteSpace: "nowrap",
+                  maxWidth: 220,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {roleSummary}
+                <span aria-hidden="true" style={{ fontSize: 10, marginLeft: "auto" }}>▼</span>
+              </summary>
+              <div
+                role="group"
+                aria-label="Role(s)"
+                style={{
+                  position: "absolute",
+                  zIndex: 20,
+                  top: "calc(100% + 4px)",
+                  left: 0,
+                  minWidth: 180,
+                  maxHeight: 280,
+                  overflowY: "auto",
+                  padding: 8,
+                  background: "#fff",
+                  color: "#1a1a1a",
+                  border: "1px solid #cbd5e1",
+                  borderRadius: 8,
+                  boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 2,
+                }}
+              >
+                {ROLES.map((r) => (
+                  <label
+                    key={r}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      minHeight: 30,
+                      padding: "4px 6px",
+                      borderRadius: 4,
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                      fontSize: "0.85rem",
+                    }}
+                  >
+                    <input type="checkbox" checked={personRoles.includes(r)} onChange={() => toggleRole(r)} />
+                    {ROLE_LABELS[r]}
+                  </label>
+                ))}
+              </div>
+            </details>
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: "0.72rem", color: "#64748b" }}>
             Person(s) who had it
