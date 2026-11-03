@@ -865,8 +865,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const qcKeep: Record<string, string> = { ...keepParams };
 
   // Sanitization table filter (Rig dashboard): "" = all, "yes" or "no" narrows the table to that result.
-  const sanValue = one(sp.san);
-  const san: "" | "yes" | "no" = sanValue === "yes" || sanValue === "no" ? sanValue : "";
+  const san = one(sp.san) === "yes" || one(sp.san) === "no" ? one(sp.san) : "";
   const sanKeep: Record<string, string> = { ...keepParams };
 
   // Acknowledgements chart: grouped by city (default) or by FO/IFO role.
@@ -1074,9 +1073,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                       style={{
                         display: "flex",
                         flexDirection: "column",
-                        gap: 8,
+                        gap: 6,
                         marginTop: 10,
-                        padding: "10px 12px",
+                        padding: "8px 10px",
+                        maxWidth: 220,
                         border: "1px solid #dbe2ea",
                         borderRadius: 10,
                         background: "linear-gradient(180deg,#f8fafc,#f1f5f9)",
@@ -1090,8 +1090,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                           gap: 5,
                           fontSize: "0.68rem",
                           fontWeight: 700,
-                          letterSpacing: "0.04em",
-                          textTransform: "uppercase",
                           color: "#64748b",
                         }}
                       >
@@ -1102,15 +1100,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                             borderRadius: "50%",
                             background: k.storageOverrideValue ? "#1d4ed8" : "#cbd5e1",
                             display: "inline-block",
+                            flexShrink: 0,
                           }}
                         />
-                        Starting count (before tracking){k.storageOverrideValue ? " · active" : ""}
+                        Starting count{k.storageOverrideValue ? " · active" : ""}
                       </span>
-                      <p style={{ margin: "0 0 2px", fontSize: "0.72rem", color: "#94a3b8", lineHeight: 1.4 }}>
-                        A one-time baseline for cards already broken before this system tracked them. Every card
-                        scanned as broken from here on adds to these numbers automatically — you don&apos;t need to
-                        keep updating this.
-                      </p>
                       <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
                         <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                           <span style={{ fontSize: "0.68rem", color: "#94a3b8" }}>256 GB</span>
@@ -1306,7 +1300,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             qcFrom={qcFrom}
             qcTo={qcTo}
             qcKeep={qcKeep}
-            san={san}
+            
             sanKeep={sanKeep}
           />
         )}
