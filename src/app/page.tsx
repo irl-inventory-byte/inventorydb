@@ -90,6 +90,20 @@ const WORK: Tile[] = [
     icon: "users",
     roles: ["admin", "im"],
   },
+  {
+    href: "/sd-details/im",
+    title: "IM SD card details",
+    desc: "Record SD Card Duration Hour details — saved here and also sent to the Google Sheet.",
+    icon: "database",
+    roles: ["admin", "im"],
+  },
+  {
+    href: "/sd-details/rig",
+    title: "Rig team SD card details",
+    desc: "Record SD Card Duration Hour details — saved here and also sent to the Google Sheet.",
+    icon: "database",
+    roles: ["admin", "rig"],
+  },
 ];
 
 const ADMIN: Tile[] = [
@@ -135,6 +149,7 @@ function Section({
             key={t.href}
             href={t.href}
             className={styles.menuItem}
+            {...(t.href.startsWith("http") ? { target: "_blank", rel: "noopener noreferrer" } : {})}
           >
             <span className={styles.menuIcon}>
               <Icon name={t.icon} size={22} />

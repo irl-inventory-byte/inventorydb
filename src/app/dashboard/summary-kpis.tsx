@@ -36,10 +36,20 @@ interface FleetCounts {
 /**
  * New / Old for every SD card in the inventory, from the SD card sheet's New/Old column (matched by Asset
  * Tag). The sheet is read through the same short cache as Add SD card. null = the sheet could not be read.
+ *
+ * This is a SEPARATE Google Sheet from the app's own database, read directly via the Sheets API —
+ * on a cache miss (every 5 min) that can be several Google API round trips one after another. Rather
+ * than let a slow or slow-to-authenticate read stall the whole dashboard, this gives it SHEET_TIMEOUT_MS
+ * to finish; past that it falls back to null (same as "could not be read") and lets the page render.
+ * The read keeps going in the background and fills the cache, so the next load is normally fast again.
  */
+const SHEET_TIMEOUT_MS = 1500;
+
 async function sheetAges(): Promise<Map<string, string> | null> {
   try {
-    const records = await loadAssetRecords();
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), SHEET_TIMEOUT_MS));
+    const records = await Promise.race([loadAssetRecords(), timeout]);
+    if (!records) return null;
     return new Map(records.map((r) => [r.itemId.trim().toUpperCase(), (r.condition ?? "").trim().toLowerCase()]));
   } catch {
     return null;

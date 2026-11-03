@@ -130,6 +130,26 @@ export const TABS = {
     "answer", // "" (not yet answered) | "yes" | "no"
     "answered_at",
   ],
+  // "SD Card Duration Hour" details, filled in from the IM SD card details and Rig team SD card
+  // details pages (see src/app/sd-details). A copy is also forwarded to the matching Google Apps
+  // Script form (see those pages' actions); `forwarded` records whether that copy went through.
+  sd_card_durations: [
+    "record_id",
+    "team", // "im" | "rig" — which of the two forms this came from
+    "card_date", // SD CARD DATE, YYYY-MM-DD
+    "team_member", // IM name (im form) or Rig/Productivity team member name (rig form)
+    "fo_ifo", // FO / IFO name
+    "ic_name",
+    "ic_number", // free text, expected to start with "IC-"
+    "city",
+    "serial", // SD card serial number / asset tag
+    "duration", // DU_TIME, HH:MM:SS
+    "raw_clips", // No. of raw clips
+    "recorded_by", // login email
+    "recorded_by_name",
+    "recorded_at",
+    "forwarded", // "yes" | "no: <reason>" — whether the copy sent to the Google Script succeeded
+  ],
 } as const;
 
 export type TabName = keyof typeof TABS;
@@ -345,6 +365,24 @@ export interface Acknowledgment extends Row {
   answered_at: string;
 }
 
+export interface SdCardDuration extends Row {
+  record_id: string;
+  team: string; // "im" | "rig"
+  card_date: string;
+  team_member: string;
+  fo_ifo: string;
+  ic_name: string;
+  ic_number: string;
+  city: string;
+  serial: string;
+  duration: string;
+  raw_clips: string;
+  recorded_by: string;
+  recorded_by_name: string;
+  recorded_at: string;
+  forwarded: string;
+}
+
 export interface TabRows {
   items: Item;
   events: ItemEvent;
@@ -362,4 +400,5 @@ export interface TabRows {
   lost_notes: LostNote;
   audits: Audit;
   settings: Setting;
+  sd_card_durations: SdCardDuration;
 }

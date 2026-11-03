@@ -53,8 +53,9 @@ export class Store {
   async list<T extends TabName>(
     tab: T
   ): Promise<TabRows[T][]> {
-    // Acknowledgments and settings are not per-item (batch-keyed / a flat key-value store), so they
-    // are optional (the tab may not exist yet) but are never filtered by item type below.
+    // Acknowledgments, settings and SD card durations are not per-item (batch-keyed, a flat key-value
+    // store, or just a submission log), so they are optional (the tab may not exist yet) but are never
+    // filtered by item type below.
     const optional =
       tab === "hardware_updates" ||
       tab === "qc_checks" ||
@@ -62,12 +63,13 @@ export class Store {
       tab === "acknowledgments" ||
       tab === "lost_notes" ||
       tab === "audits" ||
-      tab === "settings";
+      tab === "settings" ||
+      tab === "sd_card_durations";
     const rows = optional
       ? await this.readOptional(tab)
       : await this.backend.readAll(tab);
 
-    if (tab === "acknowledgments" || tab === "settings") return rows as unknown as TabRows[T][];
+    if (tab === "acknowledgments" || tab === "settings" || tab === "sd_card_durations") return rows as unknown as TabRows[T][];
 
     const types = this.types;
     if (!types) return rows as unknown as TabRows[T][];

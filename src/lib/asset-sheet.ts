@@ -16,7 +16,10 @@ import { parseAssetRow, type AssetRecord } from "./asset-lookup";
  */
 
 const DEFAULT_ASSET_SHEET_ID = "1F2zgaWRgG6WejOJoux-ZFrjkK6xodWoy08Gwdo2-EDI";
-const TTL_MS = 5 * 60 * 1000;
+// Longer than before (was 5 min): this sheet is read with several Google API calls in a row on a
+// cache miss, and New/Old condition data does not need to be minute-fresh, so a longer window means
+// dashboard loads hit that slow path less often.
+const TTL_MS = 15 * 60 * 1000;
 
 /** The SD card sheet ID in use (the ASSET_SHEET_ID setting, or the default). */
 export const assetSheetId = () => process.env.ASSET_SHEET_ID || DEFAULT_ASSET_SHEET_ID;
