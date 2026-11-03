@@ -551,7 +551,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       label: "In transit",
       value: s.traveling + s.pending,
       hint: share(s.traveling + s.pending),
-      href: inventory({ status: "traveling,pending" }),
+      href: "/transit",
       icon: "truck",
       color: "var(--series-4)",
       cities: citiesFor(["traveling", "pending"]),
@@ -893,23 +893,32 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const ackBy = one(sp.ackBy) === "role" ? "role" : "city";
   const ackFrom = one(sp.ackFrom); // YYYY-MM-DD, inclusive
   const ackTo = one(sp.ackTo); // YYYY-MM-DD, inclusive
+  const ackCity = one(sp.ackCity); // narrows to recipients in this one city, on top of everything else
+  const ackCityOf = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
+  const ackPersonHub = new Map(people.map((p) => [p.person_id, p.hub]));
+  const ackCities = [...new Set(people.map((p) => ackCityOf.get(ackPersonHub.get(p.person_id) ?? "")).filter((c): c is string => !!c))].sort((a, b) =>
+    a.localeCompare(b),
+  );
   const ackInRange = acknowledgments.filter((a) => {
     const t = Date.parse(a.created_at || "");
     if (Number.isNaN(t)) return true; // keep undated rows rather than silently dropping them
     if (ackFrom && t < Date.parse(`${ackFrom}T00:00:00+05:30`)) return false;
     if (ackTo && t > Date.parse(`${ackTo}T23:59:59+05:30`)) return false;
+    if (ackCity && ackCityOf.get(ackPersonHub.get(a.to_id) ?? "") !== ackCity) return false;
     return true;
   });
-  // Narrows to just FO or just IFO recipients, on top of the date range and either grouping.
+  // Narrows to just FO or just IFO recipients, on top of the date range, city and either grouping.
   const ackRole = one(sp.ackRole) === "fo" || one(sp.ackRole) === "ifo" ? (one(sp.ackRole) as "fo" | "ifo") : "";
   const ackBuckets =
     ackBy === "role" ? ackByRole(ackInRange, people, ackRole) : ackByCity(ackInRange, people, hubs, ackRole);
-  const ackBase = { ...keepParams, ...(ackFrom && { ackFrom }), ...(ackTo && { ackTo }) }; // no ackBy/ackRole — each link below adds its own
+  const ackBase = { ...keepParams, ...(ackFrom && { ackFrom }), ...(ackTo && { ackTo }), ...(ackCity && { ackCity }) }; // no ackBy/ackRole — each link below adds its own
   const ackParams = { ...ackBase, ...(ackRole && { ackRole }) };
   const ackHref = (by: "city" | "role") => `/dashboard?${new URLSearchParams({ ...ackParams, ...(by !== "city" && { ackBy: by }) })}#acknowledgements`;
   const ackRoleHref = (role: "" | "fo" | "ifo") =>
     `/dashboard?${new URLSearchParams({ ...ackBase, ...(ackBy !== "city" && { ackBy }), ...(role && { ackRole: role }) })}#acknowledgements`;
   // Hidden fields the date-range filter form must carry so it doesn't lose the other dashboard filters or the current grouping/role.
+  // ackCity is NOT included here — it's its own <select> inside that same form, not a hidden field.
+  // "Clear filters" drops the date range AND the city together (role has its own "All" chip to reset).
   const ackHidden = { ...keepParams, ...(ackBy !== "city" && { ackBy }), ...(ackRole && { ackRole }) };
   const ackClearHref = `/dashboard?${new URLSearchParams(ackHidden)}#acknowledgements`;
 
@@ -1413,8 +1422,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
               hidden={ackHidden}
               clearHref={ackClearHref}
               role={ackRole}
-              roleHref={ackRoleHref}
-            />
+              roleHref={ackRoleHref} cities={[]} city={""}            />
           </section>
         )}
 

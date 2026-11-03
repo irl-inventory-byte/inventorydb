@@ -16,6 +16,8 @@ export default function AckChart({
   clearHref,
   role,
   roleHref,
+  cities,
+  city,
 }: {
   by: "city" | "role";
   buckets: AckBucket[];
@@ -26,6 +28,8 @@ export default function AckChart({
   clearHref: string; // same page, with the date range removed
   role: "" | "fo" | "ifo"; // "" = both
   roleHref: (role: "" | "fo" | "ifo") => string;
+  cities: string[]; // every city with at least one FO/IFO, for the city filter dropdown
+  city: string; // "" = all cities
 }) {
   const max = Math.max(1, ...buckets.map((b) => b.total));
   const totals = buckets.reduce(
@@ -97,6 +101,19 @@ export default function AckChart({
         {Object.entries(hidden).map(([k, v]) => (
           <input key={k} type="hidden" name={k} value={v} />
         ))}
+        {cities.length > 0 && (
+          <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "0.72rem", color: "#64748b" }}>
+            City
+            <select name="ackCity" defaultValue={city} style={{ fontSize: "0.8rem", padding: "4px 6px", borderRadius: 6, border: "1px solid #cbd5e1" }}>
+              <option value="">All cities</option>
+              {cities.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "0.72rem", color: "#64748b" }}>
           From
           <input type="date" name="ackFrom" defaultValue={ackFrom} style={{ fontSize: "0.8rem", padding: "4px 6px", borderRadius: 6, border: "1px solid #cbd5e1" }} />
@@ -111,9 +128,9 @@ export default function AckChart({
         >
           Apply
         </button>
-        {(ackFrom || ackTo) && (
+        {(ackFrom || ackTo || city) && (
           <Link href={clearHref} style={{ fontSize: "0.78rem", color: "#64748b", alignSelf: "center" }}>
-            Clear dates
+            Clear filters
           </Link>
         )}
       </form>
