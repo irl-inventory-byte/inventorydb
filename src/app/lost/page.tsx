@@ -7,6 +7,7 @@ import { one } from "@/lib/labels";
 import { formatIst } from "@/lib/time";
 import styles from "../admin/admin.module.css";
 import { addLostNote } from "./actions";
+import ReportLostScan from "./ReportLostScan";
 
 const TYPE_NAME: Record<string, string> = { sd_card: "SD card", rig: "Rig", mobile: "Mobile" };
 
@@ -17,12 +18,8 @@ const money = (v: string) => (v ? `â‚¹${Number(v).toLocaleString("en-IN")}` : "â
  * tile. Date, who last held the item, who recorded it, city/hub, item, amount, and a free-text
  * investigation-notes thread per item (Admin/IM can add to it). Filterable by item type.
  */
-export default async function LostItemsPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const user = await requireRole(...VIEW_ROLES); 
+export default async function LostItemsPage({ searchParams }: PageProps<"/lost">) {
+  const user = await requireRole(...VIEW_ROLES);
   const canAddNote = user.role === "admin" || user.role === "im";
   const sp = await searchParams;
   const statusRaw = one(sp.status);
@@ -30,6 +27,7 @@ export default async function LostItemsPage({
   const typeFilter = one(sp.type);
   const noteError = one(sp.error);
   const openItem = one(sp.item);
+  const reported = Number(one(sp.reported) || "0");
 
   const store = storeForAll(user.role);
   const [items, events, hubs, notes] = await Promise.all([
@@ -84,6 +82,16 @@ export default async function LostItemsPage({
         <p style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", borderRadius: 8, padding: "8px 12px" }}>
           {noteError}
         </p>
+      )}
+
+      {reported > 0 && (
+        <p style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534", borderRadius: 8, padding: "8px 12px" }}>
+          Reported {reported} item{reported === 1 ? "" : "s"} {status === "damaged" ? "broken" : "lost"}.
+        </p>
+      )}
+
+      {canAddNote && (
+        <ReportLostScan status={status} items={items.map((i) => ({ id: i.item_id, status: i.status, type: i.item_type }))} />
       )}
 
       <nav aria-label="Filter by item type" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "4px 0 16px" }}>
