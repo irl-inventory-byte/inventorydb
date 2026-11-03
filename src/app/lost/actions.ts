@@ -58,11 +58,24 @@ export async function reportLostScan(formData: FormData) {
   const label = status === "damaged" ? "broken" : "lost";
   const back = (q: Record<string, string>) => redirect(`/lost?${new URLSearchParams({ status, ...q })}`);
 
-  const note = String(formData.get("note") ?? "").trim().slice(0, 2000);
-  if (note.length < 3) back({ error: "Add a note (at least 3 characters) saying why.", status });
+  const note = String(formData.get("note") ?? "").trim().slice(0, 2000); // "Reason" on the form
+  if (note.length < 3) back({ error: "Add a reason (at least 3 characters) saying why.", status });
 
   const ids = collectIds(String(formData.get("scanned") ?? ""));
   if (!ids.length) back({ error: "Scan or enter at least one item." });
+
+  // Date: when it actually happened (can be backdated). Blank = right now. A date alone (no time of
+  // day known) is recorded at noon IST so it sorts sensibly next to same-day timestamped events.
+  const dateRaw = String(formData.get("occurredAt") ?? "").trim();
+  const occurredAt = /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) ? `${dateRaw}T12:00:00+05:30` : istTimestamp();
+
+  // Amount: this report's cost figure (defaults to the item's stored price if left blank).
+  const amountRaw = String(formData.get("amount") ?? "").trim();
+  const amount = amountRaw === "" ? undefined : String(Math.max(0, Number(amountRaw) || 0));
+
+  // Person: free-text name of who had the item, for when the system has no holder on record
+  // (the common case — most lost/broken items show as "In stock" with nobody checked out).
+  const personName = String(formData.get("person") ?? "").trim().slice(0, 200);
 
   const store = storeForAll(user.role);
   const found = await store.getItemsByIds(ids);
@@ -97,6 +110,16 @@ export async function reportLostScan(formData: FormData) {
   );
 
   if (plan.errors.length) back({ error: `${plan.errors.join(" ")} Nothing was saved.` });
+
+  // Apply the date / amount / person fields, which planCorrection doesn't know about.
+  for (const e of plan.events) {
+    if (e.action !== "correct") continue;
+    e.occurred_at = occurredAt;
+    if (personName) e.from_person = personName;
+  }
+  if (amount !== undefined) {
+    for (const item of plan.items) item.price = amount;
+  }
 
   if (plan.items.length) {
     await getStore().commitBatch(plan.events, plan.items);

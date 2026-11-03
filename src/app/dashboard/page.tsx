@@ -4,7 +4,7 @@ import { requireRole } from "@/lib/authz";
 import { LATE_AFTER_HOURS, computeDashboard } from "@/lib/dashboard";
 import { buildHubTree } from "@/lib/hub-tree";
 import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
-import type { HardwareUpdate, QcCheck, Status } from "@/lib/schema";
+import type { Acknowledgment, HardwareUpdate, QcCheck, Status } from "@/lib/schema";
 import { HANDLER_ROLES, INVENTORY_ROLES, allowedTypes, canSeeType, storeFor, storeForAll, typeParam } from "@/lib/access";
 import TypeSwitch from "../TypeSwitch";
 import RoleSwitch from "../RoleSwitch";
@@ -23,6 +23,8 @@ import { setBrokenStorageOverride } from "./actions";
 import { SummaryKpis } from "./summary-kpis";
 import { RIG_STATES, RIG_STATE_LABELS, rigState, type RigState } from "@/lib/rig-state";
 import { NO_ACTIVITY_DAYS, RigMetrics } from "./rig-metrics";
+import { ackByCity, ackByRole } from "@/lib/ack-stats";
+import AckChart from "./AckChart";
 import { inactiveRigs } from "@/lib/rig-metrics";
 import { getStore } from "@/lib/store";
 import { MonthlyReportCard } from "./monthly-report";
@@ -203,7 +205,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // Mobile view: tiles and breakdowns only (mobiles are not sent or received).
   const mobileView = type === "mobile";
   const showQc = canSeeType(user.role, "rig") && type !== "sd_card" && !mobileView;
-  const [items, events, people, hubs, qcChecks, hardwareUpdates, settings] = await Promise.all([
+  const showAck = user.role === "admin" || user.role === "im";
+  const [items, events, people, hubs, qcChecks, hardwareUpdates, settings, acknowledgments] = await Promise.all([
     store.list("items"),
     store.list("events"),
     store.list("people"),
@@ -211,6 +214,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     showQc ? store.list("qc_checks") : Promise.resolve([] as QcCheck[]),
     showQc ? store.list("hardware_updates") : Promise.resolve([] as HardwareUpdate[]),
     store.list("settings"),
+    showAck ? store.list("acknowledgments") : Promise.resolve([] as Acknowledgment[]),
   ]);
   const now = new Date();
 
@@ -849,8 +853,13 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
   // Sanitization table filter (Rig dashboard): "" = all, "yes" or "no" narrows the table to that result.
   const sanValue = one(sp.san);
-  const san = sanValue === "yes" || sanValue === "no" ? sanValue : "";
+  const san: "" | "yes" | "no" = sanValue === "yes" || sanValue === "no" ? sanValue : "";
   const sanKeep: Record<string, string> = { ...keepParams };
+
+  // Acknowledgements chart: grouped by city (default) or by FO/IFO role.
+  const ackBy = one(sp.ackBy) === "role" ? "role" : "city";
+  const ackBuckets = ackBy === "role" ? ackByRole(acknowledgments, people) : ackByCity(acknowledgments, people, hubs);
+  const ackHref = (by: "city" | "role") => `/dashboard?${new URLSearchParams({ ...keepParams, ...(by !== "city" && { ackBy: by }) })}#acknowledgements`;
 
   // Who has items: longest out first, then most items.
   const holdersSorted = [...d.holders].sort(
@@ -1032,42 +1041,78 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                       action={setBrokenStorageOverride}
                       style={{
                         display: "flex",
-                        gap: 6,
-                        alignItems: "center",
-                        marginTop: 8,
-                        padding: 8,
-                        border: "1px solid #cbd5e1",
-                        borderRadius: 8,
-                        background: "#f8fafc",
-                        flexWrap: "wrap",
+                        flexDirection: "column",
+                        gap: 8,
+                        marginTop: 10,
+                        padding: "10px 12px",
+                        border: "1px solid #dbe2ea",
+                        borderRadius: 10,
+                        background: "linear-gradient(180deg,#f8fafc,#f1f5f9)",
                       }}
                     >
                       <input type="hidden" name="back" value={`/dashboard?${new URLSearchParams(keepParams)}`} />
-                      <span style={{ fontSize: "0.72rem", color: "#94a3b8", width: "100%" }}>
-                        Admin · {k.storageOverrideValue ? "manual override — " : ""}set Storage wise counts manually:
-                      </span>
-                      <input
-                        type="number"
-                        name="gb256"
-                        min={0}
-                        placeholder="256 GB"
-                        defaultValue={k.storageOverrideValue?.gb256 ?? ""}
-                        style={{ width: 70, fontSize: "0.78rem", padding: "3px 6px", borderRadius: 6, border: "1px solid #cbd5e1" }}
-                      />
-                      <input
-                        type="number"
-                        name="gb512"
-                        min={0}
-                        placeholder="512 GB"
-                        defaultValue={k.storageOverrideValue?.gb512 ?? ""}
-                        style={{ width: 70, fontSize: "0.78rem", padding: "3px 6px", borderRadius: 6, border: "1px solid #cbd5e1" }}
-                      />
-                      <button
-                        type="submit"
-                        style={{ fontSize: "0.75rem", padding: "3px 8px", borderRadius: 6, border: "1px solid #1e293b", background: "#1e293b", color: "#fff", cursor: "pointer" }}
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          fontSize: "0.68rem",
+                          fontWeight: 700,
+                          letterSpacing: "0.04em",
+                          textTransform: "uppercase",
+                          color: "#64748b",
+                        }}
                       >
-                        Save
-                      </button>
+                        <span
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: "50%",
+                            background: k.storageOverrideValue ? "#1d4ed8" : "#cbd5e1",
+                            display: "inline-block",
+                          }}
+                        />
+                        Admin override{k.storageOverrideValue ? " · active" : ""}
+                      </span>
+                      <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+                        <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                          <span style={{ fontSize: "0.68rem", color: "#94a3b8" }}>256 GB</span>
+                          <input
+                            type="number"
+                            name="gb256"
+                            min={0}
+                            placeholder="0"
+                            defaultValue={k.storageOverrideValue?.gb256 ?? ""}
+                            style={{ width: 72, fontSize: "0.82rem", padding: "5px 8px", borderRadius: 6, border: "1px solid #cbd5e1", background: "#fff" }}
+                          />
+                        </label>
+                        <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                          <span style={{ fontSize: "0.68rem", color: "#94a3b8" }}>512 GB</span>
+                          <input
+                            type="number"
+                            name="gb512"
+                            min={0}
+                            placeholder="0"
+                            defaultValue={k.storageOverrideValue?.gb512 ?? ""}
+                            style={{ width: 72, fontSize: "0.82rem", padding: "5px 8px", borderRadius: 6, border: "1px solid #cbd5e1", background: "#fff" }}
+                          />
+                        </label>
+                        <button
+                          type="submit"
+                          style={{
+                            fontSize: "0.78rem",
+                            fontWeight: 600,
+                            padding: "6px 16px",
+                            borderRadius: 6,
+                            border: "1px solid #1e293b",
+                            background: "#1e293b",
+                            color: "#fff",
+                            cursor: "pointer",
+                          }}
+                        >
+                          Save
+                        </button>
+                      </div>
                     </form>
                   )}
                   {k.hubs && k.hubs.length > 0 && (
@@ -1227,6 +1272,12 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             san={san}
             sanKeep={sanKeep}
           />
+        )}
+
+        {showAck && (
+          <section className={styles.card} id="acknowledgements" aria-label="Acknowledgements section">
+            <AckChart by={ackBy} buckets={ackBuckets} href={ackHref} />
+          </section>
         )}
 
         <section className={styles.card} aria-label="Hub hierarchy">

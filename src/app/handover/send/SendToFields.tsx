@@ -61,10 +61,13 @@ export default function SendToFields({
               value={role}
               required
               onChange={(e) => {
-                setRole(e.target.value);
+                const newRole = e.target.value;
+                setRole(newRole);
                 setPerson(""); // a person from the old category must not stay selected
                 setInternalName("");
                 setCity("");
+                // Rig team: default the location to their own hub, but it stays a normal, changeable dropdown.
+                if (newRole === "rig" && rigTeam) setHub(rigTeam.id);
               }}
             >
               <option value="">Select a category</option>
@@ -149,18 +152,10 @@ export default function SendToFields({
           Send to (location)
         </label>
         <div className={styles.control}>
-          {role === "rig" ? (
-            rigTeam ? (
-              <>
-                <input type="hidden" name="hub" value={rigTeam.id} />
-                <strong id="hub">{rigTeam.name}</strong>
-                <p className={styles.hint}>The rig team always works at {rigTeam.name}.</p>
-              </>
-            ) : (
-              <p className={styles.error}>
-                No &quot;Rig team&quot; hub found. Add one in Manage hubs (named &quot;Rig team&quot;) before sending to the rig team.
-              </p>
-            )
+          {role === "rig" && !rigTeam ? (
+            <p className={styles.error}>
+              No &quot;Rig team&quot; hub found. Add one in Manage hubs (named &quot;Rig team&quot;) before sending to the rig team.
+            </p>
           ) : bangalore && (alwaysBangalore || role === "qc" || role === "hardware") ? (
             <>
               <input type="hidden" name="hub" value={bangalore.id} />

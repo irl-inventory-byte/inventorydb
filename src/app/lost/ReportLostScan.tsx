@@ -87,10 +87,39 @@ export default function ReportLostScan({
           name="note"
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder={`Note (required) — why ${label}`}
+          placeholder={`Reason (required) — why ${label}`}
           required
           style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: "0.85rem" }}
         />
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "0.75rem", color: "#64748b", flex: "1 1 140px" }}>
+            Date {label === "lost" ? "lost" : "broken"} (blank = today)
+            <input
+              type="date"
+              name="occurredAt"
+              max={new Date().toISOString().slice(0, 10)}
+              style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: "0.85rem" }}
+            />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "0.75rem", color: "#64748b", flex: "1 1 120px" }}>
+            Amount (₹, optional)
+            <input
+              type="number"
+              name="amount"
+              min={0}
+              placeholder="Item cost"
+              style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: "0.85rem" }}
+            />
+          </label>
+        </div>
+        <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "0.75rem", color: "#64748b" }}>
+          Person who had it (optional — if known)
+          <input
+            name="person"
+            placeholder="Name"
+            style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: "0.85rem" }}
+          />
+        </label>
         <button
           type="submit"
           disabled={ready === 0}
@@ -111,4 +140,4 @@ export default function ReportLostScan({
       </form>
     </details>
   );
-}   
+}
