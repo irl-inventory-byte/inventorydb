@@ -42,8 +42,11 @@ interface FleetCounts {
  * than let a slow or slow-to-authenticate read stall the whole dashboard, this gives it SHEET_TIMEOUT_MS
  * to finish; past that it falls back to null (same as "could not be read") and lets the page render.
  * The read keeps going in the background and fills the cache, so the next load is normally fast again.
+ * (Bumped from 1.5s to 4s — 1.5s was timing out too often and New/Old kept falling back to the text
+ * message instead of showing tiles. Combined with the 15-minute cache, most loads should still hit a
+ * warm cache and render instantly; only a true cache-miss load pays this cost, and it's capped at 4s.)
  */
-const SHEET_TIMEOUT_MS = 1500;
+const SHEET_TIMEOUT_MS = 4000;
 
 async function sheetAges(): Promise<Map<string, string> | null> {
   try {
@@ -331,28 +334,22 @@ export async function SummaryKpis({
       : []),
   ];
 
+  // Broken and Retired's own percentage is of the two combined (how the unusable pile splits between
+  // them), not of the whole fleet — e.g. Broken 89 of 94 unusable = 95%, not 89 of 1,653 total = 5%.
+  const unusableTotal = brokenCount + retiredCount;
+  const unusableShare = (count: number) => (unusableTotal > 0 ? `${Math.round((count / unusableTotal) * 100)}%` : "");
+
   // Order: storage (512/256), colour (Black/Green), age (New/Old) — all from sdDetails — then
-  // Unusable, then Broken, then Retired, then Rigs last.
+  // Broken, then Retired, then Rigs last. (No separate "Unusable" tile — the top note line above
+  // already says "N lost, damaged or retired", and Broken + Retired below add up to that same N.)
   const fleetDetails = [
     ...(fleet.sdCards > 0 ? sdDetails : []),
-    ...(unusable > 0
-      ? [
-          {
-            label: "Unusable",
-            count: unusable,
-            pct: share(unusable),
-            bg: "#fef2f2",
-            border: "#ef4444",
-            text: "#7f1d1d",
-          },
-        ]
-      : []),
     ...(brokenCount > 0
       ? [
           {
             label: "Broken cards",
             count: brokenCount,
-            pct: share(brokenCount),
+            pct: unusableShare(brokenCount),
             bg: "#fee2e2",
             border: "#dc2626",
             text: "#7f1d1d",
@@ -364,7 +361,7 @@ export async function SummaryKpis({
           {
             label: "Retired cards",
             count: retiredCount,
-            pct: share(retiredCount),
+            pct: unusableShare(retiredCount),
             bg: "#f3f4f6",
             border: "#6b7280",
             text: "#1f2937",
@@ -685,4 +682,4 @@ export async function SummaryKpis({
       ))}
     </section>
   );
-}
+}g
