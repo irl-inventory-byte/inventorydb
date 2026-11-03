@@ -73,6 +73,20 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/inv
   ].sort((a, b) => Date.parse(a.when || "0") - Date.parse(b.when || "0"));
   const latestQc = qcChecks.at(-1);
   const attrs = parseAttributes(item.attributes);
+  // History sort order: newest first by default; ?sort=asc switches to oldest first.
+  const sortAsc = one(sp.sort) === "asc";
+  const sortedHistory = sortAsc ? historyRows : [...historyRows].reverse();
+  const sortHref = (asc: boolean) => `?${new URLSearchParams({ ...(asc && { sort: "asc" }) })}`;
+  const sortChip = (on: boolean) => ({
+    padding: "5px 12px",
+    borderRadius: 999,
+    border: "1px solid #cbd5e1",
+    background: on ? "#1e293b" : "#ffffff",
+    color: on ? "#ffffff" : "#334155",
+    textDecoration: "none",
+    fontWeight: on ? 700 : 500,
+    fontSize: "0.82rem",
+  });
 
   return (
     <main className={styles.page}>
@@ -152,7 +166,19 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/inv
         />
       )}
 
-      <h2>History</h2>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+        <h2 style={{ margin: 0 }}>History</h2>
+        {historyRows.length > 1 && (
+          <nav aria-label="Sort history" style={{ display: "flex", gap: 6 }}>
+            <Link href={sortHref(false)} aria-current={!sortAsc ? "true" : undefined} style={sortChip(!sortAsc)}>
+              Newest first
+            </Link>
+            <Link href={sortHref(true)} aria-current={sortAsc ? "true" : undefined} style={sortChip(sortAsc)}>
+              Oldest first
+            </Link>
+          </nav>
+        )}
+      </div>
       {historyRows.length === 0 ? (
         <p className={styles.muted}>No events yet. History starts with the first handover, correction or audit.</p>
       ) : (
@@ -169,7 +195,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/inv
             </tr>
           </thead>
           <tbody>
-            {[...historyRows].reverse().map((r) => (
+            {sortedHistory.map((r) => (
               <tr key={r.key}>
                 <td>{formatIst(r.when)} IST</td>
                 <td>{r.action}</td>
