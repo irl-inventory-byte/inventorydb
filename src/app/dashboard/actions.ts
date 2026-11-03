@@ -48,3 +48,36 @@ export async function setBrokenStorageOverride(formData: FormData) {
   revalidatePath("/dashboard");
   redirect(back);
 }
+
+/**
+ * Admin-set starting count for the Retired tile: a one-time baseline for items retired before this
+ * system tracked them, added on top of the live count of items actually marked retired here — same
+ * idea as the Broken tile's "Starting count" box, just a single number instead of a 256/512 split.
+ * Stored as plain text in the settings tab under key "retired_baseline". Blank clears it.
+ */
+export async function setRetiredBaseline(formData: FormData) {
+  const user = await requireRole("admin");
+
+  const backRaw = String(formData.get("back") ?? "/dashboard");
+  const back = SAFE_BACK.test(backRaw) ? backRaw : "/dashboard";
+
+  const countRaw = String(formData.get("count") ?? "").trim();
+  const store = getStore();
+  const people = await store.list("people");
+  const now = istTimestamp();
+  const by = (user.email ?? "unknown").toLowerCase();
+  const byName = displayName(people, user.personId ?? "") || user.name || user.email || "";
+
+  const value = countRaw === "" ? "" : String(Math.max(0, Number(countRaw) || 0));
+
+  const row = { key: "retired_baseline", value, updated_at: now, updated_by: by, updated_by_name: byName };
+  try {
+    await store.upsert("settings", [row]);
+  } catch {
+    await store.init();
+    await store.upsert("settings", [row]);
+  }
+
+  revalidatePath("/dashboard");
+  redirect(back);
+}

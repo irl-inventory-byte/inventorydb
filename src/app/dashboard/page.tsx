@@ -19,7 +19,7 @@ import { HubOrgChart, countHidden } from "./hub-tree-view";
 import AttentionFilter from "./attentionfilter";
 import { Icon, type IconName } from "./icons";
 import TeamSelect from "./TeamSelect";
-import { setBrokenStorageOverride } from "./actions";
+import { setBrokenStorageOverride, setRetiredBaseline } from "./actions";
 import { SummaryKpis } from "./summary-kpis";
 import { RIG_STATES, RIG_STATE_LABELS, rigState, type RigState } from "@/lib/rig-state";
 import { NO_ACTIVITY_DAYS, RigMetrics } from "./rig-metrics";
@@ -233,6 +233,15 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // same numbers as the Broken tile, instead of silently disagreeing with it.
   const brokenBaselineTotal = (brokenStorageOverride?.gb256 ?? 0) + (brokenStorageOverride?.gb512 ?? 0);
 
+  // Same idea as the Broken tile's baseline, for Retired: a one-time starting count for items
+  // retired before this system tracked them, added on top of the live retired count.
+  let retiredBaseline: number | undefined;
+  {
+    const raw = settings.find((s) => s.key === "retired_baseline")?.value;
+    const parsed = raw ? Number(raw) : undefined;
+    if (parsed !== undefined && Number.isFinite(parsed)) retiredBaseline = parsed;
+  }
+
   // Rig view: unknown rigs (no activity for more than NO_ACTIVITY_DAYS days), city-wise, with their reports.
   // Worked out twice on purpose: the first pass is free and tells us whether any rig is overdue at all, so
   // the reports table is only downloaded when it can change something. The second pass lets an audit report
@@ -314,6 +323,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     defn?: string; // one-line definition shown under the tile (e.g. what "Lost" vs "Broken" means)
     storageOverrideKey?: string; // settings key for an admin-editable manual override of `storage` (see dashboard/actions.ts)
     storageOverrideValue?: { gb256: number; gb512: number }; // current override, if any — prefills the edit form
+    baselineKey?: string; // settings key for a simple one-number starting-count baseline (see setRetiredBaseline)
+    baselineValue?: number; // current baseline, if any — prefills the edit form
     teamSwitch?: boolean; // true: render the Rig team / Productivity team dropdown under this tile
   };
   // City-wise count of items with a status (city of the hub the item is at), biggest first.
@@ -502,6 +513,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // Only switch to the combined baseline+live number once a baseline has actually been set;
   // otherwise behave exactly as before (pure live count).
   const brokenValue = brokenStorageOverride ? brokenCombinedTotal : s.damaged;
+  const retiredValue = retiredBaseline !== undefined ? retiredBaseline + s.retired : s.retired;
 
   // SD CARDS (and the "All" view): unchanged.
   const sdKpis: Kpi[] = [
@@ -547,8 +559,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     },
     {
       label: "Non-usable",
-      value: s.lost + brokenValue + s.retired,
-      hint: share(s.lost + brokenValue + s.retired),
+      value: s.lost + brokenValue + retiredValue,
+      hint: share(s.lost + brokenValue + retiredValue),
       href: inventory({ status: "lost,damaged,retired" }),
       icon: "alert",
       color: "var(--critical)",
@@ -566,25 +578,19 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       defn: "Can't be found — not with any person or hub, and location is unknown.",
     },
     {
-      label: "Broken",
-      value: brokenValue,
-      hint: share(brokenValue),
-      href: "/lost?status=damaged",
+      label: "Broken / Retired",
+      value: brokenValue + retiredValue,
+      hint: share(brokenValue + retiredValue),
+      href: inventory({ status: "damaged,retired" }),
       icon: "alert",
       color: "var(--critical)",
-      cities: citiesFor("damaged"),
+      cities: citiesFor(["damaged", "retired"]),
       storage: brokenStorageOverride ? brokenStorageMerged : brokenReal,
-      defn: "Physically damaged and unusable, but its location is known.",
+      defn: "Broken and retired items combined — not part of the usable fleet.",
       storageOverrideKey: "broken_storage",
       storageOverrideValue: brokenStorageOverride,
-    },
-    {
-      label: "Retired",
-      value: s.retired,
-      hint: share(s.retired),
-      href: "/retired",
-      icon: "archive",
-      color: "var(--text-muted)",
+      baselineKey: "retired_baseline",
+      baselineValue: retiredBaseline,
     },
   ];
 
@@ -838,7 +844,16 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const moveCity = many("mcity");
   const moveRole = many("mrole");
   const moveRange = pickRange(one(sp.mfrom), one(sp.mto), now, 14);
-  const moveEvents = await eventsFor(moveTypes);
+
+  const hourTypes = pickTypes("htype");
+  const hourPerson = many("hperson");
+  const hourCity = many("hcity");
+  const hourRole = many("hrole");
+  const hourRange = pickRange(one(sp.hfrom), one(sp.hto), now, 14);
+
+  // Independent reads, fetched together instead of one after the other.
+  const [moveEvents, hourEvents] = await Promise.all([eventsFor(moveTypes), eventsFor(hourTypes)]);
+
   const movedDays = dailyMoves(moveEvents, hubs, moveRange, { person: movePerson, city: moveCity, role: moveRole }, people);
   const moveOptions = moveFilterOptions(moveEvents, hubs, people, moveRange);
   const moveKeep: Record<string, string> = {};
@@ -855,12 +870,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const usageKeep: Record<string, string> = {};
   for (const k of ["type", "empty", "acity", "arole", ...MOVE_KEYS, ...HOURLY_KEYS]) if (val(k)) usageKeep[k] = val(k);
 
-  const hourTypes = pickTypes("htype");
-  const hourPerson = many("hperson");
-  const hourCity = many("hcity");
-  const hourRole = many("hrole");
-  const hourRange = pickRange(one(sp.hfrom), one(sp.hto), now, 14);
-  const hourEvents = await eventsFor(hourTypes);
   const movedHours = hourlyMoves(hourEvents, hubs, hourRange, { person: hourPerson, city: hourCity, role: hourRole }, people);
   const hourOptions = moveFilterOptions(hourEvents, hubs, people, hourRange);
   const hourKeep: Record<string, string> = {};
@@ -878,8 +887,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const qcKeep: Record<string, string> = { ...keepParams };
 
   // Sanitization table filter (Rig dashboard): "" = all, "yes" or "no" narrows the table to that result.
-  const sanValue = one(sp.san);
-  const san: "" | "yes" | "no" = sanValue === "yes" || sanValue === "no" ? sanValue : "";
+  const san = one(sp.san) === "yes" || one(sp.san) === "no" ? one(sp.san) : "";
   const sanKeep: Record<string, string> = { ...keepParams };
 
   // Acknowledgements chart: grouped by city (default) or by FO/IFO role.
@@ -985,7 +993,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             items={items}
             rigView={rigView}
             attentionHref={`/dashboard${rigView ? "?type=rig" : ""}#attention`}
-            baselineTotal={rigView ? undefined : brokenBaselineTotal}
+            baselineTotal={rigView ? undefined : brokenBaselineTotal + (retiredBaseline ?? 0)}
             baselineStorage={rigView ? undefined : brokenStorageOverride}
           />
         )}
@@ -1023,7 +1031,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 .kpi-tile > a{flex:1;min-width:0}
 `}</style>
           {kpis.map((k) =>
-            k.cities || k.storage || k.hubs || k.teamSwitch ? (
+            k.cities || k.storage || k.hubs || k.teamSwitch || k.baselineKey ? (
               <div key={k.label} className={styles.kpi} style={{ "--kpi": k.color, overflow: "visible" } as CSSProperties}>
                 <span className={styles.kpiIcon}>
                   <Icon name={k.icon} size={22} />
@@ -1119,7 +1127,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                             flexShrink: 0,
                           }}
                         />
-                        Starting count{k.storageOverrideValue ? " · active" : ""}
+                        Broken starting count{k.storageOverrideValue ? " · active" : ""}
                       </span>
                       <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
                         <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
@@ -1141,6 +1149,74 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                             min={0}
                             placeholder="0"
                             defaultValue={k.storageOverrideValue?.gb512 ?? ""}
+                            style={{ width: 72, fontSize: "0.82rem", padding: "5px 8px", borderRadius: 6, border: "1px solid #cbd5e1", background: "#fff" }}
+                          />
+                        </label>
+                        <button
+                          type="submit"
+                          style={{
+                            fontSize: "0.78rem",
+                            fontWeight: 600,
+                            padding: "6px 16px",
+                            borderRadius: 6,
+                            border: "1px solid #1e293b",
+                            background: "#1e293b",
+                            color: "#fff",
+                            cursor: "pointer",
+                          }}
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                  {k.baselineKey && user.role === "admin" && (
+                    <form
+                      action={setRetiredBaseline}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 6,
+                        marginTop: 10,
+                        padding: "8px 10px",
+                        maxWidth: 220,
+                        border: "1px solid #dbe2ea",
+                        borderRadius: 10,
+                        background: "linear-gradient(180deg,#f8fafc,#f1f5f9)",
+                      }}
+                    >
+                      <input type="hidden" name="back" value={`/dashboard?${new URLSearchParams(keepParams)}`} />
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          fontSize: "0.68rem",
+                          fontWeight: 700,
+                          color: "#64748b",
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: "50%",
+                            background: k.baselineValue !== undefined ? "#1d4ed8" : "#cbd5e1",
+                            display: "inline-block",
+                            flexShrink: 0,
+                          }}
+                        />
+                        Retired starting count{k.baselineValue !== undefined ? " · active" : ""}
+                      </span>
+                      <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+                        <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                          <span style={{ fontSize: "0.68rem", color: "#94a3b8" }}>Already retired</span>
+                          <input
+                            type="number"
+                            name="count"
+                            min={0}
+                            placeholder="0"
+                            defaultValue={k.baselineValue ?? ""}
                             style={{ width: 72, fontSize: "0.82rem", padding: "5px 8px", borderRadius: 6, border: "1px solid #cbd5e1", background: "#fff" }}
                           />
                         </label>
@@ -1316,7 +1392,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             qcFrom={qcFrom}
             qcTo={qcTo}
             qcKeep={qcKeep}
-            san={san}
             sanKeep={sanKeep}
           />
         )}

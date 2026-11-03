@@ -16,9 +16,7 @@ const TEAM_NAME: Record<string, string> = { im: "IM", rig: "Rig team" };
 export default async function SdDetailsPage({
   searchParams,
 }: {
-  searchParams:
-    | Record<string, string | string[] | undefined>
-    | Promise<Record<string, string | string[] | undefined>>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   await requireRole("admin", "im", "rig");
   const sp = await searchParams;
@@ -36,6 +34,19 @@ export default async function SdDetailsPage({
   }));
 
   const cities = [...new Set(all.map((r) => r.city).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
+  // City-wise matrix: total / IM / Rig counts per city, always over the full set (not the active filters).
+  const cityMatrix = cities
+    .map((city) => {
+      const cityRows = all.filter((r) => r.city === city);
+      return {
+        city,
+        total: cityRows.length,
+        im: cityRows.filter((r) => r.team === "im").length,
+        rig: cityRows.filter((r) => r.team === "rig").length,
+      };
+    })
+    .sort((a, b) => b.total - a.total);
 
   let rows = all;
   if (teamFilter) rows = rows.filter((r) => r.team === teamFilter);
@@ -104,6 +115,36 @@ export default async function SdDetailsPage({
           <div style={cardLabel}>Not sent to Google Sheet</div>
         </div>
       </div>
+
+      {cityMatrix.length > 0 && (
+        <div style={{ margin: "0 0 18px" }}>
+          <h2 style={{ fontSize: "1rem", margin: "0 0 8px" }}>By city</h2>
+          <div role="region" aria-label="By city" tabIndex={0} style={{ overflowX: "auto" }}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>City</th>
+                  <th>Total</th>
+                  <th>IM</th>
+                  <th>Rig team</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cityMatrix.map((c) => (
+                  <tr key={c.city}>
+                    <td>
+                      <Link href={keep({ city: c.city })}>{c.city}</Link>
+                    </td>
+                    <td>{c.total}</td>
+                    <td>{c.im}</td>
+                    <td>{c.rig}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <nav aria-label="Filter by team" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "4px 0 10px" }}>
         <Link href={keep({ team: "" })} aria-current={!teamFilter ? "true" : undefined} style={chip(!teamFilter)}>
