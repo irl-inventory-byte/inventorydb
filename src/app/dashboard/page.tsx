@@ -18,7 +18,7 @@ import styles from "./dashboard.module.css";
 import { HubOrgChart, countHidden } from "./hub-tree-view";
 import AttentionFilter from "./attentionfilter";
 import { Icon, type IconName } from "./icons";
-import TeamSelect from "./Teamselect";
+import TeamSelect from "./TeamSelect";
 import { setBrokenStorageOverride } from "./actions";
 import { SummaryKpis } from "./summary-kpis";
 import { RIG_STATES, RIG_STATE_LABELS, rigState, type RigState } from "@/lib/rig-state";
@@ -1021,7 +1021,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                           }}
                         >
                           <span>Total</span>
-                          <b>{n(k.storage.reduce((t, st) => t + st.count, 0))}</b>
+                          <b>{n(k.value)}</b>
                         </span>
                       </div>
                     </details>
@@ -1221,6 +1221,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             qcFrom={qcFrom}
             qcTo={qcTo}
             qcKeep={qcKeep}
+            san={san}
             sanKeep={sanKeep}
           />
         )}
