@@ -73,9 +73,11 @@ export async function reportLostScan(formData: FormData) {
   const amountRaw = String(formData.get("amount") ?? "").trim();
   const amount = amountRaw === "" ? undefined : String(Math.max(0, Number(amountRaw) || 0));
 
-  // Person: free-text name of who had the item, for when the system has no holder on record
-  // (the common case — most lost/broken items show as "In stock" with nobody checked out).
-  const personName = String(formData.get("person") ?? "").trim().slice(0, 200);
+  // Person(s): one or more people (picked from the People list, optionally narrowed by role in the
+  // UI) who had the item, for when the system has no holder on record (the common case — most
+  // lost/broken items show as "In stock" with nobody checked out). Resolved to display names below,
+  // once the people list is fetched.
+  const personIds = formData.getAll("personIds").map((v) => String(v).trim()).filter(Boolean);
 
   // City/hub: where it actually happened, if different from the item's current hub. A hub_id
   // chosen from the dropdown (grouped by city); blank keeps each item's current hub.
@@ -114,6 +116,11 @@ export async function reportLostScan(formData: FormData) {
   );
 
   if (plan.errors.length) back({ error: `${plan.errors.join(" ")} Nothing was saved.` });
+
+  // Resolve the chosen person_id(s) to display names, then join multiple names into one string.
+  const nameOf = new Map(people.map((p) => [p.person_id, p.name]));
+  const personNames = personIds.map((id) => nameOf.get(id)).filter((n): n is string => Boolean(n));
+  const personName = personNames.join(", ");
 
   // Apply the date / amount / person fields, which planCorrection doesn't know about.
   for (const e of plan.events) {

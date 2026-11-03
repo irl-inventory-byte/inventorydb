@@ -30,11 +30,12 @@ export default async function LostItemsPage({ searchParams }: PageProps<"/lost">
   const reported = Number(one(sp.reported) || "0");
 
   const store = storeForAll(user.role);
-  const [items, events, hubs, notes] = await Promise.all([
+  const [items, events, hubs, notes, people] = await Promise.all([
     store.list("items"),
     store.list("events"),
     store.list("hubs"),
     store.list("lost_notes"),
+    store.list("people"),
   ]);
 
   const all = lostList(items, events, hubs, status);
@@ -98,6 +99,10 @@ export default async function LostItemsPage({ searchParams }: PageProps<"/lost">
             .filter((h) => h.active !== "false")
             .map((h) => ({ id: h.hub_id, name: h.name, city: (h.city || h.name || h.hub_id).trim() }))
             .sort((a, b) => a.city.localeCompare(b.city) || a.name.localeCompare(b.name))}
+          people={people
+            .filter((p) => p.active !== "false")
+            .map((p) => ({ id: p.person_id, name: p.name, role: p.role }))
+            .sort((a, b) => a.name.localeCompare(b.name))}
         />
       )}
 

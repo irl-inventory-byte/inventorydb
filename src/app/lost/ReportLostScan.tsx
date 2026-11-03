@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ITEM_TYPE_LABELS, STATUS_LABELS } from "@/lib/labels";
+import { ITEM_TYPE_LABELS, ROLE_LABELS, STATUS_LABELS } from "@/lib/labels";
 import { classifyScans } from "@/lib/scan";
-import { STATUSES, type Status } from "@/lib/schema";
+import { ROLES, STATUSES, type Status } from "@/lib/schema";
 import CameraScanButton, { appendLine, type ScanOutcome } from "../CameraScanButton";
+import MultiSelect from "../inventory/MultiSelect";
 import { reportLostScan } from "./actions";
 
 /**
@@ -16,11 +17,21 @@ export default function ReportLostScan({
   status,
   items,
   hubs,
+  people,
 }: {
   status: Status;
   items: { id: string; status: Status; type?: string }[];
   hubs: { id: string; name: string; city: string }[];
+  people: { id: string; name: string; role: string }[];
 }) {
+  const [personRole, setPersonRole] = useState("");
+  const peopleOptions = useMemo(
+    () =>
+      people
+        .filter((p) => !personRole || p.role === personRole)
+        .map((p) => ({ value: p.id, label: p.name })),
+    [people, personRole],
+  );
   // Cities in display order, each with its hubs (a city may have more than one hub).
   const cities = useMemo(() => {
     const byCity = new Map<string, { id: string; name: string }[]>();
@@ -137,13 +148,26 @@ export default function ReportLostScan({
               style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: "0.85rem", background: "#fff" }}
             />
           </label>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: "0.72rem", color: "#64748b" }}>
-            Person who had it
-            <input
-              name="person"
-              placeholder="Name (if known)"
+            Role (who had it)
+            <select
+              value={personRole}
+              onChange={(e) => setPersonRole(e.target.value)}
               style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: "0.85rem", background: "#fff" }}
-            />
+            >
+              <option value="">Any role</option>
+              {ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_LABELS[r]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: "0.72rem", color: "#64748b" }}>
+            Person(s) who had it
+            <MultiSelect name="personIds" label="Person" allLabel="None chosen" options={peopleOptions} selected={[]} searchable />
           </label>
         </div>
         <button
