@@ -11,18 +11,18 @@ const TEAM_NAME: Record<string, string> = { im: "IM", rig: "Rig team" };
  * SD CARD DETAILS: combined report of every "SD Card Duration Hour" entry saved by the IM and Rig
  * team forms (see sd-details/im, sd-details/rig, actions.ts). Admin, IM and the rig role (which
  * covers both the Rig team and the Productivity team) can all see everything here — unlike the two
- * entry forms, which only show each team their own recent entries.
+ * entry forms, which only show each team their own recent entries. Also reachable from the Dashboard
+ * (see dashboard/page.tsx), not just the home page.
  */
-export default async function SdDetailsPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+export default async function SdDetailsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   await requireRole("admin", "im", "rig");
   const sp = await searchParams;
 
   const teamFilter = one(sp.team); // "" (all), "im" or "rig"
   const cityFilter = one(sp.city);
+  const memberFilter = one(sp.member); // team member name
+  const dateFrom = one(sp.from); // "YYYY-MM-DD", filters by card_date
+  const dateTo = one(sp.to); // "YYYY-MM-DD", filters by card_date
   const q = one(sp.q).trim().toLowerCase();
 
   const all = await getStore().list("sd_card_durations");
@@ -34,6 +34,7 @@ export default async function SdDetailsPage({
   }));
 
   const cities = [...new Set(all.map((r) => r.city).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const members = [...new Set(all.map((r) => r.team_member).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
   // City-wise matrix: total / IM / Rig counts per city, always over the full set (not the active filters).
   const cityMatrix = cities
@@ -51,6 +52,9 @@ export default async function SdDetailsPage({
   let rows = all;
   if (teamFilter) rows = rows.filter((r) => r.team === teamFilter);
   if (cityFilter) rows = rows.filter((r) => r.city === cityFilter);
+  if (memberFilter) rows = rows.filter((r) => r.team_member === memberFilter);
+  if (dateFrom) rows = rows.filter((r) => r.card_date >= dateFrom);
+  if (dateTo) rows = rows.filter((r) => r.card_date <= dateTo);
   if (q) {
     rows = rows.filter((r) =>
       [r.ic_name, r.ic_number, r.serial, r.team_member, r.fo_ifo, r.city]
@@ -59,15 +63,17 @@ export default async function SdDetailsPage({
   }
   rows = rows.slice().sort((a, b) => Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0"));
 
-  // Matrix: total, this week, not-forwarded (flags a row whose copy to the Google Sheet failed).
+  // Matrix: total and this week, over the full set.
   const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const thisWeek = all.filter((r) => Date.parse(r.recorded_at || "0") >= weekAgo).length;
-  const notForwarded = all.filter((r) => r.forwarded && r.forwarded !== "yes").length;
 
   const keep = (extra: Record<string, string>) =>
     `/sd-details?${new URLSearchParams({
       ...(teamFilter && { team: teamFilter }),
       ...(cityFilter && { city: cityFilter }),
+      ...(memberFilter && { member: memberFilter }),
+      ...(dateFrom && { from: dateFrom }),
+      ...(dateTo && { to: dateTo }),
       ...(q && { q }),
       ...extra,
     })}`;
@@ -87,10 +93,12 @@ export default async function SdDetailsPage({
   const cardValue = { fontSize: "1.6rem", fontWeight: 700, color: "#1e293b", lineHeight: 1.1 };
   const cardLabel = { fontSize: "0.8rem", color: "#64748b", marginTop: 2 };
 
+  const hasFilters = teamFilter || cityFilter || memberFilter || dateFrom || dateTo || q;
+
   return (
     <main className={styles.pageWide}>
       <p className={styles.back}>
-        <Link href="/">← Home</Link>
+        <Link href="/">← Home</Link> · <Link href="/dashboard">Dashboard</Link>
       </p>
       <h1>SD card details ({all.length})</h1>
       <p className={styles.muted}>Every SD Card Duration Hour entry — saved here and also sent to the Google Sheet.</p>
@@ -110,10 +118,6 @@ export default async function SdDetailsPage({
             <div style={cardLabel}>{t.label}</div>
           </div>
         ))}
-        <div style={card}>
-          <div style={{ ...cardValue, color: notForwarded > 0 ? "#b91c1c" : cardValue.color }}>{notForwarded}</div>
-          <div style={cardLabel}>Not sent to Google Sheet</div>
-        </div>
       </div>
 
       {cityMatrix.length > 0 && (
@@ -158,7 +162,7 @@ export default async function SdDetailsPage({
       </nav>
 
       {cities.length > 0 && (
-        <nav aria-label="Filter by city" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "0 0 14px" }}>
+        <nav aria-label="Filter by city" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "0 0 10px" }}>
           <Link href={keep({ city: "" })} aria-current={!cityFilter ? "true" : undefined} style={chip(!cityFilter)}>
             All cities
           </Link>
@@ -170,12 +174,46 @@ export default async function SdDetailsPage({
         </nav>
       )}
 
+      <form className={styles.row} method="get" style={{ margin: "0 0 10px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        {teamFilter && <input type="hidden" name="team" value={teamFilter} />}
+        {cityFilter && <input type="hidden" name="city" value={cityFilter} />}
+        {q && <input type="hidden" name="q" value={one(sp.q)} />}
+        <label style={{ fontSize: "0.85rem", color: "#334155" }}>
+          Team member{" "}
+          <select name="member" defaultValue={memberFilter}>
+            <option value="">All</option>
+            {members.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="submit">Filter</button>
+      </form>
+
+      <form className={styles.row} method="get" style={{ margin: "0 0 16px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        {teamFilter && <input type="hidden" name="team" value={teamFilter} />}
+        {cityFilter && <input type="hidden" name="city" value={cityFilter} />}
+        {memberFilter && <input type="hidden" name="member" value={memberFilter} />}
+        <label style={{ fontSize: "0.85rem", color: "#334155" }}>
+          Date from <input type="date" name="from" defaultValue={dateFrom} aria-label="Date from" />
+        </label>
+        <label style={{ fontSize: "0.85rem", color: "#334155" }}>
+          to <input type="date" name="to" defaultValue={dateTo} aria-label="Date to" />
+        </label>
+        <button type="submit">Filter by date</button>
+      </form>
+
       <form className={styles.row} method="get" style={{ margin: "0 0 16px" }}>
         {teamFilter && <input type="hidden" name="team" value={teamFilter} />}
         {cityFilter && <input type="hidden" name="city" value={cityFilter} />}
+        {memberFilter && <input type="hidden" name="member" value={memberFilter} />}
+        {dateFrom && <input type="hidden" name="from" value={dateFrom} />}
+        {dateTo && <input type="hidden" name="to" value={dateTo} />}
         <input name="q" defaultValue={one(sp.q)} placeholder="Search IC name, IC number, serial, team member or FO/IFO" aria-label="Search entries" />
         <button type="submit">Search</button>
-        {(teamFilter || cityFilter || q) && <Link href="/sd-details">Clear all</Link>}
+        {hasFilters && <Link href="/sd-details">Clear all</Link>}
       </form>
 
       {rows.length === 0 ? (
@@ -196,7 +234,6 @@ export default async function SdDetailsPage({
                 <th>Clips</th>
                 <th>Recorded by</th>
                 <th>Submitted</th>
-                <th>Sent to sheet</th>
               </tr>
             </thead>
             <tbody>
@@ -215,9 +252,6 @@ export default async function SdDetailsPage({
                   <td>{r.raw_clips}</td>
                   <td>{r.recorded_by_name || r.recorded_by || "—"}</td>
                   <td>{r.recorded_at ? formatIst(r.recorded_at) : "—"}</td>
-                  <td style={{ color: r.forwarded === "yes" ? "#166534" : r.forwarded ? "#b91c1c" : "#64748b" }}>
-                    {r.forwarded === "yes" ? "Yes" : r.forwarded ? "No" : "—"}
-                  </td>
                 </tr>
               ))}
             </tbody>

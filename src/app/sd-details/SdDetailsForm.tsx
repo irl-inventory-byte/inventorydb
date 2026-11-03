@@ -1,267 +1,199 @@
-import Link from "next/link";
-import { requireRole } from "@/lib/authz";
-import { one } from "@/lib/labels";
-import { getStore } from "@/lib/store";
+import type { CSSProperties } from "react";
+import type { SdCardDuration } from "@/lib/schema";
 import { formatIst } from "@/lib/time";
-import styles from "../admin/admin.module.css";
 
-const TEAM_NAME: Record<string, string> = { im: "IM", rig: "Rig team" };
+// Hard-coded IC name list (given by the user directly — no admin page to manage this yet).
+const IC_NAMES = [
+  "Aditya", "Anshitha", "Bhavana", "Hari Prasad M S", "Hemanth", "Kavya", "Kusuma H",
+  "MALIAKA", "Mohit", "NAVEEN", "Niharika", "Prajakta", "Priyanshu", "Sohan", "Spoorthi",
+  "Sumit", "Tejash", "Yashaswini", "Ritika", "Sujay", "Arush", "Nishanth", "Devesh",
+  "Krishen", "Abhijnan", "Kshithi", "Shashwath", "Suhaib", "Kavin", "Smita", "Brunda",
+  "vinay", "Nandadeep", "Nikshitha", "Nancy", "Franklin", "Akshay", "Guru",
+];
 
 /**
- * SD CARD DETAILS: combined report of every "SD Card Duration Hour" entry saved by the IM and Rig
- * team forms (see sd-details/im, sd-details/rig, actions.ts). Admin, IM and the rig role (which
- * covers both the Rig team and the Productivity team) can all see everything here — unlike the two
- * entry forms, which only show each team their own recent entries. Also reachable from the Dashboard
- * (see dashboard/page.tsx), not just the home page.
+ * Shared form for "SD Card Duration Hour" details — the same fields as the IM and Rig team Google
+ * Forms, now saved to our own database (sd_card_durations tab) and also forwarded to that Google
+ * Script form as a best-effort copy (see actions.ts). `memberLabel`/`memberOptions` is the one field
+ * that differs between the two forms: "IM" (a list of IMs) on the IM page, "Rig Team Name" (a list of
+ * rig/productivity team members) on the Rig page.
  */
-export default async function SdDetailsPage({
-  searchParams,
+export default function SdDetailsForm({
+  team,
+  action,
+  memberLabel,
+  memberOptions,
+  foIfoOptions,
+  cities,
+  saved,
+  error,
+  recent,
 }: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
+  team: "im" | "rig";
+  action: (formData: FormData) => void;
+  memberLabel: string;
+  memberOptions: { id: string; name: string }[];
+  foIfoOptions: { id: string; name: string }[];
+  cities: [string, { id: string; name: string }[]][];
+  saved: boolean;
+  error: string;
+  recent: SdCardDuration[];
 }) {
-  await requireRole("admin", "im", "rig");
-  const sp = await searchParams;
-
-  const teamFilter = one(sp.team); // "" (all), "im" or "rig"
-  const cityFilter = one(sp.city);
-  const memberFilter = one(sp.member); // team member name
-  const dateFrom = one(sp.from); // "YYYY-MM-DD", filters by card_date
-  const dateTo = one(sp.to); // "YYYY-MM-DD", filters by card_date
-  const q = one(sp.q).trim().toLowerCase();
-
-  const all = await getStore().list("sd_card_durations");
-
-  const byTeam = (["im", "rig"] as const).map((team) => ({
-    team,
-    label: TEAM_NAME[team],
-    count: all.filter((r) => r.team === team).length,
-  }));
-
-  const cities = [...new Set(all.map((r) => r.city).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-  const members = [...new Set(all.map((r) => r.team_member).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-
-  // City-wise matrix: total / IM / Rig counts per city, always over the full set (not the active filters).
-  const cityMatrix = cities
-    .map((city) => {
-      const cityRows = all.filter((r) => r.city === city);
-      return {
-        city,
-        total: cityRows.length,
-        im: cityRows.filter((r) => r.team === "im").length,
-        rig: cityRows.filter((r) => r.team === "rig").length,
-      };
-    })
-    .sort((a, b) => b.total - a.total);
-
-  let rows = all;
-  if (teamFilter) rows = rows.filter((r) => r.team === teamFilter);
-  if (cityFilter) rows = rows.filter((r) => r.city === cityFilter);
-  if (memberFilter) rows = rows.filter((r) => r.team_member === memberFilter);
-  if (dateFrom) rows = rows.filter((r) => r.card_date >= dateFrom);
-  if (dateTo) rows = rows.filter((r) => r.card_date <= dateTo);
-  if (q) {
-    rows = rows.filter((r) =>
-      [r.ic_name, r.ic_number, r.serial, r.team_member, r.fo_ifo, r.city]
-        .some((v) => (v || "").toLowerCase().includes(q))
-    );
-  }
-  rows = rows.slice().sort((a, b) => Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0"));
-
-  // Matrix: total and this week, over the full set.
-  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  const thisWeek = all.filter((r) => Date.parse(r.recorded_at || "0") >= weekAgo).length;
-
-  const keep = (extra: Record<string, string>) =>
-    `/sd-details?${new URLSearchParams({
-      ...(teamFilter && { team: teamFilter }),
-      ...(cityFilter && { city: cityFilter }),
-      ...(memberFilter && { member: memberFilter }),
-      ...(dateFrom && { from: dateFrom }),
-      ...(dateTo && { to: dateTo }),
-      ...(q && { q }),
-      ...extra,
-    })}`;
-
-  const chip = (on: boolean) => ({
-    padding: "6px 14px",
-    borderRadius: 999,
-    border: "1px solid #cbd5e1",
-    background: on ? "#1e293b" : "#ffffff",
-    color: on ? "#ffffff" : "#334155",
-    textDecoration: "none",
-    fontWeight: on ? 700 : 500,
-    fontSize: "0.9rem",
-  });
-
-  const card = { flex: "1 1 160px", padding: "12px 16px", borderRadius: 10, border: "1px solid #cbd5e1", background: "#f8fafc" };
-  const cardValue = { fontSize: "1.6rem", fontWeight: 700, color: "#1e293b", lineHeight: 1.1 };
-  const cardLabel = { fontSize: "0.8rem", color: "#64748b", marginTop: 2 };
-
-  const hasFilters = teamFilter || cityFilter || memberFilter || dateFrom || dateTo || q;
+  const field: CSSProperties = { display: "flex", flexDirection: "column", gap: 3, fontSize: "0.78rem", color: "#334155" };
+  const input: CSSProperties = { padding: "7px 9px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: "0.88rem", background: "#fff" };
 
   return (
-    <main className={styles.pageWide}>
-      <p className={styles.back}>
-        <Link href="/">← Home</Link> · <Link href="/dashboard">Dashboard</Link>
-      </p>
-      <h1>SD card details ({all.length})</h1>
-      <p className={styles.muted}>Every SD Card Duration Hour entry — saved here and also sent to the Google Sheet.</p>
-
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", margin: "12px 0 18px" }}>
-        <div style={card}>
-          <div style={cardValue}>{all.length}</div>
-          <div style={cardLabel}>Total entries</div>
-        </div>
-        <div style={card}>
-          <div style={cardValue}>{thisWeek}</div>
-          <div style={cardLabel}>This week</div>
-        </div>
-        {byTeam.map((t) => (
-          <div key={t.team} style={card}>
-            <div style={cardValue}>{t.count}</div>
-            <div style={cardLabel}>{t.label}</div>
-          </div>
-        ))}
-      </div>
-
-      {cityMatrix.length > 0 && (
-        <div style={{ margin: "0 0 18px" }}>
-          <h2 style={{ fontSize: "1rem", margin: "0 0 8px" }}>By city</h2>
-          <div role="region" aria-label="By city" tabIndex={0} style={{ overflowX: "auto" }}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>City</th>
-                  <th>Total</th>
-                  <th>IM</th>
-                  <th>Rig team</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cityMatrix.map((c) => (
-                  <tr key={c.city}>
-                    <td>
-                      <Link href={keep({ city: c.city })}>{c.city}</Link>
-                    </td>
-                    <td>{c.total}</td>
-                    <td>{c.im}</td>
-                    <td>{c.rig}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+    <>
+      {error && (
+        <p style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", borderRadius: 8, padding: "8px 12px" }}>{error}</p>
+      )}
+      {saved && (
+        <p style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534", borderRadius: 8, padding: "8px 12px" }}>Saved.</p>
       )}
 
-      <nav aria-label="Filter by team" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "4px 0 10px" }}>
-        <Link href={keep({ team: "" })} aria-current={!teamFilter ? "true" : undefined} style={chip(!teamFilter)}>
-          All · {all.length}
-        </Link>
-        {byTeam.map((t) => (
-          <Link key={t.team} href={keep({ team: t.team })} aria-current={t.team === teamFilter ? "true" : undefined} style={chip(t.team === teamFilter)}>
-            {t.label} · {t.count}
-          </Link>
-        ))}
-      </nav>
+      <form
+        action={action}
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: 10,
+          padding: 14,
+          border: "1px solid #cbd5e1",
+          borderRadius: 10,
+          background: "#f8fafc",
+          maxWidth: 760,
+        }}
+      >
+        <input type="hidden" name="team" value={team} />
 
-      {cities.length > 0 && (
-        <nav aria-label="Filter by city" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "0 0 10px" }}>
-          <Link href={keep({ city: "" })} aria-current={!cityFilter ? "true" : undefined} style={chip(!cityFilter)}>
-            All cities
-          </Link>
-          {cities.map((c) => (
-            <Link key={c} href={keep({ city: c })} aria-current={c === cityFilter ? "true" : undefined} style={chip(c === cityFilter)}>
-              {c}
-            </Link>
-          ))}
-        </nav>
-      )}
+        <label style={field}>
+          SD card date *
+          <input type="date" name="card_date" required max={new Date().toISOString().slice(0, 10)} style={input} />
+        </label>
 
-      <form className={styles.row} method="get" style={{ margin: "0 0 10px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        {teamFilter && <input type="hidden" name="team" value={teamFilter} />}
-        {cityFilter && <input type="hidden" name="city" value={cityFilter} />}
-        {q && <input type="hidden" name="q" value={one(sp.q)} />}
-        <label style={{ fontSize: "0.85rem", color: "#334155" }}>
-          Team member{" "}
-          <select name="member" defaultValue={memberFilter}>
-            <option value="">All</option>
-            {members.map((m) => (
-              <option key={m} value={m}>
-                {m}
+        <label style={field}>
+          {memberLabel} *
+          <select name="team_member" required defaultValue="" style={input}>
+            <option value="" disabled>
+              Select {memberLabel}
+            </option>
+            {memberOptions.map((m) => (
+              <option key={m.id} value={m.name}>
+                {m.name}
               </option>
             ))}
           </select>
         </label>
-        <button type="submit">Filter</button>
-      </form>
 
-      <form className={styles.row} method="get" style={{ margin: "0 0 16px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        {teamFilter && <input type="hidden" name="team" value={teamFilter} />}
-        {cityFilter && <input type="hidden" name="city" value={cityFilter} />}
-        {memberFilter && <input type="hidden" name="member" value={memberFilter} />}
-        <label style={{ fontSize: "0.85rem", color: "#334155" }}>
-          Date from <input type="date" name="from" defaultValue={dateFrom} aria-label="Date from" />
+        <label style={field}>
+          FO / IFO
+          <select name="fo_ifo" defaultValue="" style={input}>
+            <option value="">Select FO / IFO</option>
+            {foIfoOptions.map((p) => (
+              <option key={p.id} value={p.name}>
+                {p.name}
+              </option>
+            ))}
+          </select>
         </label>
-        <label style={{ fontSize: "0.85rem", color: "#334155" }}>
-          to <input type="date" name="to" defaultValue={dateTo} aria-label="Date to" />
+
+        <label style={field}>
+          IC name *
+          <select name="ic_name" required defaultValue="" style={input}>
+            <option value="" disabled>Select IC name</option>
+            {IC_NAMES.map((name) => (<option key={name} value={name}>{name}</option>))}
+          </select>
         </label>
-        <button type="submit">Filter by date</button>
+
+        <label style={field}>
+          City *
+          <select name="city" required defaultValue="" style={input}>
+            <option value="" disabled>
+              Select city
+            </option>
+            {cities.map(([city]) => (
+              <option key={city} value={city}>
+                {city}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label style={field}>
+          IC-Number (must start with IC-) *
+          <input type="text" name="ic_number" required pattern="IC-.*" title="Must start with IC-" placeholder="IC-123" style={input} />
+        </label>
+
+        <label style={field}>
+          SD card serial number / asset tag *
+          <input type="text" name="serial" required placeholder="Serial or asset tag" style={input} />
+        </label>
+
+        <label style={field}>
+          Duration (HH:MM:SS) *
+          <input type="text" name="duration" required pattern="\d{1,2}:\d{2}:\d{2}" placeholder="HH:MM:SS (e.g. 01:30:45)" style={input} />
+        </label>
+
+        <label style={field}>
+          No. of raw clips *
+          <input type="number" name="raw_clips" required min={0} placeholder="e.g. 25" style={input} />
+        </label>
+
+        <div style={{ display: "flex", alignItems: "flex-end" }}>
+          <button
+            type="submit"
+            style={{
+              fontSize: "0.88rem",
+              fontWeight: 600,
+              padding: "8px 18px",
+              borderRadius: 6,
+              border: "1px solid #1e293b",
+              background: "#1e293b",
+              color: "#fff",
+              cursor: "pointer",
+            }}
+          >
+            Submit
+          </button>
+        </div>
       </form>
 
-      <form className={styles.row} method="get" style={{ margin: "0 0 16px" }}>
-        {teamFilter && <input type="hidden" name="team" value={teamFilter} />}
-        {cityFilter && <input type="hidden" name="city" value={cityFilter} />}
-        {memberFilter && <input type="hidden" name="member" value={memberFilter} />}
-        {dateFrom && <input type="hidden" name="from" value={dateFrom} />}
-        {dateTo && <input type="hidden" name="to" value={dateTo} />}
-        <input name="q" defaultValue={one(sp.q)} placeholder="Search IC name, IC number, serial, team member or FO/IFO" aria-label="Search entries" />
-        <button type="submit">Search</button>
-        {hasFilters && <Link href="/sd-details">Clear all</Link>}
-      </form>
-
-      {rows.length === 0 ? (
-        <p className={styles.muted}>No entries match.</p>
-      ) : (
-        <div role="region" aria-label="SD card details" tabIndex={0} style={{ overflowX: "auto" }}>
-          <table className={styles.table}>
+      {recent.length > 0 && (
+        <div role="region" aria-label="Recent entries" tabIndex={0} style={{ overflowX: "auto", marginTop: 20 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
             <thead>
-              <tr>
-                <th>Date</th>
-                <th>Team</th>
-                <th>Team member</th>
-                <th>FO / IFO</th>
-                <th>IC</th>
-                <th>City</th>
-                <th>Serial</th>
-                <th>Duration</th>
-                <th>Clips</th>
-                <th>Recorded by</th>
-                <th>Submitted</th>
+              <tr style={{ textAlign: "left", borderBottom: "2px solid #cbd5e1" }}>
+                <th style={{ padding: "6px 8px" }}>Date</th>
+                <th style={{ padding: "6px 8px" }}>{memberLabel}</th>
+                <th style={{ padding: "6px 8px" }}>FO / IFO</th>
+                <th style={{ padding: "6px 8px" }}>IC</th>
+                <th style={{ padding: "6px 8px" }}>City</th>
+                <th style={{ padding: "6px 8px" }}>Serial</th>
+                <th style={{ padding: "6px 8px" }}>Duration</th>
+                <th style={{ padding: "6px 8px" }}>Clips</th>
+                <th style={{ padding: "6px 8px" }}>Submitted</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr key={r.record_id}>
-                  <td>{r.card_date}</td>
-                  <td>{TEAM_NAME[r.team] ?? r.team}</td>
-                  <td>{r.team_member}</td>
-                  <td>{r.fo_ifo || "—"}</td>
-                  <td>
+              {recent.map((r) => (
+                <tr key={r.record_id} style={{ borderBottom: "1px solid #e2e8f0" }}>
+                  <td style={{ padding: "6px 8px" }}>{r.card_date}</td>
+                  <td style={{ padding: "6px 8px" }}>{r.team_member}</td>
+                  <td style={{ padding: "6px 8px" }}>{r.fo_ifo || "—"}</td>
+                  <td style={{ padding: "6px 8px" }}>
                     {r.ic_name} {r.ic_number && `(${r.ic_number})`}
                   </td>
-                  <td>{r.city}</td>
-                  <td>{r.serial}</td>
-                  <td>{r.duration}</td>
-                  <td>{r.raw_clips}</td>
-                  <td>{r.recorded_by_name || r.recorded_by || "—"}</td>
-                  <td>{r.recorded_at ? formatIst(r.recorded_at) : "—"}</td>
+                  <td style={{ padding: "6px 8px" }}>{r.city}</td>
+                  <td style={{ padding: "6px 8px" }}>{r.serial}</td>
+                  <td style={{ padding: "6px 8px" }}>{r.duration}</td>
+                  <td style={{ padding: "6px 8px" }}>{r.raw_clips}</td>
+                  <td style={{ padding: "6px 8px", color: "#64748b" }}>{r.recorded_at ? formatIst(r.recorded_at) : "—"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-    </main>
+    </>
   );
-} 
+}

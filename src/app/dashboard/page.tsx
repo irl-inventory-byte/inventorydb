@@ -558,15 +558,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       storage: storageFor(["traveling", "pending"]),
     },
     {
-      label: "Non-usable",
-      value: s.lost + brokenValue + retiredValue,
-      hint: share(s.lost + brokenValue + retiredValue),
-      href: inventory({ status: "lost,damaged,retired" }),
-      icon: "alert",
-      color: "var(--critical)",
-      defn: "Lost, broken or retired — not part of the usable fleet.",
-    },
-    {
       label: "Lost",
       value: s.lost,
       hint: share(s.lost),
