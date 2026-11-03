@@ -852,8 +852,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const qcKeep: Record<string, string> = { ...keepParams };
 
   // Sanitization table filter (Rig dashboard): "" = all, "yes" or "no" narrows the table to that result.
-  const sanValue = one(sp.san);
-  const san: "" | "yes" | "no" = sanValue === "yes" || sanValue === "no" ? sanValue : "";
+  const sanParam = one(sp.san);
+  const san = sanParam === "yes" || sanParam === "no" ? sanParam : "";
   const sanKeep: Record<string, string> = { ...keepParams };
 
   // Acknowledgements chart: grouped by city (default) or by FO/IFO role.
@@ -867,11 +867,17 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     if (ackTo && t > Date.parse(`${ackTo}T23:59:59+05:30`)) return false;
     return true;
   });
-  const ackBuckets = ackBy === "role" ? ackByRole(ackInRange, people) : ackByCity(ackInRange, people, hubs);
-  const ackParams = { ...keepParams, ...(ackFrom && { ackFrom }), ...(ackTo && { ackTo }) };
+  // Narrows to just FO or just IFO recipients, on top of the date range and either grouping.
+  const ackRole = one(sp.ackRole) === "fo" || one(sp.ackRole) === "ifo" ? (one(sp.ackRole) as "fo" | "ifo") : "";
+  const ackBuckets =
+    ackBy === "role" ? ackByRole(ackInRange, people, ackRole) : ackByCity(ackInRange, people, hubs, ackRole);
+  const ackBase = { ...keepParams, ...(ackFrom && { ackFrom }), ...(ackTo && { ackTo }) }; // no ackBy/ackRole — each link below adds its own
+  const ackParams = { ...ackBase, ...(ackRole && { ackRole }) };
   const ackHref = (by: "city" | "role") => `/dashboard?${new URLSearchParams({ ...ackParams, ...(by !== "city" && { ackBy: by }) })}#acknowledgements`;
-  // Hidden fields the date-range filter form must carry so it doesn't lose the other dashboard filters or the current grouping.
-  const ackHidden = { ...keepParams, ...(ackBy !== "city" && { ackBy }) };
+  const ackRoleHref = (role: "" | "fo" | "ifo") =>
+    `/dashboard?${new URLSearchParams({ ...ackBase, ...(ackBy !== "city" && { ackBy }), ...(role && { ackRole: role }) })}#acknowledgements`;
+  // Hidden fields the date-range filter form must carry so it doesn't lose the other dashboard filters or the current grouping/role.
+  const ackHidden = { ...keepParams, ...(ackBy !== "city" && { ackBy }), ...(ackRole && { ackRole }) };
   const ackClearHref = `/dashboard?${new URLSearchParams(ackHidden)}#acknowledgements`;
 
   // Who has items: longest out first, then most items.
@@ -1289,7 +1295,17 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
         {showAck && (
           <section className={styles.card} id="acknowledgements" aria-label="Acknowledgements section">
-            <AckChart by={ackBy} buckets={ackBuckets} href={ackHref} ackFrom={ackFrom} ackTo={ackTo} hidden={ackHidden} clearHref={ackClearHref} />
+            <AckChart
+              by={ackBy}
+              buckets={ackBuckets}
+              href={ackHref}
+              ackFrom={ackFrom}
+              ackTo={ackTo}
+              hidden={ackHidden}
+              clearHref={ackClearHref}
+              role={ackRole}
+              roleHref={ackRoleHref}
+            />
           </section>
         )}
 

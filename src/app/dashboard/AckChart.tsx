@@ -14,6 +14,8 @@ export default function AckChart({
   ackTo,
   hidden,
   clearHref,
+  role,
+  roleHref,
 }: {
   by: "city" | "role";
   buckets: AckBucket[];
@@ -22,6 +24,8 @@ export default function AckChart({
   ackTo: string; // YYYY-MM-DD, "" = no upper bound
   hidden: Record<string, string>; // other dashboard filters + the current grouping, carried by the date form
   clearHref: string; // same page, with the date range removed
+  role: "" | "fo" | "ifo"; // "" = both
+  roleHref: (role: "" | "fo" | "ifo") => string;
 }) {
   const max = Math.max(1, ...buckets.map((b) => b.total));
   const totals = buckets.reduce(
@@ -62,6 +66,28 @@ export default function AckChart({
         <span style={{ color: "#b3261e" }}>■</span> No{" "}
         <span style={{ color: "#94a3b8" }}>■</span> Pending
       </p>
+
+      <nav aria-label="Filter by recipient" style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+        {(["", "fo", "ifo"] as const).map((v) => (
+          <Link
+            key={v || "all"}
+            href={roleHref(v)}
+            aria-current={role === v ? "true" : undefined}
+            style={{
+              padding: "4px 12px",
+              borderRadius: 999,
+              border: "1px solid #cbd5e1",
+              background: role === v ? "#1d4ed8" : "#fff",
+              color: role === v ? "#fff" : "#334155",
+              textDecoration: "none",
+              fontSize: "0.78rem",
+              fontWeight: role === v ? 700 : 500,
+            }}
+          >
+            {v === "" ? "All" : v.toUpperCase()}
+          </Link>
+        ))}
+      </nav>
 
       <form
         method="get"
