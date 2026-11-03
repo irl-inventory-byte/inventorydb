@@ -81,6 +81,10 @@ interface SummaryKpisProps {
    */
   baselineTotal?: number;
   baselineStorage?: { gb256: number; gb512: number };
+  /** Broken and retired counts (already including each one's admin "starting count" baseline — see
+   * the dashboard's "Broken / Retired" tile), shown as their own tiles in the Fleet breakdown below. */
+  brokenCount?: number;
+  retiredCount?: number;
 }
 
 interface SummaryCard {
@@ -210,6 +214,8 @@ export async function SummaryKpis({
   attentionHref,
   baselineTotal = 0,
   baselineStorage,
+  brokenCount = 0,
+  retiredCount = 0,
 }: SummaryKpisProps) {
   const list = (params: Record<string, string> = {}) =>
     `/inventory?${new URLSearchParams({
@@ -337,6 +343,30 @@ export async function SummaryKpis({
             bg: "#fef3c7",
             border: "#d97706",
             text: "#78350f",
+          },
+        ]
+      : []),
+    ...(brokenCount > 0
+      ? [
+          {
+            label: "Broken cards",
+            count: brokenCount,
+            pct: share(brokenCount),
+            bg: "#fee2e2",
+            border: "#dc2626",
+            text: "#7f1d1d",
+          },
+        ]
+      : []),
+    ...(retiredCount > 0
+      ? [
+          {
+            label: "Retired cards",
+            count: retiredCount,
+            pct: share(retiredCount),
+            bg: "#f3f4f6",
+            border: "#6b7280",
+            text: "#1f2937",
           },
         ]
       : []),

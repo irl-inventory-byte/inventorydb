@@ -995,6 +995,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             attentionHref={`/dashboard${rigView ? "?type=rig" : ""}#attention`}
             baselineTotal={rigView ? undefined : brokenBaselineTotal + (retiredBaseline ?? 0)}
             baselineStorage={rigView ? undefined : brokenStorageOverride}
+            brokenCount={rigView ? undefined : brokenValue}
+            retiredCount={rigView ? undefined : retiredValue}
           />
         )}
 
