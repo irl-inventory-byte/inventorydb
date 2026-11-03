@@ -77,6 +77,10 @@ export async function reportLostScan(formData: FormData) {
   // (the common case — most lost/broken items show as "In stock" with nobody checked out).
   const personName = String(formData.get("person") ?? "").trim().slice(0, 200);
 
+  // City/hub: where it actually happened, if different from the item's current hub. A hub_id
+  // chosen from the dropdown (grouped by city); blank keeps each item's current hub.
+  const hub = String(formData.get("hub") ?? "").trim();
+
   const store = storeForAll(user.role);
   const found = await store.getItemsByIds(ids);
   const missing = ids.filter((id) => !found.has(id));
@@ -99,7 +103,7 @@ export async function reportLostScan(formData: FormData) {
 
   const plan = planCorrection(
     toReport,
-    { status, hub: "", holder: "", homeHub: "", note },
+    { status, hub, holder: "", homeHub: "", note },
     {
       hubs,
       people,

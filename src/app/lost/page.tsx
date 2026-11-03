@@ -91,7 +91,14 @@ export default async function LostItemsPage({ searchParams }: PageProps<"/lost">
       )}
 
       {canAddNote && (
-        <ReportLostScan status={status} items={items.map((i) => ({ id: i.item_id, status: i.status, type: i.item_type }))} />
+        <ReportLostScan
+          status={status}
+          items={items.map((i) => ({ id: i.item_id, status: i.status, type: i.item_type }))}
+          hubs={hubs
+            .filter((h) => h.active !== "false")
+            .map((h) => ({ id: h.hub_id, name: h.name, city: (h.city || h.name || h.hub_id).trim() }))
+            .sort((a, b) => a.city.localeCompare(b.city) || a.name.localeCompare(b.name))}
+        />
       )}
 
       <nav aria-label="Filter by item type" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "4px 0 16px" }}>

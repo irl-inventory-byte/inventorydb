@@ -10,10 +10,18 @@ export default function AckChart({
   by,
   buckets,
   href,
+  ackFrom,
+  ackTo,
+  hidden,
+  clearHref,
 }: {
   by: "city" | "role";
   buckets: AckBucket[];
   href: (by: "city" | "role") => string;
+  ackFrom: string; // YYYY-MM-DD, "" = no lower bound
+  ackTo: string; // YYYY-MM-DD, "" = no upper bound
+  hidden: Record<string, string>; // other dashboard filters + the current grouping, carried by the date form
+  clearHref: string; // same page, with the date range removed
 }) {
   const max = Math.max(1, ...buckets.map((b) => b.total));
   const totals = buckets.reduce(
@@ -54,6 +62,35 @@ export default function AckChart({
         <span style={{ color: "#b3261e" }}>■</span> No{" "}
         <span style={{ color: "#94a3b8" }}>■</span> Pending
       </p>
+
+      <form
+        method="get"
+        action="/dashboard#acknowledgements"
+        style={{ display: "flex", alignItems: "flex-end", gap: 8, flexWrap: "wrap", marginBottom: 14, padding: "8px 10px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8 }}
+      >
+        {Object.entries(hidden).map(([k, v]) => (
+          <input key={k} type="hidden" name={k} value={v} />
+        ))}
+        <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "0.72rem", color: "#64748b" }}>
+          From
+          <input type="date" name="ackFrom" defaultValue={ackFrom} style={{ fontSize: "0.8rem", padding: "4px 6px", borderRadius: 6, border: "1px solid #cbd5e1" }} />
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "0.72rem", color: "#64748b" }}>
+          To
+          <input type="date" name="ackTo" defaultValue={ackTo} style={{ fontSize: "0.8rem", padding: "4px 6px", borderRadius: 6, border: "1px solid #cbd5e1" }} />
+        </label>
+        <button
+          type="submit"
+          style={{ fontSize: "0.78rem", padding: "5px 12px", borderRadius: 6, border: "1px solid #1e293b", background: "#1e293b", color: "#fff", cursor: "pointer" }}
+        >
+          Apply
+        </button>
+        {(ackFrom || ackTo) && (
+          <Link href={clearHref} style={{ fontSize: "0.78rem", color: "#64748b", alignSelf: "center" }}>
+            Clear dates
+          </Link>
+        )}
+      </form>
 
       {buckets.length === 0 ? (
         <p style={{ color: "#64748b", fontSize: "0.88rem" }}>No acknowledgments recorded yet.</p>

@@ -15,10 +15,21 @@ import { reportLostScan } from "./actions";
 export default function ReportLostScan({
   status,
   items,
+  hubs,
 }: {
   status: Status;
   items: { id: string; status: Status; type?: string }[];
+  hubs: { id: string; name: string; city: string }[];
 }) {
+  // Cities in display order, each with its hubs (a city may have more than one hub).
+  const cities = useMemo(() => {
+    const byCity = new Map<string, { id: string; name: string }[]>();
+    for (const h of hubs) {
+      if (!byCity.has(h.city)) byCity.set(h.city, []);
+      byCity.get(h.city)!.push({ id: h.id, name: h.name });
+    }
+    return [...byCity.entries()];
+  }, [hubs]);
   const [text, setText] = useState("");
   const [note, setNote] = useState("");
   const label = status === "damaged" ? "broken" : "lost";
@@ -52,7 +63,7 @@ export default function ReportLostScan({
           border: "1px solid #cbd5e1",
           borderRadius: 10,
           background: "#f8fafc",
-          maxWidth: 480,
+          maxWidth: 560,
         }}
       >
         <input type="hidden" name="status" value={status} />
@@ -91,35 +102,50 @@ export default function ReportLostScan({
           required
           style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: "0.85rem" }}
         />
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "0.75rem", color: "#64748b", flex: "1 1 140px" }}>
-            Date {label === "lost" ? "lost" : "broken"} (blank = today)
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: "0.72rem", color: "#64748b" }}>
+            Date {label === "lost" ? "lost" : "broken"}
             <input
               type="date"
               name="occurredAt"
               max={new Date().toISOString().slice(0, 10)}
-              style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: "0.85rem" }}
+              style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: "0.85rem", background: "#fff" }}
             />
           </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "0.75rem", color: "#64748b", flex: "1 1 120px" }}>
-            Amount (₹, optional)
+          <label style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: "0.72rem", color: "#64748b" }}>
+            City (where it happened)
+            <select name="hub" defaultValue="" style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: "0.85rem", background: "#fff" }}>
+              <option value="">Keep current hub</option>
+              {cities.map(([city, cityHubs]) => (
+                <optgroup key={city} label={city}>
+                  {cityHubs.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: "0.72rem", color: "#64748b" }}>
+            Amount (₹)
             <input
               type="number"
               name="amount"
               min={0}
               placeholder="Item cost"
-              style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: "0.85rem" }}
+              style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: "0.85rem", background: "#fff" }}
+            />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: "0.72rem", color: "#64748b" }}>
+            Person who had it
+            <input
+              name="person"
+              placeholder="Name (if known)"
+              style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: "0.85rem", background: "#fff" }}
             />
           </label>
         </div>
-        <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "0.75rem", color: "#64748b" }}>
-          Person who had it (optional — if known)
-          <input
-            name="person"
-            placeholder="Name"
-            style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: "0.85rem" }}
-          />
-        </label>
         <button
           type="submit"
           disabled={ready === 0}

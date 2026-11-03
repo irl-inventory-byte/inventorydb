@@ -33,6 +33,8 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/inv
   const hardwareUpdates = hardware.filter((h) => h.item_id === item.item_id);
   const qcChecks = qc.filter((c) => c.item_id === item.item_id);
   const auditRows = audits.filter((a) => a.item_id === item.item_id);
+  const hubName = new Map(hubs.map((h) => [h.hub_id, h.name]));
+  const personName = new Map(people.map((p) => [p.person_id, p.name]));
   // City/Hub Audit confirmations merged into History as their own kind of row (no status change).
   type HistoryRow = {
     key: string;
@@ -70,8 +72,6 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/inv
     })),
   ].sort((a, b) => Date.parse(a.when || "0") - Date.parse(b.when || "0"));
   const latestQc = qcChecks.at(-1);
-  const hubName = new Map(hubs.map((h) => [h.hub_id, h.name]));
-  const personName = new Map(people.map((p) => [p.person_id, p.name]));
   const attrs = parseAttributes(item.attributes);
 
   return (

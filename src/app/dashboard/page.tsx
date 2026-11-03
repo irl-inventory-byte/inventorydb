@@ -858,8 +858,21 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
   // Acknowledgements chart: grouped by city (default) or by FO/IFO role.
   const ackBy = one(sp.ackBy) === "role" ? "role" : "city";
-  const ackBuckets = ackBy === "role" ? ackByRole(acknowledgments, people) : ackByCity(acknowledgments, people, hubs);
-  const ackHref = (by: "city" | "role") => `/dashboard?${new URLSearchParams({ ...keepParams, ...(by !== "city" && { ackBy: by }) })}#acknowledgements`;
+  const ackFrom = one(sp.ackFrom); // YYYY-MM-DD, inclusive
+  const ackTo = one(sp.ackTo); // YYYY-MM-DD, inclusive
+  const ackInRange = acknowledgments.filter((a) => {
+    const t = Date.parse(a.created_at || "");
+    if (Number.isNaN(t)) return true; // keep undated rows rather than silently dropping them
+    if (ackFrom && t < Date.parse(`${ackFrom}T00:00:00+05:30`)) return false;
+    if (ackTo && t > Date.parse(`${ackTo}T23:59:59+05:30`)) return false;
+    return true;
+  });
+  const ackBuckets = ackBy === "role" ? ackByRole(ackInRange, people) : ackByCity(ackInRange, people, hubs);
+  const ackParams = { ...keepParams, ...(ackFrom && { ackFrom }), ...(ackTo && { ackTo }) };
+  const ackHref = (by: "city" | "role") => `/dashboard?${new URLSearchParams({ ...ackParams, ...(by !== "city" && { ackBy: by }) })}#acknowledgements`;
+  // Hidden fields the date-range filter form must carry so it doesn't lose the other dashboard filters or the current grouping.
+  const ackHidden = { ...keepParams, ...(ackBy !== "city" && { ackBy }) };
+  const ackClearHref = `/dashboard?${new URLSearchParams(ackHidden)}#acknowledgements`;
 
   // Who has items: longest out first, then most items.
   const holdersSorted = [...d.holders].sort(
@@ -1276,7 +1289,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
         {showAck && (
           <section className={styles.card} id="acknowledgements" aria-label="Acknowledgements section">
-            <AckChart by={ackBy} buckets={ackBuckets} href={ackHref} />
+            <AckChart by={ackBy} buckets={ackBuckets} href={ackHref} ackFrom={ackFrom} ackTo={ackTo} hidden={ackHidden} clearHref={ackClearHref} />
           </section>
         )}
 
