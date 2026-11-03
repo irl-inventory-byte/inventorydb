@@ -59,6 +59,8 @@ export default function ReportLostScan({
   const allowed = useMemo(() => new Set(STATUSES.filter((s) => s !== status)), [status]);
   const results = useMemo(() => classifyScans(text, statuses, allowed), [text, statuses, allowed]);
   const ready = results.filter((r) => r.state === "ok").length;
+  const duplicate = results.filter((r) => r.state === "duplicate").length;
+  const alreadyMarked = results.filter((r) => r.state === "wrong").length;
 
   function cameraOutcome(code: string): ScanOutcome {
     const r = classifyScans(code, statuses, allowed)[0];
@@ -112,7 +114,11 @@ export default function ReportLostScan({
             ))}
           </ul>
         )}
-        {results.length > 0 && <span style={{ fontSize: "0.8rem", color: "#64748b" }}>{ready} of {results.length} ready</span>}
+        {results.length > 0 && (
+          <span style={{ fontSize: "0.8rem", color: "#64748b" }}>
+            {ready} unique · {duplicate} duplicate · {alreadyMarked} already {label}
+          </span>
+        )}
         <input
           name="note"
           value={note}
