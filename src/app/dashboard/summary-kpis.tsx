@@ -64,6 +64,13 @@ interface SummaryKpisProps {
    * Omit on a page with no Needs attention table (the hub dashboard), where the default inventory link stays.
    */
   attentionHref?: string;
+  /**
+   * Cards the admin has recorded as already broken before this system tracked them (see the Broken
+   * tile's "Starting count" box) — not real item rows, so they aren't in `items`/`d.total`. Added on
+   * top here so Fleet's Total and usable/non-usable split agree with the Broken tile's own number.
+   */
+  baselineTotal?: number;
+  baselineStorage?: { gb256: number; gb512: number };
 }
 
 interface SummaryCard {
@@ -191,6 +198,8 @@ export async function SummaryKpis({
   items,
   rigView = false,
   attentionHref,
+  baselineTotal = 0,
+  baselineStorage,
 }: SummaryKpisProps) {
   const list = (params: Record<string, string> = {}) =>
     `/inventory?${new URLSearchParams({
@@ -224,12 +233,21 @@ export async function SummaryKpis({
   const hasSd = fleetItems.some((i) => i.item_type !== "rig" && i.item_type !== "mobile");
   const ages = hasSd ? await sheetAges() : null;
   const fleet = countFleet(fleetItems, ages);
+  // Fold the admin's "already broken before tracking" baseline into the storage breakdown too, so
+  // the 512/256 GB tiles and the Total agree with each other and with the Broken tile's own number.
+  if (baselineStorage) {
+    fleet.storage512 += baselineStorage.gb512;
+    fleet.storage256 += baselineStorage.gb256;
+    fleet.sdCards += baselineTotal;
+  }
 
   // A second read can differ if inventory changed during rendering,
-  // or if the caller supplied a different hub scope.
+  // or if the caller supplied a different hub scope. (Compared against the real tracked total —
+  // the baseline is phantom, not a row in `items`, so it's left out of this check on purpose.)
   const scopeMismatch = fleetItems.length !== d.total;
 
-  const unusable = d.total - d.usable;
+  const total = d.total + baselineTotal;
+  const unusable = total - d.usable;
   const pct =
     d.utilization === null
       ? null
@@ -320,12 +338,10 @@ export async function SummaryKpis({
       icon: "layers",
       // Rig view says "Rigs"; SD cards keep "Fleet".
       label: rigView ? "Rigs" : fleet.sdCards > 0 ? "Fleet — storage update" : "Fleet",
-      value: n(d.total),
+      value: n(total),
       note:
         unusable > 0
-          ? `${n(d.usable)} usable · ${n(
-              unusable
-            )} lost, damaged or retired`
+          ? `${n(unusable)} lost, damaged or retired · ${n(d.usable)} usable`
           : `${n(d.usable)} usable`,
       href: list(),
     },

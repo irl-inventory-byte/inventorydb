@@ -34,21 +34,21 @@ import { productivityTeamHub, rigTeamHub } from "@/lib/rig-hub";
 
 const inventory = (params: Record<string, string>) => `/inventory?${new URLSearchParams(params)}`;
 
-/** SD card capacity ("256 GB" / "512 GB" / "Not set") from the saved "capacity" attribute, same normalization as the Inventory page. */
+/** SD card capacity ("256 GB" / "512 GB" / "Unknown") from the saved "capacity" attribute, same normalization as the Inventory page. */
 function cardStorage(raw: string): string {
   let attributes: Record<string, unknown> = {};
   try {
     const parsed: unknown = JSON.parse(raw || "{}");
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) attributes = parsed as Record<string, unknown>;
   } catch {
-    // Missing or invalid details count as "Not set".
+    // Missing or invalid details count as "Unknown".
   }
   const rawCapacity = attributes.capacity;
   const capacityText = typeof rawCapacity === "string" || typeof rawCapacity === "number" ? String(rawCapacity).trim() : "";
   const normalized = capacityText.replace(/\s+/g, "").toUpperCase();
   if (normalized === "512GB" || normalized === "512") return "512 GB";
   if (normalized === "256GB" || normalized === "256") return "256 GB";
-  return capacityText || "Not set";
+  return capacityText || "Unknown";
 }
 const days = (d: number | null) => (d === null ? "—" : d === 0 ? "today" : `${d}d`);
 
@@ -228,6 +228,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   } catch {
     // Malformed stored value — fall back to the computed breakdown.
   }
+  // Total cards the baseline adds on top of what's actually tracked (see brokenValue below) — passed
+  // to the Fleet summary card so its Total / usable-vs-not split and SD card storage add up to the
+  // same numbers as the Broken tile, instead of silently disagreeing with it.
+  const brokenBaselineTotal = (brokenStorageOverride?.gb256 ?? 0) + (brokenStorageOverride?.gb512 ?? 0);
 
   // Rig view: unknown rigs (no activity for more than NO_ACTIVITY_DAYS days), city-wise, with their reports.
   // Worked out twice on purpose: the first pass is free and tells us whether any rig is overdue at all, so
@@ -353,7 +357,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           storage,
           count: c,
           pct: total ? Math.round((c / total) * 100) : 0,
-          href: inventory({ status: [...wanted].join(","), type: "sd_card", ...(storage !== "Not set" && { storage }) }),
+          href: inventory({ status: [...wanted].join(","), type: "sd_card", ...(storage !== "Unknown" && { storage }) }),
         };
       });
   };
@@ -542,6 +546,15 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       storage: storageFor(["traveling", "pending"]),
     },
     {
+      label: "Non-usable",
+      value: s.lost + brokenValue + s.retired,
+      hint: share(s.lost + brokenValue + s.retired),
+      href: inventory({ status: "lost,damaged,retired" }),
+      icon: "alert",
+      color: "var(--critical)",
+      defn: "Lost, broken or retired — not part of the usable fleet.",
+    },
+    {
       label: "Lost",
       value: s.lost,
       hint: share(s.lost),
@@ -569,7 +582,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       label: "Retired",
       value: s.retired,
       hint: share(s.retired),
-      href: inventory({ status: "retired" }),
+      href: "/retired",
       icon: "archive",
       color: "var(--text-muted)",
     },
@@ -865,7 +878,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const qcKeep: Record<string, string> = { ...keepParams };
 
   // Sanitization table filter (Rig dashboard): "" = all, "yes" or "no" narrows the table to that result.
-  const san = one(sp.san) === "yes" || one(sp.san) === "no" ? one(sp.san) : "";
+  const sanValue = one(sp.san);
+  const san: "" | "yes" | "no" = sanValue === "yes" || sanValue === "no" ? sanValue : "";
   const sanKeep: Record<string, string> = { ...keepParams };
 
   // Acknowledgements chart: grouped by city (default) or by FO/IFO role.
@@ -971,6 +985,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             items={items}
             rigView={rigView}
             attentionHref={`/dashboard${rigView ? "?type=rig" : ""}#attention`}
+            baselineTotal={rigView ? undefined : brokenBaselineTotal}
+            baselineStorage={rigView ? undefined : brokenStorageOverride}
           />
         )}
 
@@ -1300,7 +1316,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             qcFrom={qcFrom}
             qcTo={qcTo}
             qcKeep={qcKeep}
-            
+            san={san}
             sanKeep={sanKeep}
           />
         )}
