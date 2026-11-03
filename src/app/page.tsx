@@ -105,6 +105,13 @@ const WORK: Tile[] = [
     icon: "database",
     roles: ["admin", "rig"],
   },
+  {
+    href: "/sd-details",
+    title: "SD card details table",
+    desc: "Every IM and rig team entry in one filterable table, with totals.",
+    icon: "list",
+    roles: ["admin", "im", "rig"],
+  },
 ];
 
 const ADMIN: Tile[] = [
