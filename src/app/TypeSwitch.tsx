@@ -44,7 +44,9 @@ export default function TypeSwitch({
   return (
     <nav
       aria-label="Item type"
-      style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "0 0 16px" }}
+      // No bottom margin: the parent page's own grid (.wrap, gap: 20px) already spaces this nav from
+      // whatever comes after it — adding a margin here on top of that doubled the gap below the tabs.
+      style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
     >
       {options.map(([value, label]) => {
         const active = value === current;

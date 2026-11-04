@@ -18,11 +18,7 @@ const subTeamLabel = (r: { team: string; sub_team?: string }) =>
  * entry forms, which only show each team their own recent entries. Also reachable from the Dashboard
  * (see dashboard/page.tsx), not just the home page.
  */
-export default async function SdDetailsPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+export default async function SdDetailsPage({ searchParams }: PageProps<"/sd-details">) {
   await requireRole("admin", "im", "rig");
   const sp = await searchParams;
 

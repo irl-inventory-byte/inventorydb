@@ -262,7 +262,7 @@ export async function SummaryKpis({
   // Fixed manual correction, folded straight into the counts with no separate UI or note anywhere —
   // cards whose colour/age were never recorded. SD cards only.
   fleet.green += 89;
-  fleet.oldCards += 94;
+  fleet.oldCards += 93;
 
   // A second read can differ if inventory changed during rendering,
   // or if the caller supplied a different hub scope. (Compared against the real tracked total —

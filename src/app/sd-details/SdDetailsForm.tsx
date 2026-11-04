@@ -90,36 +90,55 @@ export default function SdDetailsForm({
 
         <label style={field}>
           {memberLabel} *
-          <select name="team_member" required defaultValue={defaultMember || ""} style={input}>
-            <option value="" disabled>
-              Select {memberLabel}
-            </option>
+          {/* A dropdown that also takes free text: pick from the list, or type a name that isn't in it
+              yet and it's saved as typed — no admin step needed to add someone new. */}
+          <input
+            list="member-options"
+            name="team_member"
+            required
+            defaultValue={defaultMember || ""}
+            placeholder={`Select or type ${memberLabel}`}
+            autoComplete="off"
+            style={input}
+          />
+          <datalist id="member-options">
             {memberOptions.map((m) => (
-              <option key={m.id} value={m.name}>
-                {m.name}
-              </option>
+              <option key={m.id} value={m.name} />
             ))}
-          </select>
+          </datalist>
         </label>
 
         <label style={field}>
           FO / IFO
-          <select name="fo_ifo" defaultValue="" style={input}>
-            <option value="">Select FO / IFO</option>
+          <input
+            list="foifo-options"
+            name="fo_ifo"
+            placeholder="Select or type FO / IFO"
+            autoComplete="off"
+            style={input}
+          />
+          <datalist id="foifo-options">
             {foIfoOptions.map((p) => (
-              <option key={p.id} value={p.name}>
-                {p.name}
-              </option>
+              <option key={p.id} value={p.name} />
             ))}
-          </select>
+          </datalist>
         </label>
 
         <label style={field}>
           IC name *
-          <select name="ic_name" required defaultValue="" style={input}>
-            <option value="" disabled>Select IC name</option>
-            {IC_NAMES.map((name) => (<option key={name} value={name}>{name}</option>))}
-          </select>
+          <input
+            list="ic-name-options"
+            name="ic_name"
+            required
+            placeholder="Select or type IC name"
+            autoComplete="off"
+            style={input}
+          />
+          <datalist id="ic-name-options">
+            {IC_NAMES.map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
         </label>
 
         <label style={field}>
