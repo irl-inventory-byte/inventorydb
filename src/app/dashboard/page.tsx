@@ -5,7 +5,7 @@ import { requireRole } from "@/lib/authz";
 import { LATE_AFTER_HOURS, computeDashboard } from "@/lib/dashboard";
 import { buildHubTree } from "@/lib/hub-tree";
 import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
-import type { Acknowledgment, AttentionNote, HardwareUpdate, QcCheck, Status } from "@/lib/schema";
+import type { Acknowledgment, AttentionNote, DelayNote, HardwareUpdate, QcCheck, Status } from "@/lib/schema";
 import { HANDLER_ROLES, INVENTORY_ROLES, allowedTypes, canSeeType, storeFor, storeForAll, typeParam } from "@/lib/access";
 import TypeSwitch from "../TypeSwitch";
 import RoleSwitch from "../RoleSwitch";
@@ -20,7 +20,7 @@ import { HubOrgChart, countHidden } from "./hub-tree-view";
 import AttentionFilter from "./attentionfilter";
 import { Icon, type IconName } from "./icons";
 import TeamSelect from "./TeamSelect";
-import { addAttentionNote, setAttentionNoteStatus, setBrokenStorageOverride, setRetiredBaseline } from "./actions";
+import { addAttentionNote, addDelayNote, setAttentionNoteStatus, setBrokenStorageOverride, setRetiredBaseline } from "./actions";
 import { SummaryKpis } from "./summary-kpis";
 import { RIG_STATES, RIG_STATE_LABELS, rigState, type RigState } from "@/lib/rig-state";
 import { NO_ACTIVITY_DAYS, RigMetrics } from "./rig-metrics";
@@ -210,21 +210,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // Monthly report (all item types this login can see) needs its own full items/events read — fetched
   // alongside everything else below (not after it) so the two round trips overlap instead of stacking.
   const reportStore = storeForAll(user.role);
-  const [
-    items,
-    events,
-    people,
-    hubs,
-    qcChecks,
-    hardwareUpdates,
-    settings,
-    acknowledgments,
-    attentionNotes,
-    allItems,
-    allEvents,
-    allQc,
-    allHw,
-  ] = await Promise.all([
+  // Two Promise.all calls instead of one: TypeScript only keeps each array's individual item types
+  // (rather than collapsing them all into one shared type) for up to 10 elements — past that it widens
+  // everything to a single blended type, which is why this is split in two. Both are started here,
+  // before either is awaited, so they still run at the same time — this isn't a return to two round trips.
+  const mainFetch = Promise.all([
     store.list("items"),
     store.list("events"),
     store.list("people"),
@@ -234,11 +224,17 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     store.list("settings"),
     showAck ? store.list("acknowledgments") : Promise.resolve([] as Acknowledgment[]),
     getStore().list("attention_notes").catch(() => [] as AttentionNote[]),
+    getStore().list("delay_notes").catch(() => [] as DelayNote[]),
+  ]);
+  const reportFetch = Promise.all([
     reportStore.list("items"),
     reportStore.list("events"),
     reportStore.list("qc_checks").catch(() => [] as QcCheck[]),
     reportStore.list("hardware_updates").catch(() => [] as HardwareUpdate[]),
   ]);
+  const [items, events, people, hubs, qcChecks, hardwareUpdates, settings, acknowledgments, attentionNotes, delayNotes] =
+    await mainFetch;
+  const [allItems, allEvents, allQc, allHw] = await reportFetch;
   const now = new Date();
 
   // Admin-set override for the Broken tile's storage breakdown (see dashboard/actions.ts) — used
@@ -868,6 +864,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     .slice()
     .sort((a, b) => Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0"));
   const todayStr = istDate(now);
+
+  // Notes left against individual delayed cards (see dashboard/actions.ts addDelayNote), newest first.
+  const delayNoteLog = delayNotes.slice().sort((a, b) => Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0"));
   // "Moved per day" and "Moved per hour of day": each has its own Items, Person, City and Role filters, and
   // several values can be ticked in each (?mperson=a&mperson=b, kept in links as "a,b"). Items: empty = all
   // the types this login can see. Default range: the last 14 days.
@@ -1683,10 +1682,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                   tabIndex={0}
                   style={{ maxHeight: "420px", maxWidth: "100%", overflowY: "auto", overflowX: "auto" }}
                 >
-                  <table className={styles.table} style={{ width: "100%", minWidth: "760px", borderCollapse: "separate", borderSpacing: 0 }}>
+                  <table className={styles.table} style={{ width: "100%", minWidth: "980px", borderCollapse: "separate", borderSpacing: 0 }}>
                     <thead>
                       <tr>
-                        {["Item ID", "Type", "City", "Sent by", "Sent at", "Out for", "Status"].map((h) => (
+                        {["Item ID", "Type", "City", "Sent by", "Sent at", "Out for", "Status", "Note"].map((h) => (
                           <th key={h} scope="col" style={TH_STYLE}>
                             {h}
                           </th>
@@ -1707,6 +1706,76 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                           <td>{it.sentAt}</td>
                           <td>{howLong(it.hours)}</td>
                           <td>{it.status}</td>
+                          <td style={{ minWidth: 220 }}>
+                            <form action={addDelayNote} style={{ display: "flex", gap: 6 }}>
+                              <input type="hidden" name="back" value={attentionBack} />
+                              <input type="hidden" name="item_id" value={it.id} />
+                              <input type="hidden" name="item_type" value={it.type} />
+                              <input type="hidden" name="person" value={detailRow.person} />
+                              <input type="hidden" name="sent_by" value={it.sentBy} />
+                              <input
+                                name="note"
+                                required
+                                placeholder="Add a note…"
+                                style={{
+                                  flex: 1,
+                                  minWidth: 0,
+                                  padding: "4px 8px",
+                                  border: "1px solid var(--border)",
+                                  borderRadius: 6,
+                                  background: "var(--surface-1)",
+                                  color: "var(--text-primary)",
+                                  fontSize: "0.85rem",
+                                }}
+                              />
+                              <button type="submit" style={{ padding: "4px 10px", fontSize: "0.85rem" }}>
+                                Save
+                              </button>
+                            </form>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* DELAY NOTES LOG — every note saved above (against an individual delayed item), in its own
+                table: Date, Item type, Item ID, Person, With whom, Note. Newest first. */}
+            {delayNoteLog.length > 0 && (
+              <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid var(--border)" }}>
+                <h3 style={{ margin: "0 0 10px" }}>Delay notes ({delayNoteLog.length})</h3>
+                <div
+                  className={styles.tableScroll}
+                  role="region"
+                  aria-label="Delay notes — scrollable table"
+                  tabIndex={0}
+                  style={{ maxHeight: "360px", maxWidth: "100%", overflowY: "auto", overflowX: "auto" }}
+                >
+                  <table className={styles.table} style={{ width: "100%", minWidth: "760px", borderCollapse: "separate", borderSpacing: 0 }}>
+                    <thead>
+                      <tr>
+                        {["Date", "Item", "Item ID", "Person", "With whom", "Note"].map((h) => (
+                          <th key={h} scope="col" style={TH_STYLE}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {delayNoteLog.map((note) => (
+                        <tr key={note.note_id}>
+                          <td>{note.recorded_at ? formatIst(note.recorded_at) : "—"}</td>
+                          <td>{note.item_type || "—"}</td>
+                          <td>
+                            <Link href={`/inventory/${encodeURIComponent(note.item_id)}`} className={styles.link}>
+                              {note.item_id}
+                            </Link>
+                          </td>
+                          <td>{note.person || "—"}</td>
+                          <td>{note.sent_by || "—"}</td>
+                          <td style={{ whiteSpace: "normal" }}>{note.note}</td>
                         </tr>
                       ))}
                     </tbody>

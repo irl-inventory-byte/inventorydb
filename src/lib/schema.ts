@@ -164,6 +164,21 @@ export const TABS = {
     "recorded_by", // login email
     "recorded_by_name",
   ],
+  // A note left against one specific delayed card, from the "Needs attention" drill-down (see
+  // dashboard/actions.ts addDelayNote). item_type/person/sent_by are a snapshot of what the Needs
+  // attention table showed at the time the note was added, so the log still reads correctly even
+  // after the item moves on.
+  delay_notes: [
+    "note_id",
+    "item_id",
+    "item_type", // "SD card" | "Rig" | "Mobile" — as shown in Needs attention
+    "person", // who the item was with when the note was added
+    "sent_by", // who sent it to them
+    "note",
+    "recorded_at",
+    "recorded_by", // login email
+    "recorded_by_name",
+  ],
 } as const;
 
 export type TabName = keyof typeof TABS;
@@ -409,6 +424,18 @@ export interface AttentionNote extends Row {
   recorded_by_name: string;
 }
 
+export interface DelayNote extends Row {
+  note_id: string;
+  item_id: string;
+  item_type: string;
+  person: string;
+  sent_by: string;
+  note: string;
+  recorded_at: string;
+  recorded_by: string;
+  recorded_by_name: string;
+}
+
 export interface TabRows {
   items: Item;
   events: ItemEvent;
@@ -428,4 +455,5 @@ export interface TabRows {
   settings: Setting;
   sd_card_durations: SdCardDuration;
   attention_notes: AttentionNote;
+  delay_notes: DelayNote;
 }

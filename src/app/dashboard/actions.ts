@@ -160,3 +160,53 @@ export async function setAttentionNoteStatus(formData: FormData) {
   revalidatePath("/dashboard");
   redirect(back);
 }
+
+/**
+ * Add a note against one specific delayed card, from the "Needs attention" drill-down table. Logged
+ * separately (see dashboard/page.tsx "Delay notes" table) with a snapshot of who it was with and who
+ * sent it, so the log still makes sense after the item itself moves on.
+ */
+export async function addDelayNote(formData: FormData) {
+  const user = await requireRole();
+
+  const backRaw = String(formData.get("back") ?? "/dashboard");
+  const back = SAFE_BACK.test(backRaw) ? backRaw : "/dashboard";
+
+  const itemId = String(formData.get("item_id") ?? "").trim();
+  const itemType = String(formData.get("item_type") ?? "").trim();
+  const person = String(formData.get("person") ?? "").trim();
+  const sentBy = String(formData.get("sent_by") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim();
+
+  if (!itemId || !note) {
+    redirect(back);
+  }
+
+  const store = getStore();
+  const people = await store.list("people");
+  const now = istTimestamp();
+  const by = (user.email ?? "unknown").toLowerCase();
+  const byName = displayName(people, user.personId ?? "") || user.name || user.email || "";
+
+  const row = {
+    note_id: `dn_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    item_id: itemId,
+    item_type: itemType,
+    person,
+    sent_by: sentBy,
+    note,
+    recorded_at: now,
+    recorded_by: by,
+    recorded_by_name: byName,
+  };
+
+  try {
+    await store.appendRows("delay_notes", [row]);
+  } catch {
+    await store.init();
+    await store.appendRows("delay_notes", [row]);
+  }
+
+  revalidatePath("/dashboard");
+  redirect(back);
+}
