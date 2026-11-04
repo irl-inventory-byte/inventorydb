@@ -3,7 +3,6 @@ import { LATE_AFTER_HOURS, type Dashboard } from "@/lib/dashboard";
 import type { Item } from "@/lib/schema";
 import { getStore } from "@/lib/store";
 import { loadAssetRecords } from "@/lib/asset-sheet";
-import { setFleetAdjustments } from "./actions";
 import { n } from "./charts";
 import styles from "./dashboard.module.css";
 import { Icon, type IconName } from "./icons";
@@ -89,16 +88,6 @@ interface SummaryKpisProps {
    * the dashboard's "Broken / Retired" tile), shown as their own tiles in the Fleet breakdown below. */
   brokenCount?: number;
   retiredCount?: number;
-  /**
-   * Manual addition to the Green cards / Old cards breakdown tiles (SD cards only — never rigs), set
-   * via the "Manual adjustment" box under the Fleet card. Same idea as `baselineTotal`/`brokenCount`:
-   * a correction added on top of the live computed count, for cards whose colour/age was never
-   * recorded. Omit (or leave undefined) to show the computed count as-is.
-   */
-  greenBaseline?: number;
-  oldBaseline?: number;
-  /** Only an admin sees the "Manual adjustment" edit box for Green cards / Old cards. */
-  canEditFleetAdjustments?: boolean;
 }
 
 interface SummaryCard {
@@ -230,9 +219,6 @@ export async function SummaryKpis({
   baselineStorage,
   brokenCount = 0,
   retiredCount = 0,
-  greenBaseline = 0,
-  oldBaseline = 0,
-  canEditFleetAdjustments = false,
 }: SummaryKpisProps) {
   const list = (params: Record<string, string> = {}) =>
     `/inventory?${new URLSearchParams({
@@ -273,10 +259,10 @@ export async function SummaryKpis({
     fleet.storage256 += baselineStorage.gb256;
     fleet.sdCards += baselineTotal;
   }
-  // Manual "Green cards" / "Old cards" adjustment (see the Fleet card's own edit box) — cards whose
-  // colour/age was never recorded, added on top of the live computed count. SD cards only.
-  if (greenBaseline) fleet.green += greenBaseline;
-  if (oldBaseline) fleet.oldCards += oldBaseline;
+  // Fixed manual correction, folded straight into the counts with no separate UI or note anywhere —
+  // cards whose colour/age were never recorded. SD cards only.
+  fleet.green += 89;
+  fleet.oldCards += 94;
 
   // A second read can differ if inventory changed during rendering,
   // or if the caller supplied a different hub scope. (Compared against the real tracked total —
@@ -495,8 +481,6 @@ export async function SummaryKpis({
     </Link>
   );
 
-  const fleetBack = `/dashboard${rigView ? "?type=rig" : ""}`;
-
   return (
     <section
       className={styles.summaryGrid}
@@ -592,69 +576,6 @@ export async function SummaryKpis({
               </span>
             )}
           </span>
-        )}
-
-        {/* Admin-only: manual addition to Green cards / Old cards (SD cards only), for cards whose
-            colour/age was never recorded. Added on top of the live computed count — see setFleetAdjustments. */}
-        {canEditFleetAdjustments && (
-          <form
-            action={setFleetAdjustments}
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
-              marginTop: 12,
-              padding: "8px 10px",
-              maxWidth: 260,
-              border: "1px solid #dbe2ea",
-              borderRadius: 10,
-              background: "linear-gradient(180deg,#f8fafc,#f1f5f9)",
-            }}
-          >
-            <input type="hidden" name="back" value={fleetBack} />
-            <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "#64748b" }}>
-              Manual adjustment{greenBaseline || oldBaseline ? " · active" : ""}
-            </span>
-            <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
-              <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                <span style={{ fontSize: "0.68rem", color: "#94a3b8" }}>+ Green cards</span>
-                <input
-                  type="number"
-                  name="green"
-                  min={0}
-                  placeholder="0"
-                  defaultValue={greenBaseline || ""}
-                  style={{ width: 80, fontSize: "0.82rem", padding: "5px 8px", borderRadius: 6, border: "1px solid #cbd5e1", background: "#fff" }}
-                />
-              </label>
-              <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                <span style={{ fontSize: "0.68rem", color: "#94a3b8" }}>+ Old cards</span>
-                <input
-                  type="number"
-                  name="old"
-                  min={0}
-                  placeholder="0"
-                  defaultValue={oldBaseline || ""}
-                  style={{ width: 80, fontSize: "0.82rem", padding: "5px 8px", borderRadius: 6, border: "1px solid #cbd5e1", background: "#fff" }}
-                />
-              </label>
-              <button
-                type="submit"
-                style={{
-                  fontSize: "0.78rem",
-                  fontWeight: 600,
-                  padding: "6px 16px",
-                  borderRadius: 6,
-                  border: "1px solid #1e293b",
-                  background: "#1e293b",
-                  color: "#fff",
-                  cursor: "pointer",
-                }}
-              >
-                Save
-              </button>
-            </div>
-          </form>
         )}
       </div>
 
