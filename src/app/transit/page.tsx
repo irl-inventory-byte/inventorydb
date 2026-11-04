@@ -23,6 +23,8 @@ export default async function TransitPage({
   const typeFilter = one(sp.type);
   const fromFilter = one(sp.from);
   const toFilter = one(sp.to);
+  const sentByFilter = one(sp.sentby);
+  const toNameFilter = one(sp.toname);
 
   const store = storeForAll(user.role);
   const [items, events, hubs, people] = await Promise.all([
@@ -57,6 +59,7 @@ export default async function TransitPage({
       toHub: hubName.get(toHubId) ?? (toHubId || "—"),
       toCity: hubCity.get(toHubId) ?? "",
       sentBy: e?.recorded_by || personName.get(e?.from_person ?? "") || "—",
+      toName: e?.to_person || personName.get(e?.to_id ?? "") || "—",
       sentAt: e?.occurred_at || i.updated_at,
     };
   });
@@ -66,11 +69,15 @@ export default async function TransitPage({
     .filter((t) => t.count > 0);
   const fromCities = [...new Set(allRows.map((r) => r.fromCity).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const toCities = [...new Set(allRows.map((r) => r.toCity).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const sentByNames = [...new Set(allRows.map((r) => r.sentBy).filter((v) => v && v !== "—"))].sort((a, b) => a.localeCompare(b));
+  const toNames = [...new Set(allRows.map((r) => r.toName).filter((v) => v && v !== "—"))].sort((a, b) => a.localeCompare(b));
 
   let rows = allRows;
   if (typeFilter) rows = rows.filter((r) => r.item_type === typeFilter);
   if (fromFilter) rows = rows.filter((r) => r.fromCity === fromFilter);
   if (toFilter) rows = rows.filter((r) => r.toCity === toFilter);
+  if (sentByFilter) rows = rows.filter((r) => r.sentBy === sentByFilter);
+  if (toNameFilter) rows = rows.filter((r) => r.toName === toNameFilter);
   rows = rows.slice().sort((a, b) => Date.parse(b.sentAt || "0") - Date.parse(a.sentAt || "0"));
 
   const keep = (extra: Record<string, string>) =>
@@ -78,6 +85,8 @@ export default async function TransitPage({
       ...(typeFilter && { type: typeFilter }),
       ...(fromFilter && { from: fromFilter }),
       ...(toFilter && { to: toFilter }),
+      ...(sentByFilter && { sentby: sentByFilter }),
+      ...(toNameFilter && { toname: toNameFilter }),
       ...extra,
     })}`;
 
@@ -135,8 +144,30 @@ export default async function TransitPage({
             ))}
           </select>
         </label>
+        <label style={{ fontSize: "0.85rem", color: "#334155" }}>
+          Sent by{" "}
+          <select name="sentby" defaultValue={sentByFilter}>
+            <option value="">All</option>
+            {sentByNames.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label style={{ fontSize: "0.85rem", color: "#334155" }}>
+          To{" "}
+          <select name="toname" defaultValue={toNameFilter}>
+            <option value="">All</option>
+            {toNames.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
         <button type="submit">Filter</button>
-        {(typeFilter || fromFilter || toFilter) && <Link href="/transit">Clear all</Link>}
+        {(typeFilter || fromFilter || toFilter || sentByFilter || toNameFilter) && <Link href="/transit">Clear all</Link>}
       </form>
 
       {rows.length === 0 ? (
@@ -152,6 +183,7 @@ export default async function TransitPage({
                 <th>From</th>
                 <th>To</th>
                 <th>Sent by</th>
+                <th>To</th>
                 <th>Sent at</th>
               </tr>
             </thead>
@@ -174,6 +206,7 @@ export default async function TransitPage({
                     {r.toCity && <span style={{ color: "#64748b" }}> ({r.toCity})</span>}
                   </td>
                   <td>{r.sentBy}</td>
+                  <td>{r.toName}</td>
                   <td>{r.sentAt ? formatIst(r.sentAt) : "—"}</td>
                 </tr>
               ))}
