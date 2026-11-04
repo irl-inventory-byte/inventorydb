@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import { LATE_AFTER_HOURS, type Dashboard } from "@/lib/dashboard";
 import type { Item } from "@/lib/schema";
@@ -25,7 +26,6 @@ interface FleetCounts {
   storageUnknown: number;
   black: number;
   green: number;
-  colourUnknown: number;
   sdCards: number;
   rigs: number;
   newCards: number; // "New" in the SD card sheet's New/Old column
@@ -35,16 +35,8 @@ interface FleetCounts {
 
 /**
  * New / Old for every SD card in the inventory, from the SD card sheet's New/Old column (matched by Asset
- * Tag). The sheet is read through the same short cache as Add SD card. null = the sheet could not be read.
- *
- * This is a SEPARATE Google Sheet from the app's own database, read directly via the Sheets API —
- * on a cache miss (every 5 min) that can be several Google API round trips one after another. Rather
- * than let a slow or slow-to-authenticate read stall the whole dashboard, this gives it SHEET_TIMEOUT_MS
- * to finish; past that it falls back to null (same as "could not be read") and lets the page render.
- * The read keeps going in the background and fills the cache, so the next load is normally fast again.
- * (Bumped from 1.5s to 4s — 1.5s was timing out too often and New/Old kept falling back to the text
- * message instead of showing tiles. Combined with the 15-minute cache, most loads should still hit a
- * warm cache and render instantly; only a true cache-miss load pays this cost, and it's capped at 4s.)
+ * Tag). null = the sheet could not be read. Given SHEET_TIMEOUT_MS to finish; past that it falls back to
+ * null and lets the page render. The read keeps going in the background and fills the cache.
  */
 const SHEET_TIMEOUT_MS = 4000;
 
@@ -72,20 +64,17 @@ interface SummaryKpisProps {
   /** Rigs view: the first card is "Rigs" and its links show rigs only. */
   rigView?: boolean;
   /**
-   * Where the "Late items" tile links to. When given, used instead of the default inventory list link —
-   * e.g. the dashboard's own "#attention" section, showing every delayed card with no filter applied.
-   * Omit on a page with no Needs attention table (the hub dashboard), where the default inventory link stays.
+   * Where the "Late items" tile links to. When given, used instead of the default inventory list link.
+   * Omit on a page with no Needs attention table (the hub dashboard).
    */
   attentionHref?: string;
   /**
-   * Cards the admin has recorded as already broken before this system tracked them (see the Broken
-   * tile's "Starting count" box) — not real item rows, so they aren't in `items`/`d.total`. Added on
-   * top here so Fleet's Total and usable/non-usable split agree with the Broken tile's own number.
+   * Cards the admin has recorded as already broken before this system tracked them — not real item
+   * rows, so they aren't in `items`/`d.total`. Added on top here so Fleet's Total agrees with Broken.
    */
   baselineTotal?: number;
   baselineStorage?: { gb256: number; gb512: number };
-  /** Broken and retired counts (already including each one's admin "starting count" baseline — see
-   * the dashboard's "Broken / Retired" tile), shown as their own tiles in the Fleet breakdown below. */
+  /** Broken and retired counts (already including each one's admin baseline). */
   brokenCount?: number;
   retiredCount?: number;
 }
@@ -99,6 +88,16 @@ interface SummaryCard {
   href: string;
   meter?: number;
   warn?: boolean;
+}
+
+interface FleetTile {
+  label: string;
+  count: number;
+  pct: string;
+  bg: string;
+  border: string;
+  text: string;
+  heading?: string; // section title shown above this tile
 }
 
 /**
@@ -137,14 +136,8 @@ function attributeText(value: unknown): string {
 }
 
 /**
- * Read the fields saved by the updated Add item action:
- *
- * {
- *   "capacity": "512 GB",
- *   "card_type": "Black"
- * }
- *
- * Storage and colour are separate breakdowns of the same items.
+ * Counts SD cards by storage, colour and New/Old, and rigs separately.
+ * Cards with a colour other than Black or Green are simply not shown as a colour tile.
  */
 function countFleet(items: readonly Item[], ages: Map<string, string> | null): FleetCounts {
   const counts: FleetCounts = {
@@ -153,7 +146,6 @@ function countFleet(items: readonly Item[], ages: Map<string, string> | null): F
     storageUnknown: 0,
     black: 0,
     green: 0,
-    colourUnknown: 0,
     sdCards: 0,
     rigs: 0,
     newCards: 0,
@@ -188,16 +180,12 @@ function countFleet(items: readonly Item[], ages: Map<string, string> | null): F
       counts.storageUnknown++;
     }
 
-    const colour = attributeText(
-      attributes.card_type
-    ).toLowerCase();
+    const colour = attributeText(attributes.card_type).toLowerCase();
 
     if (colour === "black") {
       counts.black++;
     } else if (colour === "green") {
       counts.green++;
-    } else {
-      counts.colourUnknown++;
     }
   }
 
@@ -227,8 +215,7 @@ export async function SummaryKpis({
       ...params,
     })}`;
 
-  // NEW: load inventory here when the parent did not pass items.
-  // This allows the existing <SummaryKpis d={d} /> call to work.
+  // Load inventory here when the parent did not pass items.
   const sourceItems =
     items !== undefined
       ? items
@@ -252,17 +239,15 @@ export async function SummaryKpis({
   const hasSd = fleetItems.some((i) => i.item_type !== "rig" && i.item_type !== "mobile");
   const ages = hasSd ? await sheetAges() : null;
   const fleet = countFleet(fleetItems, ages);
-  // Fold the admin's "already broken before tracking" baseline into the storage breakdown too, so
-  // the 512/256 GB tiles and the Total agree with each other and with the Broken tile's own number.
+  // Fold the admin's "already broken before tracking" baseline into the storage breakdown too.
   if (baselineStorage) {
     fleet.storage512 += baselineStorage.gb512;
     fleet.storage256 += baselineStorage.gb256;
     fleet.sdCards += baselineTotal;
   }
 
-  // A second read can differ if inventory changed during rendering,
-  // or if the caller supplied a different hub scope. (Compared against the real tracked total —
-  // the baseline is phantom, not a row in `items`, so it's left out of this check on purpose.)
+  // A second read can differ if inventory changed during rendering, or if the caller supplied a
+  // different hub scope. Compared against the real tracked total (the baseline is not an item row).
   const scopeMismatch = fleetItems.length !== d.total;
 
   const total = d.total + baselineTotal;
@@ -272,15 +257,14 @@ export async function SummaryKpis({
       ? null
       : Math.round(d.utilization);
 
-  // Share of the SD card total, e.g. 903 of 1479 = 61%. Shown next to each tile's count so the two
-  // sides of a split (512 vs 256, Black vs Green, New vs Old) are easy to compare at a glance.
+  // Share of the SD card total, shown next to each tile's count.
   const share = (count: number) => (fleet.sdCards > 0 ? `${Math.round((count / fleet.sdCards) * 100)}%` : "");
 
-  // Each tile has its own colour so the four are easy to tell apart:
-  // storage in blues, card colour in the card's real colour.
-  const sdDetails = [
+  // Each tile has its own colour: storage in blues, card colour in the card's real colour.
+  const sdDetails: FleetTile[] = [
     {
       label: "512 GB",
+      heading: "Usable",
       count: fleet.storage512,
       pct: share(fleet.storage512),
       bg: "#e0e7ff",
@@ -334,22 +318,19 @@ export async function SummaryKpis({
       : []),
   ];
 
-  // Broken and Retired's own percentage is of the two combined (how the unusable pile splits between
-  // them), not of the whole fleet — e.g. Broken 89 of 94 unusable = 95%, not 89 of 1,653 total = 5%.
-  const unusableTotal = brokenCount + retiredCount;
-  const unusableShare = (count: number) => (unusableTotal > 0 ? `${Math.round((count / unusableTotal) * 100)}%` : "");
+  // Broken and Retired percentages are of the TOTAL fleet only (e.g. 89 of 1,653 = 5.4%).
+  const totalShare = (count: number) => (total > 0 ? `${((count / total) * 100).toFixed(1)}%` : "");
 
-  // Order: storage (512/256), colour (Black/Green), age (New/Old) — all from sdDetails — then
-  // Broken, then Retired, then Rigs last. (No separate "Unusable" tile — the top note line above
-  // already says "N lost, damaged or retired", and Broken + Retired below add up to that same N.)
-  const fleetDetails = [
+  // "Unusable" title goes above the first of Broken / Retired that is shown.
+  const fleetDetails: FleetTile[] = [
     ...(fleet.sdCards > 0 ? sdDetails : []),
     ...(brokenCount > 0
       ? [
           {
             label: "Broken cards",
+            heading: "Unusable",
             count: brokenCount,
-            pct: unusableShare(brokenCount),
+            pct: totalShare(brokenCount),
             bg: "#fee2e2",
             border: "#dc2626",
             text: "#7f1d1d",
@@ -360,8 +341,9 @@ export async function SummaryKpis({
       ? [
           {
             label: "Retired cards",
+            heading: brokenCount > 0 ? undefined : "Unusable",
             count: retiredCount,
-            pct: unusableShare(retiredCount),
+            pct: totalShare(retiredCount),
             bg: "#f3f4f6",
             border: "#6b7280",
             text: "#1f2937",
@@ -436,8 +418,6 @@ export async function SummaryKpis({
               d.oldestLateHours ?? 0
             )}`
           : `Nothing over ${LATE_AFTER_HOURS} hours`,
-      // Opens the dashboard's own Needs attention table (every delayed card, unfiltered) when given one;
-      // else the inventory list with ONLY the late items (and only this city's hubs from a city page).
       href:
         attentionHref ??
         list({
@@ -476,7 +456,7 @@ export async function SummaryKpis({
               : undefined
           }
         >
-          {/* Existing card title and icon. */}
+          {/* Card title and icon. */}
           <span className={styles.summaryTop}>
             <span className={styles.summaryLabel}>
               {card.label}
@@ -491,12 +471,12 @@ export async function SummaryKpis({
             </span>
           </span>
 
-          {/* Existing main metric. */}
+          {/* Main metric. */}
           <span className={styles.summaryValue}>
             {card.value}
           </span>
 
-          {/* Existing utilization meter. */}
+          {/* Utilization meter. */}
           {card.meter !== undefined && (
             <span
               className={styles.meter}
@@ -542,7 +522,7 @@ export async function SummaryKpis({
             </span>
           )}
 
-          {/* NEW: storage and colour details inside Fleet. */}
+          {/* Storage, colour, age and unusable details inside Fleet. */}
           {card.key === "fleet" && fleetDetails.length > 0 && (
             <span
               style={{
@@ -564,52 +544,61 @@ export async function SummaryKpis({
                 }}
               >
                 {fleetDetails.map((detail) => (
-                  <span
-                    key={detail.label}
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 4,
-                      padding: "8px 10px",
-                      minWidth: 0,
-                      border: `1px solid ${detail.border}`,
-                      borderLeft: `5px solid ${detail.border}`,
-                      borderRadius: 8,
-                      backgroundColor: detail.bg,
-                      color: detail.text,
-                    }}
-                  >
+                  <Fragment key={detail.label}>
+                    {detail.heading && (
+                      <span
+                        style={{
+                          gridColumn: "1 / -1",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          letterSpacing: "0.06em",
+                          textTransform: "uppercase",
+                          color: "#475569",
+                          marginTop: 4,
+                        }}
+                      >
+                        {detail.heading}
+                      </span>
+                    )}
                     <span
                       style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        whiteSpace: "normal",
-                      }}
-                    >
-                      {detail.label}
-                    </span>
-
-                    <strong
-                      style={{
-                        fontSize: 20,
-                        lineHeight: 1.3,
                         display: "flex",
-                        alignItems: "baseline",
-                        gap: 6,
+                        flexDirection: "column",
+                        gap: 4,
+                        padding: "8px 10px",
+                        minWidth: 0,
+                        border: `1px solid ${detail.border}`,
+                        borderLeft: `5px solid ${detail.border}`,
+                        borderRadius: 8,
+                        backgroundColor: detail.bg,
+                        color: detail.text,
                       }}
                     >
-                      {n(detail.count)}
-                      {detail.pct && (
-                        <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.75 }}>
-                          {detail.pct}
-                        </span>
-                      )}
-                    </strong>
-                  </span>
+                      <span style={{ fontSize: 12, fontWeight: 600, whiteSpace: "normal" }}>
+                        {detail.label}
+                      </span>
+                      <strong
+                        style={{
+                          fontSize: 20,
+                          lineHeight: 1.3,
+                          display: "flex",
+                          alignItems: "baseline",
+                          gap: 6,
+                        }}
+                      >
+                        {n(detail.count)}
+                        {detail.pct && (
+                          <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.75 }}>
+                            {detail.pct}
+                          </span>
+                        )}
+                      </strong>
+                    </span>
+                  </Fragment>
                 ))}
               </span>
 
-              {/* Never silently ignore missing attributes. */}
+              {/* Never silently ignore missing storage attributes. */}
               {fleet.storageUnknown > 0 && (
                 <span
                   style={{
@@ -635,19 +624,6 @@ export async function SummaryKpis({
                 </span>
               )}
 
-              {fleet.colourUnknown > 0 && (
-                <span
-                  style={{
-                    display: "block",
-                    marginTop: 8,
-                    fontSize: 12,
-                  }}
-                >
-                  Unknown / other colour:{" "}
-                  {n(fleet.colourUnknown)}
-                </span>
-              )}
-
               {/* Flag differing scopes or concurrent data changes. */}
               {scopeMismatch && (
                 <span
@@ -663,19 +639,6 @@ export async function SummaryKpis({
                   this persists, check the hub scope.
                 </span>
               )}
-
-              <span
-                style={{
-                  display: "block",
-                  marginTop: 8,
-                  fontSize: 12,
-                  lineHeight: 1.4,
-                  color: "#0284c7",
-                  fontWeight: 600,
-                }}
-              >
-              
-              </span>
             </span>
           )}
         </Link>
