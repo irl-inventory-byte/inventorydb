@@ -297,15 +297,6 @@ export async function SummaryKpis({
   // Each tile has its own colour so the four are easy to tell apart:
   // storage in blues, card colour in the card's real colour.
   const sdDetails = [
-    // Total SD cards (separate from the Fleet card's own Total, which can also include rigs/baselines).
-    {
-      label: "SD cards",
-      count: fleet.sdCards,
-      pct: "",
-      bg: "#ede9fe",
-      border: "#7c3aed",
-      text: "#4c1d95",
-    },
     {
       label: "512 GB",
       count: fleet.storage512,
