@@ -64,12 +64,14 @@ export class Store {
       tab === "lost_notes" ||
       tab === "audits" ||
       tab === "settings" ||
-      tab === "sd_card_durations";
+      tab === "sd_card_durations" ||
+      tab === "attention_notes";
     const rows = optional
       ? await this.readOptional(tab)
       : await this.backend.readAll(tab);
 
-    if (tab === "acknowledgments" || tab === "settings" || tab === "sd_card_durations") return rows as unknown as TabRows[T][];
+    if (tab === "acknowledgments" || tab === "settings" || tab === "sd_card_durations" || tab === "attention_notes")
+      return rows as unknown as TabRows[T][];
 
     const types = this.types;
     if (!types) return rows as unknown as TabRows[T][];

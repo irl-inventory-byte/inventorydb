@@ -152,6 +152,18 @@ export const TABS = {
     "recorded_at",
     "forwarded", // "yes" | "no: <reason>" — whether the copy sent to the Google Script succeeded
   ],
+  // Manual flags shown in the dashboard's "Needs attention" section, alongside the automatic delayed-card
+  // table — a free-text note anyone can add (e.g. "Chase city X about missing cards"), with who added it
+  // and an optional "by when" date. Marked done rather than deleted, so there's a record of what was raised.
+  attention_notes: [
+    "note_id",
+    "note",
+    "due_date", // "by when", YYYY-MM-DD — optional, "" if none given
+    "status", // "open" | "done"
+    "recorded_at",
+    "recorded_by", // login email
+    "recorded_by_name",
+  ],
 } as const;
 
 export type TabName = keyof typeof TABS;
@@ -387,6 +399,16 @@ export interface SdCardDuration extends Row {
   forwarded: string;
 }
 
+export interface AttentionNote extends Row {
+  note_id: string;
+  note: string;
+  due_date: string; // "" if none given
+  status: string; // "open" | "done"
+  recorded_at: string;
+  recorded_by: string;
+  recorded_by_name: string;
+}
+
 export interface TabRows {
   items: Item;
   events: ItemEvent;
@@ -405,4 +427,5 @@ export interface TabRows {
   audits: Audit;
   settings: Setting;
   sd_card_durations: SdCardDuration;
+  attention_notes: AttentionNote;
 }

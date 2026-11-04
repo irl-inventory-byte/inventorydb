@@ -5,7 +5,7 @@ import { requireRole } from "@/lib/authz";
 import { LATE_AFTER_HOURS, computeDashboard } from "@/lib/dashboard";
 import { buildHubTree } from "@/lib/hub-tree";
 import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
-import type { Acknowledgment, HardwareUpdate, QcCheck, Status } from "@/lib/schema";
+import type { Acknowledgment, AttentionNote, HardwareUpdate, QcCheck, Status } from "@/lib/schema";
 import { HANDLER_ROLES, INVENTORY_ROLES, allowedTypes, canSeeType, storeFor, storeForAll, typeParam } from "@/lib/access";
 import TypeSwitch from "../TypeSwitch";
 import RoleSwitch from "../RoleSwitch";
@@ -20,7 +20,7 @@ import { HubOrgChart, countHidden } from "./hub-tree-view";
 import AttentionFilter from "./attentionfilter";
 import { Icon, type IconName } from "./icons";
 import TeamSelect from "./TeamSelect";
-import { setBrokenStorageOverride, setRetiredBaseline } from "./actions";
+import { addAttentionNote, setAttentionNoteStatus, setBrokenStorageOverride, setRetiredBaseline } from "./actions";
 import { SummaryKpis } from "./summary-kpis";
 import { RIG_STATES, RIG_STATE_LABELS, rigState, type RigState } from "@/lib/rig-state";
 import { NO_ACTIVITY_DAYS, RigMetrics } from "./rig-metrics";
@@ -207,7 +207,24 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const mobileView = type === "mobile";
   const showQc = canSeeType(user.role, "rig") && type !== "sd_card" && !mobileView;
   const showAck = user.role === "admin" || user.role === "im";
-  const [items, events, people, hubs, qcChecks, hardwareUpdates, settings, acknowledgments] = await Promise.all([
+  // Monthly report (all item types this login can see) needs its own full items/events read — fetched
+  // alongside everything else below (not after it) so the two round trips overlap instead of stacking.
+  const reportStore = storeForAll(user.role);
+  const [
+    items,
+    events,
+    people,
+    hubs,
+    qcChecks,
+    hardwareUpdates,
+    settings,
+    acknowledgments,
+    attentionNotes,
+    allItems,
+    allEvents,
+    allQc,
+    allHw,
+  ] = await Promise.all([
     store.list("items"),
     store.list("events"),
     store.list("people"),
@@ -216,6 +233,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     showQc ? store.list("hardware_updates") : Promise.resolve([] as HardwareUpdate[]),
     store.list("settings"),
     showAck ? store.list("acknowledgments") : Promise.resolve([] as Acknowledgment[]),
+    getStore().list("attention_notes").catch(() => [] as AttentionNote[]),
+    reportStore.list("items"),
+    reportStore.list("events"),
+    reportStore.list("qc_checks").catch(() => [] as QcCheck[]),
+    reportStore.list("hardware_updates").catch(() => [] as HardwareUpdate[]),
   ]);
   const now = new Date();
 
@@ -278,13 +300,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   };
 
   // Monthly report (all item types this login can see): ?rmonth=2026-10, default this month.
-  const reportStore = storeForAll(user.role);
-  const [allItems, allEvents, allQc, allHw] = await Promise.all([
-    reportStore.list("items"),
-    reportStore.list("events"),
-    reportStore.list("qc_checks").catch(() => [] as QcCheck[]),
-    reportStore.list("hardware_updates").catch(() => [] as HardwareUpdate[]),
-  ]);
+  // allItems/allEvents/allQc/allHw were already fetched above, alongside the main dashboard data.
   // Report filters: ?rfrom=2026-10-01&rto=2026-10-24&rperson=…&rcity=…&rtype=… (default: this month so far).
   const monthly = buildMonthlyReport({
     filter: pickFilter((k) => one(sp[`r${k}`]) || undefined, now),
@@ -835,6 +851,23 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   for (const k of ["type", "empty", "acity", "arole", ...MOVE_KEYS, ...EXTRA_KEYS]) if (val(k)) attentionKeep[k] = val(k);
   const detailHref = (key: string) => `/dashboard?${new URLSearchParams({ ...attentionKeep, adetail: key })}#delayed-items`;
   const closeDetailHref = `/dashboard?${new URLSearchParams(attentionKeep)}#attention`;
+
+  // Manual notes under "Needs attention" (see dashboard/actions.ts addAttentionNote / setAttentionNoteStatus):
+  // open ones first, earliest "by when" first (no date = last); done ones kept but shown separately, newest first.
+  const attentionBack = `/dashboard?${new URLSearchParams(attentionKeep)}#attention-notes`;
+  const openNotes = attentionNotes
+    .filter((n) => n.status !== "done")
+    .slice()
+    .sort((a, b) => {
+      const ad = a.due_date ? Date.parse(a.due_date) : Infinity;
+      const bd = b.due_date ? Date.parse(b.due_date) : Infinity;
+      return ad - bd || Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0");
+    });
+  const doneNotes = attentionNotes
+    .filter((n) => n.status === "done")
+    .slice()
+    .sort((a, b) => Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0"));
+  const todayStr = istDate(now);
   // "Moved per day" and "Moved per hour of day": each has its own Items, Person, City and Role filters, and
   // several values can be ticked in each (?mperson=a&mperson=b, kept in links as "a,b"). Items: empty = all
   // the types this login can see. Default range: the last 14 days.
@@ -1681,6 +1714,121 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                 </div>
               </div>
             )}
+
+            {/* MANUAL NOTES — anyone viewing the dashboard can raise a free-text flag here, with an
+                optional "by when" date; shown under the automatic delayed-card table above. */}
+            <div id="attention-notes" style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid var(--border)", scrollMarginTop: 80 }}>
+              <h3 style={{ margin: "0 0 4px" }}>Notes</h3>
+              <p className={styles.muted} style={{ margin: "0 0 12px" }}>
+                Anything else that needs a look — add a note, an optional date it's needed by, and who's flagging it
+                is recorded automatically.
+              </p>
+
+              <form
+                action={addAttentionNote}
+                style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-end", marginBottom: 16 }}
+              >
+                <input type="hidden" name="back" value={attentionBack} />
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 320px", fontSize: "0.85rem" }}>
+                  Note
+                  <input
+                    name="note"
+                    required
+                    placeholder="e.g. Chase Pune hub about 3 missing cards"
+                    style={{ padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface-1)", color: "var(--text-primary)" }}
+                  />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.85rem" }}>
+                  By when (optional)
+                  <input
+                    type="date"
+                    name="due_date"
+                    min={todayStr}
+                    style={{ padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface-1)", color: "var(--text-primary)" }}
+                  />
+                </label>
+                <button type="submit" style={{ padding: "8px 16px" }}>
+                  Add note
+                </button>
+              </form>
+
+              {openNotes.length === 0 ? (
+                <p className={styles.ok}>
+                  <span className={`${styles.icon} ${styles.iconGood}`} aria-hidden>
+                    ✓
+                  </span>{" "}
+                  No open notes right now.
+                </p>
+              ) : (
+                <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 8 }}>
+                  {openNotes.map((note) => {
+                    const overdue = note.due_date && note.due_date < todayStr;
+                    return (
+                      <li
+                        key={note.note_id}
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          justifyContent: "space-between",
+                          alignItems: "flex-start",
+                          gap: 10,
+                          padding: "10px 12px",
+                          border: `1px solid ${overdue ? "var(--critical)" : "var(--border)"}`,
+                          borderRadius: 8,
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ whiteSpace: "normal" }}>{note.note}</div>
+                          <div className={styles.muted} style={{ fontSize: "0.8rem", marginTop: 2 }}>
+                            {note.due_date && (
+                              <span style={overdue ? { color: "var(--critical)", fontWeight: 600 } : undefined}>
+                                By {note.due_date}
+                                {overdue ? " — overdue" : ""} ·{" "}
+                              </span>
+                            )}
+                            Raised by {note.recorded_by_name || note.recorded_by || "—"}
+                            {note.recorded_at && <> · {formatIst(note.recorded_at)}</>}
+                          </div>
+                        </div>
+                        <form action={setAttentionNoteStatus}>
+                          <input type="hidden" name="back" value={attentionBack} />
+                          <input type="hidden" name="note_id" value={note.note_id} />
+                          <input type="hidden" name="status" value="done" />
+                          <button type="submit" className={styles.link} style={{ whiteSpace: "nowrap" }}>
+                            Mark done
+                          </button>
+                        </form>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+
+              {doneNotes.length > 0 && (
+                <details style={{ marginTop: 12 }}>
+                  <summary className={styles.muted} style={{ cursor: "pointer" }}>
+                    Done ({doneNotes.length})
+                  </summary>
+                  <ul style={{ listStyle: "none", margin: "8px 0 0", padding: 0, display: "grid", gap: 6 }}>
+                    {doneNotes.map((note) => (
+                      <li key={note.note_id} style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 10, padding: "6px 2px" }}>
+                        <span className={styles.muted} style={{ textDecoration: "line-through" }}>
+                          {note.note}
+                        </span>
+                        <form action={setAttentionNoteStatus}>
+                          <input type="hidden" name="back" value={attentionBack} />
+                          <input type="hidden" name="note_id" value={note.note_id} />
+                          <input type="hidden" name="status" value="open" />
+                          <button type="submit" className={styles.link} style={{ whiteSpace: "nowrap" }}>
+                            Reopen
+                          </button>
+                        </form>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </div>
           </section>
 
           {/* WHO HAS ITEMS */}

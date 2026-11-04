@@ -94,3 +94,69 @@ export async function setRetiredBaseline(formData: FormData) {
   revalidatePath("/dashboard");
   redirect(back);
 }
+
+/**
+ * Add a manual note to the "Needs attention" section — a free-text flag anyone viewing the dashboard
+ * can raise (e.g. "Chase Pune about 3 missing cards"), with an optional "by when" date. Recorded under
+ * the logged-in person's name, same as a handover note.
+ */
+export async function addAttentionNote(formData: FormData) {
+  const user = await requireRole();
+
+  const backRaw = String(formData.get("back") ?? "/dashboard");
+  const back = SAFE_BACK.test(backRaw) ? backRaw : "/dashboard";
+
+  const note = String(formData.get("note") ?? "").trim();
+  const dueDate = String(formData.get("due_date") ?? "").trim();
+
+  if (!note) {
+    redirect(back);
+  }
+
+  const store = getStore();
+  const people = await store.list("people");
+  const now = istTimestamp();
+  const by = (user.email ?? "unknown").toLowerCase();
+  const byName = displayName(people, user.personId ?? "") || user.name || user.email || "";
+
+  const row = {
+    note_id: `an_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    note,
+    due_date: dueDate,
+    status: "open",
+    recorded_at: now,
+    recorded_by: by,
+    recorded_by_name: byName,
+  };
+
+  try {
+    await store.appendRows("attention_notes", [row]);
+  } catch {
+    await store.init();
+    await store.appendRows("attention_notes", [row]);
+  }
+
+  revalidatePath("/dashboard");
+  redirect(back);
+}
+
+/**
+ * Mark a manual attention note done (or reopen it) — kept in the table either way, so there's a record
+ * of what was raised and when it was cleared, rather than deleting it outright.
+ */
+export async function setAttentionNoteStatus(formData: FormData) {
+  await requireRole();
+
+  const backRaw = String(formData.get("back") ?? "/dashboard");
+  const back = SAFE_BACK.test(backRaw) ? backRaw : "/dashboard";
+
+  const noteId = String(formData.get("note_id") ?? "").trim();
+  const status = String(formData.get("status") ?? "").trim() === "done" ? "done" : "open";
+  if (!noteId) redirect(back);
+
+  const store = getStore();
+  await store.upsert("attention_notes", [{ note_id: noteId, status }]);
+
+  revalidatePath("/dashboard");
+  redirect(back);
+}
