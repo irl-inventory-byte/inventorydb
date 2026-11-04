@@ -430,9 +430,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     fo: { icon: "user", color: "var(--series-2)", hint: "Checked out to an FO" },
     transit: { icon: "truck", color: "var(--series-4)", hint: "Sent by the IM to an IFO" },
     qc_pending: { icon: "shield", color: "var(--series-7)", hint: "Received by QC" },
-    qc_pass: { icon: "check", color: "var(--series-3)", hint: "Passed by QC or repaired by hardware, sent to IM, not received yet" },
+    qc_pass: { icon: "check", color: "var(--series-3)", hint: "Passed by QC, sent to IM, not received yet" },
     qc_fail: { icon: "alert", color: "var(--warning)", hint: "Hardware has not received it yet" },
-    rtd: { icon: "send", color: "var(--series-3)", hint: "Repaired, received by IM" },
+    rtd: { icon: "send", color: "var(--series-3)", hint: "Repaired by hardware — sent to IM, whether or not received yet" },
     dead: { icon: "archive", color: "var(--text-muted)", hint: "Declared dead by hardware" },
     rnd: { icon: "wrench", color: "var(--series-7)", hint: "Moved to R&D by hardware" },
   };
@@ -1414,6 +1414,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             qcFrom={qcFrom}
             qcTo={qcTo}
             qcKeep={qcKeep}
+            san={san}
             sanKeep={sanKeep}
           />
         )}
