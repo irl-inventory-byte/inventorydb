@@ -1433,7 +1433,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             qcFrom={qcFrom}
             qcTo={qcTo}
             qcKeep={qcKeep}
-            san={san}
             sanKeep={sanKeep}
           />
         )}
