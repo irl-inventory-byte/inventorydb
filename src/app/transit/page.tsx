@@ -58,7 +58,7 @@ export default async function TransitPage({
       fromCity: hubCity.get(fromHubId) ?? "",
       toHub: hubName.get(toHubId) ?? (toHubId || "—"),
       toCity: hubCity.get(toHubId) ?? "",
-      sentBy: e?.recorded_by || personName.get(e?.from_person ?? "") || "—",
+      sentBy: e?.from_person || personName.get(e?.from_id ?? "") || e?.recorded_by || "—",
       toName: e?.to_person || personName.get(e?.to_id ?? "") || "—",
       sentAt: e?.occurred_at || i.updated_at,
     };
