@@ -262,7 +262,7 @@ export async function SummaryKpis({
   // Fixed manual correction, folded straight into the counts with no separate UI or note anywhere —
   // cards whose colour/age were never recorded. SD cards only.
   fleet.green += 89;
-  fleet.oldCards += 93;
+  fleet.oldCards += 94;
 
   // A second read can differ if inventory changed during rendering,
   // or if the caller supplied a different hub scope. (Compared against the real tracked total —
@@ -485,11 +485,16 @@ export async function SummaryKpis({
     <section
       className={styles.summaryGrid}
       aria-label="Management summary"
+      // Flexbox instead of CSS grid here on purpose: in a 2-column grid, the shorter column can end up
+      // with its track height set by the taller one, which some browsers then apply to the item's own
+      // box even with align-items: start, leaving a visible blank gap inside the shorter card's border
+      // (e.g. "Rigs" card on the Rig tab, far shorter than Fleet on the SD card tab). Flex with
+      // align-items: flex-start reliably sizes each column to its own content, no blank space.
       style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "flex-start",
         gap: 14,
-        alignItems: "start",
         height: "auto",
         maxHeight: "none",
         overflow: "visible",
@@ -501,6 +506,8 @@ export async function SummaryKpis({
         style={{
           display: "flex",
           flexDirection: "column",
+          flex: "1 1 320px",
+          alignSelf: "flex-start",
           height: "auto",
           maxHeight: "none",
           minWidth: 0,
@@ -580,7 +587,7 @@ export async function SummaryKpis({
       </div>
 
       {/* Right column: Utilization on top, Waiting to be received + Late items below it. */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+      <div style={{ display: "flex", flexDirection: "column", flex: "1 1 320px", alignSelf: "flex-start", gap: 14, minWidth: 0 }}>
         <div
           className={styles.summary}
           style={{ display: "flex", flexDirection: "column", height: "auto", maxHeight: "none", minWidth: 0, overflow: "visible" }}
