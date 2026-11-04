@@ -3,6 +3,7 @@ import { LATE_AFTER_HOURS, type Dashboard } from "@/lib/dashboard";
 import type { Item } from "@/lib/schema";
 import { getStore } from "@/lib/store";
 import { loadAssetRecords } from "@/lib/asset-sheet";
+import { setFleetAdjustments } from "./actions";
 import { n } from "./charts";
 import styles from "./dashboard.module.css";
 import { Icon, type IconName } from "./icons";
@@ -88,6 +89,16 @@ interface SummaryKpisProps {
    * the dashboard's "Broken / Retired" tile), shown as their own tiles in the Fleet breakdown below. */
   brokenCount?: number;
   retiredCount?: number;
+  /**
+   * Manual addition to the Green cards / Old cards breakdown tiles (SD cards only — never rigs), set
+   * via the "Manual adjustment" box under the Fleet card. Same idea as `baselineTotal`/`brokenCount`:
+   * a correction added on top of the live computed count, for cards whose colour/age was never
+   * recorded. Omit (or leave undefined) to show the computed count as-is.
+   */
+  greenBaseline?: number;
+  oldBaseline?: number;
+  /** Only an admin sees the "Manual adjustment" edit box for Green cards / Old cards. */
+  canEditFleetAdjustments?: boolean;
 }
 
 interface SummaryCard {
@@ -219,6 +230,9 @@ export async function SummaryKpis({
   baselineStorage,
   brokenCount = 0,
   retiredCount = 0,
+  greenBaseline = 0,
+  oldBaseline = 0,
+  canEditFleetAdjustments = false,
 }: SummaryKpisProps) {
   const list = (params: Record<string, string> = {}) =>
     `/inventory?${new URLSearchParams({
@@ -259,6 +273,10 @@ export async function SummaryKpis({
     fleet.storage256 += baselineStorage.gb256;
     fleet.sdCards += baselineTotal;
   }
+  // Manual "Green cards" / "Old cards" adjustment (see the Fleet card's own edit box) — cards whose
+  // colour/age was never recorded, added on top of the live computed count. SD cards only.
+  if (greenBaseline) fleet.green += greenBaseline;
+  if (oldBaseline) fleet.oldCards += oldBaseline;
 
   // A second read can differ if inventory changed during rendering,
   // or if the caller supplied a different hub scope. (Compared against the real tracked total —
@@ -279,6 +297,15 @@ export async function SummaryKpis({
   // Each tile has its own colour so the four are easy to tell apart:
   // storage in blues, card colour in the card's real colour.
   const sdDetails = [
+    // Total SD cards (separate from the Fleet card's own Total, which can also include rigs/baselines).
+    {
+      label: "SD cards",
+      count: fleet.sdCards,
+      pct: "",
+      bg: "#ede9fe",
+      border: "#7c3aed",
+      text: "#4c1d95",
+    },
     {
       label: "512 GB",
       count: fleet.storage512,
@@ -339,8 +366,8 @@ export async function SummaryKpis({
   const unusableTotal = brokenCount + retiredCount;
   const unusableShare = (count: number) => (unusableTotal > 0 ? `${Math.round((count / unusableTotal) * 100)}%` : "");
 
-  // Order: storage (512/256), colour (Black/Green), age (New/Old) — all from sdDetails — then
-  // Broken, then Retired, then Rigs last. (No separate "Unusable" tile — the top note line above
+  // Order: SD card total, storage (512/256), colour (Black/Green), age (New/Old) — all from sdDetails —
+  // then Broken, then Retired, then Rigs last. (No separate "Unusable" tile — the top note line above
   // already says "N lost, damaged or retired", and Broken + Retired below add up to that same N.)
   const fleetDetails = [
     ...(fleet.sdCards > 0 ? sdDetails : []),
@@ -395,23 +422,6 @@ export async function SummaryKpis({
           : `${n(d.usable)} usable`,
       href: list(),
     },
-    // "Waiting to be received" sits right above Utilization, and "Late items" (below) right after it —
-    // the two numbers that most need day-to-day attention bracket the Utilization box, per request.
-    {
-      key: "waiting",
-      icon: "inbox",
-      label: "Waiting to be received",
-      value: n(d.waiting),
-      note:
-        d.waiting > 0
-          ? `Sent or traveling · oldest ${dayText(
-              d.oldestWaitingDays
-            )}`
-          : "Nothing waiting",
-      href: hubParam
-        ? list({ status: "pending,traveling" })
-        : "/handover/receive",
-    },
     {
       key: "utilization",
       icon: "activity",
@@ -426,6 +436,21 @@ export async function SummaryKpis({
           : "pending,traveling,with_fo,with_rig,with_internal",
       }),
       meter: pct ?? 0,
+    },
+    {
+      key: "waiting",
+      icon: "inbox",
+      label: "Waiting to be received",
+      value: n(d.waiting),
+      note:
+        d.waiting > 0
+          ? `Sent or traveling · oldest ${dayText(
+              d.oldestWaitingDays
+            )}`
+          : "Nothing waiting",
+      href: hubParam
+        ? list({ status: "pending,traveling" })
+        : "/handover/receive",
     },
     {
       key: "late",
@@ -449,239 +474,237 @@ export async function SummaryKpis({
       warn: d.lateCards > 0,
     },
   ];
+  const byKey = Object.fromEntries(cards.map((c) => [c.key, c])) as Record<string, SummaryCard>;
+
+  // The title/icon/value/meter/note content shared by every card.
+  const cardInner = (card: SummaryCard) => (
+    <>
+      <span className={styles.summaryTop}>
+        <span className={styles.summaryLabel}>{card.label}</span>
+        <span className={`${styles.summaryIcon} ${card.warn ? styles.summaryIconWarn : ""}`}>
+          <Icon name={card.icon} size={18} />
+        </span>
+      </span>
+      <span className={styles.summaryValue}>{card.value}</span>
+      {card.meter !== undefined && (
+        <span className={styles.meter} role="img" aria-label={`${card.meter}% utilization`}>
+          <i style={{ width: `${Math.max(0, Math.min(100, card.meter))}%` }} />
+        </span>
+      )}
+      <span className={styles.summaryNote}>{card.note}</span>
+    </>
+  );
+
+  // Fleet and Utilization sit inside a plain <div> (not a Link) because they have more content below
+  // the fold (the breakdown grid and, on Fleet, edit forms) — so just their title/value/note area is
+  // wrapped in its own Link, same click target as before, without nesting a link inside a link.
+  const cardTop = (card: SummaryCard) => (
+    <Link href={card.href} style={{ display: "contents" }}>
+      {cardInner(card)}
+    </Link>
+  );
+
+  const fleetBack = `/dashboard${rigView ? "?type=rig" : ""}`;
 
   return (
     <section
       className={styles.summaryGrid}
       aria-label="Management summary"
       style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+        gap: 14,
+        alignItems: "start",
         height: "auto",
         maxHeight: "none",
         overflow: "visible",
       }}
     >
-      {cards.map((card) => (
-        <Link
-          key={card.key}
-          href={card.href}
-          className={styles.summary}
-          style={
-            card.key === "fleet" || card.key === "utilization"
-              ? {
-                  display: "flex",
-                  flexDirection: "column",
-                  height: "auto",
-                  maxHeight: "none",
-                  minWidth: 0,
-                  overflow: "visible",
-                }
-              : undefined
-          }
-        >
-          {/* Existing card title and icon. */}
-          <span className={styles.summaryTop}>
-            <span className={styles.summaryLabel}>
-              {card.label}
-            </span>
+      {/* Fleet — storage update, on its own (left on desktop). */}
+      <div
+        className={styles.summary}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          height: "auto",
+          maxHeight: "none",
+          minWidth: 0,
+          overflow: "visible",
+        }}
+      >
+        {cardTop(byKey.fleet)}
 
-            <span
-              className={`${styles.summaryIcon} ${
-                card.warn ? styles.summaryIconWarn : ""
-              }`}
-            >
-              <Icon name={card.icon} size={18} />
-            </span>
-          </span>
-
-          {/* Existing main metric. */}
-          <span className={styles.summaryValue}>
-            {card.value}
-          </span>
-
-          {/* Existing utilization meter. */}
-          {card.meter !== undefined && (
-            <span
-              className={styles.meter}
-              role="img"
-              aria-label={`${card.meter}% utilization`}
-            >
-              <i
-                style={{
-                  width: `${Math.max(
-                    0,
-                    Math.min(100, card.meter)
-                  )}%`,
-                }}
-              />
-            </span>
-          )}
-
-          <span className={styles.summaryNote}>
-            {card.note}
-          </span>
-
-          {/* What Utilization means. */}
-          {card.key === "utilization" && (
+        {fleetDetails.length > 0 && (
+          <span
+            style={{
+              display: "block",
+              flexShrink: 0,
+              width: "100%",
+              marginTop: 12,
+              paddingTop: 12,
+              borderTop: "1px solid #cbd5e1",
+              whiteSpace: "normal",
+            }}
+          >
             <span
               style={{
-                display: "block",
-                width: "100%",
-                marginTop: 12,
-                paddingTop: 12,
-                borderTop: "1px solid #cbd5e1",
-                fontSize: 12,
-                lineHeight: 1.5,
-                color: "#334155",
-                whiteSpace: "normal",
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gap: 8,
               }}
             >
-              <strong>Utilization</strong> = items in use ÷ usable items.
-              <br />
-              <strong>In use</strong> = out of the hub: with an FO, IFO, rig team or internal person, or sent and not
-              received yet.
-              <br />
-              <strong>Usable</strong> = every item except lost, damaged and retired.
+              {fleetDetails.map((detail) => (
+                <span
+                  key={detail.label}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4,
+                    padding: "8px 10px",
+                    minWidth: 0,
+                    border: `1px solid ${detail.border}`,
+                    borderLeft: `5px solid ${detail.border}`,
+                    borderRadius: 8,
+                    backgroundColor: detail.bg,
+                    color: detail.text,
+                  }}
+                >
+                  <span style={{ fontSize: 12, fontWeight: 600, whiteSpace: "normal" }}>{detail.label}</span>
+                  <strong style={{ fontSize: 20, lineHeight: 1.3, display: "flex", alignItems: "baseline", gap: 6 }}>
+                    {n(detail.count)}
+                    {detail.pct && <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.75 }}>{detail.pct}</span>}
+                  </strong>
+                </span>
+              ))}
             </span>
-          )}
 
-          {/* NEW: storage and colour details inside Fleet. */}
-          {card.key === "fleet" && fleetDetails.length > 0 && (
-            <span
-              style={{
-                display: "block",
-                flexShrink: 0,
-                width: "100%",
-                marginTop: 12,
-                paddingTop: 12,
-                borderTop: "1px solid #cbd5e1",
-                whiteSpace: "normal",
-              }}
-            >
-              <span
-                style={{
-                  display: "grid",
-                  gridTemplateColumns:
-                    "repeat(2, minmax(0, 1fr))",
-                  gap: 8,
-                }}
-              >
-                {fleetDetails.map((detail) => (
-                  <span
-                    key={detail.label}
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 4,
-                      padding: "8px 10px",
-                      minWidth: 0,
-                      border: `1px solid ${detail.border}`,
-                      borderLeft: `5px solid ${detail.border}`,
-                      borderRadius: 8,
-                      backgroundColor: detail.bg,
-                      color: detail.text,
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        whiteSpace: "normal",
-                      }}
-                    >
-                      {detail.label}
-                    </span>
-
-                    <strong
-                      style={{
-                        fontSize: 20,
-                        lineHeight: 1.3,
-                        display: "flex",
-                        alignItems: "baseline",
-                        gap: 6,
-                      }}
-                    >
-                      {n(detail.count)}
-                      {detail.pct && (
-                        <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.75 }}>
-                          {detail.pct}
-                        </span>
-                      )}
-                    </strong>
-                  </span>
-                ))}
+            {/* Never silently ignore missing attributes. */}
+            {fleet.storageUnknown > 0 && (
+              <span style={{ display: "block", marginTop: 8, fontSize: 12 }}>
+                Unknown / other storage: {n(fleet.storageUnknown)}
               </span>
+            )}
 
-              {/* Never silently ignore missing attributes. */}
-              {fleet.storageUnknown > 0 && (
-                <span
-                  style={{
-                    display: "block",
-                    marginTop: 8,
-                    fontSize: 12,
-                  }}
-                >
-                  Unknown / other storage:{" "}
-                  {n(fleet.storageUnknown)}
-                </span>
-              )}
+            {hasSd && !ages && (
+              <span style={{ display: "block", marginTop: 8, fontSize: 12 }}>
+                New / Old: the SD card sheet could not be read right now.
+              </span>
+            )}
 
-              {hasSd && !ages && (
-                <span
-                  style={{
-                    display: "block",
-                    marginTop: 8,
-                    fontSize: 12,
-                  }}
-                >
-                  New / Old: the SD card sheet could not be read right now.
-                </span>
-              )}
+            {/* "Unknown / other colour" line removed per request. */}
 
-              {fleet.colourUnknown > 0 && (
-                <span
-                  style={{
-                    display: "block",
-                    marginTop: 8,
-                    fontSize: 12,
-                  }}
-                >
-                  Unknown / other colour:{" "}
-                  {n(fleet.colourUnknown)}
-                </span>
-              )}
+            {/* Flag differing scopes or concurrent data changes. */}
+            {scopeMismatch && (
+              <span style={{ display: "block", marginTop: 8, fontSize: 12, fontWeight: 600 }}>
+                Breakdown covers {n(fleetItems.length)} items; Fleet shows {n(d.total)}. Refresh the page. If this
+                persists, check the hub scope.
+              </span>
+            )}
+          </span>
+        )}
 
-              {/* Flag differing scopes or concurrent data changes. */}
-              {scopeMismatch && (
-                <span
-                  style={{
-                    display: "block",
-                    marginTop: 8,
-                    fontSize: 12,
-                    fontWeight: 600,
-                  }}
-                >
-                  Breakdown covers {n(fleetItems.length)} items;
-                  Fleet shows {n(d.total)}. Refresh the page. If
-                  this persists, check the hub scope.
-                </span>
-              )}
-
-              <span
+        {/* Admin-only: manual addition to Green cards / Old cards (SD cards only), for cards whose
+            colour/age was never recorded. Added on top of the live computed count — see setFleetAdjustments. */}
+        {canEditFleetAdjustments && (
+          <form
+            action={setFleetAdjustments}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+              marginTop: 12,
+              padding: "8px 10px",
+              maxWidth: 260,
+              border: "1px solid #dbe2ea",
+              borderRadius: 10,
+              background: "linear-gradient(180deg,#f8fafc,#f1f5f9)",
+            }}
+          >
+            <input type="hidden" name="back" value={fleetBack} />
+            <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "#64748b" }}>
+              Manual adjustment{greenBaseline || oldBaseline ? " · active" : ""}
+            </span>
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                <span style={{ fontSize: "0.68rem", color: "#94a3b8" }}>+ Green cards</span>
+                <input
+                  type="number"
+                  name="green"
+                  min={0}
+                  placeholder="0"
+                  defaultValue={greenBaseline || ""}
+                  style={{ width: 80, fontSize: "0.82rem", padding: "5px 8px", borderRadius: 6, border: "1px solid #cbd5e1", background: "#fff" }}
+                />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                <span style={{ fontSize: "0.68rem", color: "#94a3b8" }}>+ Old cards</span>
+                <input
+                  type="number"
+                  name="old"
+                  min={0}
+                  placeholder="0"
+                  defaultValue={oldBaseline || ""}
+                  style={{ width: 80, fontSize: "0.82rem", padding: "5px 8px", borderRadius: 6, border: "1px solid #cbd5e1", background: "#fff" }}
+                />
+              </label>
+              <button
+                type="submit"
                 style={{
-                  display: "block",
-                  marginTop: 8,
-                  fontSize: 12,
-                  lineHeight: 1.4,
-                  color: "#0284c7",
+                  fontSize: "0.78rem",
                   fontWeight: 600,
+                  padding: "6px 16px",
+                  borderRadius: 6,
+                  border: "1px solid #1e293b",
+                  background: "#1e293b",
+                  color: "#fff",
+                  cursor: "pointer",
                 }}
               >
-              
-              </span>
-            </span>
-          )}
-        </Link>
-      ))}
+                Save
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+
+      {/* Right column: Utilization on top, Waiting to be received + Late items below it. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+        <div
+          className={styles.summary}
+          style={{ display: "flex", flexDirection: "column", height: "auto", maxHeight: "none", minWidth: 0, overflow: "visible" }}
+        >
+          {cardTop(byKey.utilization)}
+          <span
+            style={{
+              display: "block",
+              width: "100%",
+              marginTop: 12,
+              paddingTop: 12,
+              borderTop: "1px solid #cbd5e1",
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: "#334155",
+              whiteSpace: "normal",
+            }}
+          >
+            <strong>Utilization</strong> = items in use ÷ usable items.
+            <br />
+            <strong>In use</strong> = out of the hub: with an FO, IFO, rig team or internal person, or sent and not
+            received yet.
+            <br />
+            <strong>Usable</strong> = every item except lost, damaged and retired.
+          </span>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14 }}>
+          <Link href={byKey.waiting.href} className={styles.summary}>
+            {cardInner(byKey.waiting)}
+          </Link>
+          <Link href={byKey.late.href} className={styles.summary}>
+            {cardInner(byKey.late)}
+          </Link>
+        </div>
+      </div>
     </section>
   );
 }

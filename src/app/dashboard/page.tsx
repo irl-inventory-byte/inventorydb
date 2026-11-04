@@ -243,6 +243,22 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     if (parsed !== undefined && Number.isFinite(parsed)) retiredBaseline = parsed;
   }
 
+  // Manual addition to the Fleet card's Green cards / Old cards tiles (see the "Manual adjustment"
+  // box under Fleet, dashboard/actions.ts setFleetAdjustments) — for cards whose colour or age was
+  // never recorded. SD cards only, added on top of the live computed count.
+  let greenCardsBaseline: number | undefined;
+  {
+    const raw = settings.find((s) => s.key === "green_cards_baseline")?.value;
+    const parsed = raw ? Number(raw) : undefined;
+    if (parsed !== undefined && Number.isFinite(parsed)) greenCardsBaseline = parsed;
+  }
+  let oldCardsBaseline: number | undefined;
+  {
+    const raw = settings.find((s) => s.key === "old_cards_baseline")?.value;
+    const parsed = raw ? Number(raw) : undefined;
+    if (parsed !== undefined && Number.isFinite(parsed)) oldCardsBaseline = parsed;
+  }
+
   // Rig view: unknown rigs (no activity for more than NO_ACTIVITY_DAYS days), city-wise, with their reports.
   // Worked out twice on purpose: the first pass is free and tells us whether any rig is overdue at all, so
   // the reports table is only downloaded when it can change something. The second pass lets an audit report
@@ -1017,6 +1033,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             baselineStorage={rigView ? undefined : brokenStorageOverride}
             brokenCount={rigView ? undefined : brokenValue}
             retiredCount={rigView ? undefined : retiredValue}
+            greenBaseline={rigView ? undefined : greenCardsBaseline}
+            oldBaseline={rigView ? undefined : oldCardsBaseline}
+            canEditFleetAdjustments={!rigView && user.role === "admin"}
           />
         )}
 
@@ -1414,6 +1433,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             qcFrom={qcFrom}
             qcTo={qcTo}
             qcKeep={qcKeep}
+            san={san}
             sanKeep={sanKeep}
           />
         )}

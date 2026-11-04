@@ -94,3 +94,51 @@ export async function setRetiredBaseline(formData: FormData) {
   revalidatePath("/dashboard");
   redirect(back);
 }
+
+/**
+ * Admin-set manual addition to the Fleet card's "Green cards" / "Old cards" breakdown tiles — for
+ * cards whose colour or age was never recorded, so the computed count undercounts them. SD cards
+ * only, never rigs. Added on top of the live computed count, same idea as the Retired tile's
+ * starting count. Stored as plain numbers in the settings tab under "green_cards_baseline" and
+ * "old_cards_baseline". Blank either field to clear just that one adjustment.
+ */
+export async function setFleetAdjustments(formData: FormData) {
+  const user = await requireRole("admin");
+
+  const backRaw = String(formData.get("back") ?? "/dashboard");
+  const back = SAFE_BACK.test(backRaw) ? backRaw : "/dashboard";
+
+  const greenRaw = String(formData.get("green") ?? "").trim();
+  const oldRaw = String(formData.get("old") ?? "").trim();
+  const store = getStore();
+  const people = await store.list("people");
+  const now = istTimestamp();
+  const by = (user.email ?? "unknown").toLowerCase();
+  const byName = displayName(people, user.personId ?? "") || user.name || user.email || "";
+
+  const rows = [
+    {
+      key: "green_cards_baseline",
+      value: greenRaw === "" ? "" : String(Math.max(0, Number(greenRaw) || 0)),
+      updated_at: now,
+      updated_by: by,
+      updated_by_name: byName,
+    },
+    {
+      key: "old_cards_baseline",
+      value: oldRaw === "" ? "" : String(Math.max(0, Number(oldRaw) || 0)),
+      updated_at: now,
+      updated_by: by,
+      updated_by_name: byName,
+    },
+  ];
+  try {
+    await store.upsert("settings", rows);
+  } catch {
+    await store.init();
+    await store.upsert("settings", rows);
+  }
+
+  revalidatePath("/dashboard");
+  redirect(back);
+}
