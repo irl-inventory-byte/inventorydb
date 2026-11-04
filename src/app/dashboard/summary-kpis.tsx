@@ -175,11 +175,22 @@ export async function SummaryKpis({
     fleet.sdCards += baselineTotal;
   }
 
+  // Manual adjustment (SD cards only, not rigs): Green cards +89, Old cards +93.
+  const EXTRA_GREEN = 89;
+  const EXTRA_OLD = 93;
+  if (!rigView) {
+    fleet.green += EXTRA_GREEN;
+    if (ages) fleet.oldCards += EXTRA_OLD;
+  }
+
   const scopeMismatch = fleetItems.length !== d.total;
 
   const total = d.total + baselineTotal;
   const unusable = total - d.usable;
   const pct = d.utilization === null ? null : Math.round(d.utilization);
+
+  // Rig view keeps the original four-card grid; SD cards get the new layout.
+  const sdLayout = !rigView;
 
   const share = (count: number) => (fleet.sdCards > 0 ? `${Math.round((count / fleet.sdCards) * 100)}%` : "");
 
@@ -239,6 +250,7 @@ export async function SummaryKpis({
       : []),
   ];
 
+  // Broken and Retired percentages are of the TOTAL fleet only.
   const totalShare = (count: number) => (total > 0 ? `${((count / total) * 100).toFixed(1)}%` : "");
 
   const fleetDetails: FleetTile[] = [
@@ -343,6 +355,51 @@ export async function SummaryKpis({
     </span>
   );
 
+  // RIGS: original four-card grid.
+  if (!sdLayout) {
+    return (
+      <section
+        className={styles.summaryGrid}
+        aria-label="Management summary"
+        style={{ height: "auto", maxHeight: "none", overflow: "visible" }}
+      >
+        {[fleetCard, utilCard, waitingCard, lateCard].map((card) => (
+          <Link key={card.key} href={card.href} className={styles.summary}>
+            {header(card)}
+            <span className={styles.summaryValue}>{card.value}</span>
+            {card.meter !== undefined && (
+              <span className={styles.meter} role="img" aria-label={`${card.meter}% utilization`}>
+                <i style={{ width: `${Math.max(0, Math.min(100, card.meter))}%` }} />
+              </span>
+            )}
+            <span className={styles.summaryNote}>{card.note}</span>
+            {card.key === "utilization" && (
+              <span
+                style={{
+                  display: "block",
+                  marginTop: 12,
+                  paddingTop: 12,
+                  borderTop: "1px solid #cbd5e1",
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  color: "#334155",
+                }}
+              >
+                <strong>Utilization</strong> = items in use ÷ usable items.
+                <br />
+                <strong>In use</strong> = out of the hub: with an FO, IFO, rig team or internal person, or sent
+                and not received yet.
+                <br />
+                <strong>Usable</strong> = every item except lost, damaged and retired.
+              </span>
+            )}
+          </Link>
+        ))}
+      </section>
+    );
+  }
+
+  // SD CARDS: Fleet box, then Utilization box with Waiting + Late inside.
   return (
     <section
       className={`${styles.summaryGrid} ${styles.summaryRows}`}
