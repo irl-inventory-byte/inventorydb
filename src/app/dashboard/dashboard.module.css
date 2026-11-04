@@ -725,19 +725,18 @@
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 14px;
 }
-/* Fleet and Utilization each get a full row; Waiting + Late share the next row. */
+/* Fleet and Utilization: one full-width box each. */
 .summaryGrid.summaryRows {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
 }
-.summaryGrid.summaryRows > :nth-child(-n + 2) {
-  grid-column: 1 / -1;
-}
-/* Utilization: numbers on the left, definition on the right. */
+/* Utilization: numbers left, definition right. */
 .utilBody {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 24px;
   align-items: start;
+  color: inherit;
+  text-decoration: none;
 }
 .utilLeft {
   display: grid;
@@ -751,10 +750,31 @@
   color: #334155;
   white-space: normal;
 }
+/* Waiting + Late tiles inside the Utilization box. */
+.utilTiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #cbd5e1;
+}
+.utilTile {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-1);
+  color: inherit;
+  text-decoration: none;
+}
+.utilTile:hover,
+.utilTile:focus-visible {
+  border-color: var(--text-primary);
+  outline: none;
+}
 @media (max-width: 640px) {
-  .summaryGrid.summaryRows {
-    grid-template-columns: 1fr;
-  }
   .utilBody {
     grid-template-columns: 1fr;
   }
@@ -763,6 +783,9 @@
     border-left: 0;
     padding-top: 12px;
     border-top: 1px solid #cbd5e1;
+  }
+  .utilTiles {
+    grid-template-columns: 1fr;
   }
 }
 .summary {
