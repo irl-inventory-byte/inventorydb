@@ -1,459 +1,235 @@
-// Sheet tabs and their columns. The first column of each tab is its key.
-// Adding a column here and running `npm run init:sheet` extends the sheet header.
+import {
+  findInconsistencies,
+  type Inconsistency,
+} from "../consistency";
+import type {
+  Item,
+  ItemEvent,
+  Row,
+  TabName,
+  TabRows,
+} from "../schema";
+import type {
+  DeleteItemResult,
+  TableBackend,
+} from "./backend";
+import { matchScan, mobileAliases, scanIndex } from "../scan";
 
-export const TABS = {
-  items: [
-    "item_id",
-    "item_type",
-    "home_hub",
-    "current_hub",
-    "status",
-    "current_holder",
-    "last_event_id",
-    "updated_at",
-    "attributes", // JSON of type-specific fields (serial, brand, model, ...)
-    "prism_no",
-    "brand",
-    "model", // SD card model name
-    "price",
-  ],
-  events: [
-    "event_id",
-    "batch_id",
-    "item_id",
-    "action",
-    "from_person",
-    "to_person",
-    "hub",
-    "status_after",
-    "occurred_at",
-    "recorded_at",
-    "recorded_by",
-    "note",
-    "from_id", // person_id (or admin email) behind from_person, stays stable if a name changes
-    "to_id",
-    "from_hub", // the hub the card was at before this step (`hub` is where it is after)
-  ],
-  people: ["person_id", "name", "role", "hub", "linked_user", "active", "mobile"], // mobile: 10 digits, required for new/edited people
-  hubs: ["hub_id", "name", "city", "is_central", "active", "parent_hub"], // parent_hub: the hub this one sits under, blank for a top-level hub
-  item_types: ["type", "fields"],
-  users: ["email", "role", "person_id", "active", "secondary_role"], // secondary_role: optional 2nd role the login can switch to
-  status_limits: ["status", "max_days"],
-  deletions: [
-    "deletion_id",
-    "deleted_at",
-    "deleted_by_email",
-    "deleted_by_name",
-    "item_id",
-    "prism_no",
-    "brand",
-    "model",
-    "price",
-    "attributes",
-    "status",
-    "current_hub",
-    "current_holder",
-    "home_hub",
-    "events_deleted",
-    "reason",
-    "history_json",
-  ],
-  // Rig items only: work done by the hardware team, one row per update.
-  hardware_updates: [
-    "update_id",
-    "item_id",
-    "recorded_at",
-    "recorded_by", // login email
-    "recorded_by_name",
-    "update_type", // e.g. Repair, Part replaced, Inspection
-    "comment",
-  ],
-  // Rig items only: QC results, one row per check. The latest row is the rig's QC status.
-  qc_checks: [
-    "check_id",
-    "item_id",
-    "recorded_at",
-    "recorded_by", // login email
-    "recorded_by_name",
-    "qc_status", // qc_pending | pass | fail | repaired
-    "comment",
-  ],
-  // Unknown rigs: reports of where a rig was seen, by whom, why, with a small photo. One row per report.
-  rig_reports: [
-    "report_id",
-    "item_id",
-    "recorded_at",
-    "recorded_by", // login email
-    "recorded_by_name",
-    "location",
-    "reason",
-    "photo", // small JPEG as a data: URL (shrunk on the phone to fit one sheet cell), or blank
-    "hub_id", // the location chosen from the hubs list (location = its name)
-    "role", // role of the person the rig is with, e.g. fo
-    "person_id", // the person the rig is with (People tab)
-    "person_name",
-  ],
-  // Investigation notes for lost (or broken) items: a free-text note per entry, oldest first,
-  // shown on the Lost items page. One row per note added.
-  lost_notes: ["note_id", "item_id", "note", "recorded_at", "recorded_by", "recorded_by_name"],
-  // City/Hub Audit confirmations: someone physically checked that an in-stock item is really
-  // there. Doesn't change status or location — just a log entry, shown in the item's History.
-  audits: ["audit_id", "item_id", "audited_at", "audited_by", "audited_by_name"],
-  // Small flat key/value store for admin-set overrides, e.g. a manual storage-breakdown number for
-  // the Broken dashboard tile when item attributes don't reliably have it. One row per key.
-  settings: ["key", "value", "updated_at", "updated_by", "updated_by_name"],
-  // Audit log of admin edits to past receipts: who changed what, and when.
-  receipt_edits: [
-    "edit_id",
-    "edited_at",
-    "edited_by_email",
-    "edited_by_name",
-    "batch_id",
-    "field",
-    "old_value",
-    "new_value",
-  ],
-  // One row per handover receipt emailed out: whether the person who received the items has
-  // acknowledged them yet. Created when the receipt email is sent, updated when they click
-  // Yes/No in that email (see lib/acknowledgment.ts).
-  acknowledgments: [
-    "ack_id",
-    "batch_id",
-    "action", // check_out | receive — which kind of handover this was
-    "token", // secret, in the email link; the only way to answer
-    "to_id", // person_id of the person who must acknowledge (who now holds the items)
-    "to_person",
-    "from_id", // person_id of whoever handed the items over (named in the acknowledgment wording)
-    "from_person",
-    "item_count",
-    "created_at",
-    "answer", // "" (not yet answered) | "yes" | "no"
-    "answered_at",
-  ],
-  // "SD Card Duration Hour" details, filled in from the IM SD card details and Rig team SD card
-  // details pages (see src/app/sd-details). A copy is also forwarded to the matching Google Apps
-  // Script form (see those pages' actions); `forwarded` records whether that copy went through.
-  sd_card_durations: [
-    "record_id",
-    "team", // "im" | "rig" — which of the two forms this came from
-    "sub_team", // only when team "rig": "rig" | "productivity" — which hub actually sent it. "" for IM entries.
-    "card_date", // SD CARD DATE, YYYY-MM-DD
-    "team_member", // IM name (im form) or Rig/Productivity team member name (rig form)
-    "fo_ifo", // FO / IFO name
-    "ic_name",
-    "ic_number", // free text, expected to start with "IC-"
-    "city",
-    "serial", // SD card serial number / asset tag
-    "duration", // DU_TIME, HH:MM:SS
-    "failed_hours", // how much of the duration failed/was unusable, HH:MM:SS — optional, "" if none
-    "raw_clips", // No. of raw clips
-    "recorded_by", // login email
-    "recorded_by_name",
-    "recorded_at",
-    "forwarded", // "yes" | "no: <reason>" — whether the copy sent to the Google Script succeeded
-  ],
-  // Manual flags shown in the dashboard's "Needs attention" section, alongside the automatic delayed-card
-  // table — a free-text note anyone can add (e.g. "Chase city X about missing cards"), with who added it
-  // and an optional "by when" date. Marked done rather than deleted, so there's a record of what was raised.
-  attention_notes: [
-    "note_id",
-    "note",
-    "due_date", // "by when", YYYY-MM-DD — optional, "" if none given
-    "status", // "open" | "done"
-    "recorded_at",
-    "recorded_by", // login email
-    "recorded_by_name",
-  ],
-  // A note left against one specific delayed card, from the "Needs attention" drill-down (see
-  // dashboard/actions.ts addDelayNote). item_type/person/sent_by are a snapshot of what the Needs
-  // attention table showed at the time the note was added, so the log still reads correctly even
-  // after the item moves on.
-  delay_notes: [
-    "note_id",
-    "item_id",
-    "item_type", // "SD card" | "Rig" | "Mobile" — as shown in Needs attention
-    "person", // who the item was with when the note was added
-    "sent_by", // who sent it to them
-    "note",
-    "recorded_at",
-    "recorded_by", // login email
-    "recorded_by_name",
-  ],
-} as const;
+// An item's type. Older rows without a type are SD cards.
+const typeOf = (item: Row) => (item.item_type === "rig" ? "rig" : item.item_type === "mobile" ? "mobile" : "sd_card");
 
-export type TabName = keyof typeof TABS;
+export class Store {
+  /**
+   * @param types When set, only items of these types (and their events,
+   *   hardware updates and QC checks) are returned. Writes are not filtered.
+   */
+  constructor(
+    private backend: TableBackend,
+    private types?: ReadonlySet<string>
+  ) {}
 
-export const STATUSES = [
-  "in_stock",
-  "pending",
-  "traveling",
-  "with_fo",
-  "with_rig",
-  "with_internal",
-  "pending_qc", // rigs only: sent to a QC team member, waiting for them to receive it
-  "with_qc", // rigs only: with the QC team
-  "pending_hardware", // rigs only: sent to the hardware team, waiting for them to receive it
-  "with_hardware", // rigs only: with the hardware team for repair
-  "lost",
-  "damaged",
-  "retired",
-  "rnd", // rigs only: moved to R&D by the hardware team (out of service, like Dead)
-] as const;
-export type Status = (typeof STATUSES)[number];
+  /**
+   * The same store, limited to some item types. Used so each login only
+   * sees the items it is allowed to (see lib/access.ts).
+   */
+  forTypes(types: readonly string[]): Store {
+    const all = types.includes("sd_card") && types.includes("rig") && types.includes("mobile");
+    return all && !this.types ? this : new Store(this.backend, new Set(types));
+  }
 
-// Statuses where a card is out of an IM's hands and someone is expected to bring it back.
-export const OUT_STATUSES: readonly Status[] = ["pending", "traveling", "with_fo", "with_rig", "with_internal"];
+  init() {
+    return this.backend.ensureTabs();
+  }
 
-export const ACTIONS = [
-  "check_out",
-  "check_in",
-  "receive",
-  "report_lost",
-  "report_damaged",
-  "retire",
-  "rnd", // the hardware team moved a rig to R&D
-  "reassign_home_hub",
-  "correct",
-  "import",
-] as const;
-export type Action = (typeof ACTIONS)[number];
+  /** Read a tab that may not exist yet (new tabs are created on first write). */
+  private async readOptional(tab: TabName): Promise<Row[]> {
+    try {
+      return await this.backend.readAll(tab);
+    } catch {
+      return [];
+    }
+  }
 
-// "internal" = an internal person items can be handed to (no login).
-export const ROLES = ["admin", "im", "ifo", "fo", "rig", "hardware", "qc", "internal"] as const;
-export type Role = (typeof ROLES)[number];
+  async list<T extends TabName>(
+    tab: T
+  ): Promise<TabRows[T][]> {
+    // Acknowledgments, settings and SD card durations are not per-item (batch-keyed, a flat key-value
+    // store, or just a submission log), so they are optional (the tab may not exist yet) but are never
+    // filtered by item type below.
+    const optional =
+      tab === "hardware_updates" ||
+      tab === "qc_checks" ||
+      tab === "rig_reports" ||
+      tab === "acknowledgments" ||
+      tab === "lost_notes" ||
+      tab === "audits" ||
+      tab === "settings" ||
+      tab === "sd_card_durations" ||
+      tab === "attention_notes" ||
+      tab === "delay_notes";
+    const rows = optional
+      ? await this.readOptional(tab)
+      : await this.backend.readAll(tab);
 
-export type Row = Record<string, string>;
+    if (
+      tab === "acknowledgments" ||
+      tab === "settings" ||
+      tab === "sd_card_durations" ||
+      tab === "attention_notes" ||
+      tab === "delay_notes"
+    )
+      return rows as unknown as TabRows[T][];
 
-export interface Item extends Row {
-  item_id: string;
-  item_type: string;
-  home_hub: string;
-  current_hub: string;
-  status: Status;
-  current_holder: string;
-  last_event_id: string;
-  updated_at: string;
-  attributes: string;
-  prism_no: string;
-  brand: string;
-  model: string;
-  price: string;
-}
+    const types = this.types;
+    if (!types) return rows as unknown as TabRows[T][];
 
-export interface ItemEvent extends Row {
-  event_id: string;
-  batch_id: string;
-  item_id: string;
-  action: Action;
-  from_person: string;
-  to_person: string;
-  hub: string;
-  status_after: Status;
-  occurred_at: string;
-  recorded_at: string;
-  recorded_by: string;
-  note: string;
-  from_id: string;
-  to_id: string;
-  from_hub: string;
-}
+    if (tab === "items") {
+      return rows.filter((row) => types.has(typeOf(row))) as unknown as TabRows[T][];
+    }
 
-export interface Person extends Row {
-  person_id: string;
-  name: string;
-  role: Role;
-  hub: string;
-  linked_user: string;
-  active: string;
-}
+    if (tab === "events" || optional) {
+      // Keep rows that belong to a visible item.
+      const visible = new Set(
+        (await this.backend.readAll("items"))
+          .filter((item) => types.has(typeOf(item)))
+          .map((item) => item.item_id)
+      );
+      return rows.filter((row) => visible.has(row.item_id)) as unknown as TabRows[T][];
+    }
 
-export interface Hub extends Row {
-  hub_id: string;
-  name: string;
-  city: string;
-  is_central: string;
-  active: string;
-  parent_hub: string;
-}
+    return rows as unknown as TabRows[T][];
+  }
 
-export interface AppUser extends Row {
-  email: string;
-  role: Role; // primary role, required
-  person_id: string;
-  active: string; // blank counts as active
-  secondary_role: string; // optional second role (blank = none); the person can switch to it
-}
+  /** Add rows to a tab, creating the tab first if it does not exist yet. */
+  async appendRows<T extends TabName>(tab: T, rows: TabRows[T][]) {
+    try {
+      await this.backend.append(tab, rows as unknown as Row[]);
+    } catch {
+      await this.backend.ensureTabs();
+      await this.backend.append(tab, rows as unknown as Row[]);
+    }
+  }
 
-export interface Deletion extends Row {
-  deletion_id: string;
-  deleted_at: string;
-  deleted_by_email: string;
-  deleted_by_name: string;
-  item_id: string;
-  prism_no: string;
-  brand: string;
-  model: string;
-  price: string;
-  attributes: string;
-  status: string;
-  current_hub: string;
-  current_holder: string;
-  home_hub: string;
-  events_deleted: string;
-  reason: string;
-  history_json: string;
-}
+  upsert<T extends TabName>(
+    tab: T,
+    rows: Partial<TabRows[T]>[]
+  ) {
+    return this.backend.upsert(tab, rows as Row[]);
+  }
 
-export interface ReceiptEdit extends Row {
-  edit_id: string;
-  edited_at: string;
-  edited_by_email: string;
-  edited_by_name: string;
-  batch_id: string;
-  field: string;
-  old_value: string;
-  new_value: string;
-}
+  async getItem(itemId: string) {
+    return (await this.list("items")).find(
+      (item) => item.item_id === itemId
+    );
+  }
 
-export interface HardwareUpdate extends Row {
-  update_id: string;
-  item_id: string;
-  recorded_at: string;
-  recorded_by: string;
-  recorded_by_name: string;
-  update_type: string;
-  comment: string;
-}
+  /**
+   * Look up scanned/typed IDs, ignoring letter case. A mobile is also found by an IMEI in a QR code
+   * ("IMEI1 - IMEI2"), its Asset Tag or its Serial. Return a map keyed by the requested IDs.
+   */
+  async getItemsByIds(ids: string[]) {
+    const items = await this.list("items");
 
-// "repaired" = the hardware team fixed it and sent it to an IM: ready for the field like a pass.
-export const QC_STATUSES = ["qc_pending", "pass", "fail", "repaired"] as const;
-export type QcStatus = (typeof QC_STATUSES)[number];
+    const exact = new Map(
+      items.map((item) => [item.item_id, item])
+    );
+    // Mobiles can also be found by their IMEI (QR code), Asset Tag or Serial.
+    const phoneAliases = new Map(
+      items.filter((item) => item.item_type === "mobile").map((item) => [item.item_id, mobileAliases(item.attributes)]),
+    );
+    const { byUpper, phones } = scanIndex(exact.keys(), phoneAliases);
 
-export interface QcCheck extends Row {
-  check_id: string;
-  item_id: string;
-  recorded_at: string;
-  recorded_by: string;
-  recorded_by_name: string;
-  qc_status: QcStatus;
-  comment: string;
-}
+    const found = new Map<string, Item>();
 
-export interface RigReport extends Row {
-  report_id: string;
-  item_id: string;
-  recorded_at: string;
-  recorded_by: string;
-  recorded_by_name: string;
-  location: string;
-  reason: string;
-  photo: string;
-  hub_id: string;
-  role: string;
-  person_id: string;
-  person_name: string;
-}
+    for (const id of ids) {
+      const match = matchScan(id, (x) => exact.has(x), byUpper, phones);
+      const item = match === undefined ? undefined : exact.get(match);
 
-export interface LostNote extends Row {
-  note_id: string;
-  item_id: string;
-  note: string;
-  recorded_at: string;
-  recorded_by: string;
-  recorded_by_name: string;
-}
+      if (item) {
+        found.set(id, item);
+      }
+    }
 
-export interface Audit extends Row {
-  audit_id: string;
-  item_id: string;
-  audited_at: string;
-  audited_by: string;
-  audited_by_name: string;
-}
+    return found;
+  }
 
-export interface Setting extends Row {
-  key: string;
-  value: string;
-  updated_at: string;
-  updated_by: string;
-  updated_by_name: string;
-}
+  async getHistory(itemId: string) {
+    const events = (await this.list("events")).filter(
+      (event) => event.item_id === itemId
+    );
 
-export interface Acknowledgment extends Row {
-  ack_id: string;
-  batch_id: string;
-  action: string;
-  token: string;
-  to_id: string;
-  to_person: string;
-  from_id: string;
-  from_person: string;
-  item_count: string;
-  created_at: string;
-  answer: string; // "" | "yes" | "no"
-  answered_at: string;
-}
+    return events.sort(
+      (a, b) =>
+        Date.parse(a.occurred_at) -
+        Date.parse(b.occurred_at)
+    );
+  }
 
-export interface SdCardDuration extends Row {
-  record_id: string;
-  team: string; // "im" | "rig"
-  sub_team: string; // "rig" | "productivity" (only set when team is "rig") | ""
-  card_date: string;
-  team_member: string;
-  fo_ifo: string;
-  ic_name: string;
-  ic_number: string;
-  city: string;
-  serial: string;
-  duration: string;
-  failed_hours: string;
-  raw_clips: string;
-  recorded_by: string;
-  recorded_by_name: string;
-  recorded_at: string;
-  forwarded: string;
-}
+  /**
+   * Save events first, then the derived item records.
+   */
+  async commitBatch(
+    events: ItemEvent[],
+    items: Item[]
+  ) {
+    // Both writes at the same time (about half the waiting).
+    await Promise.all([this.backend.append("events", events), this.backend.upsert("items", items)]);
+  }
 
-export interface AttentionNote extends Row {
-  note_id: string;
-  note: string;
-  due_date: string; // "" if none given
-  status: string; // "open" | "done"
-  recorded_at: string;
-  recorded_by: string;
-  recorded_by_name: string;
-}
+  async checkConsistency(): Promise<Inconsistency[]> {
+    const [items, events] = await Promise.all([
+      this.list("items"),
+      this.list("events"),
+    ]);
 
-export interface DelayNote extends Row {
-  note_id: string;
-  item_id: string;
-  item_type: string;
-  person: string;
-  sent_by: string;
-  note: string;
-  recorded_at: string;
-  recorded_by: string;
-  recorded_by_name: string;
-}
+    return findInconsistencies(items, events);
+  }
 
-export interface TabRows {
-  items: Item;
-  events: ItemEvent;
-  people: Person;
-  hubs: Hub;
-  item_types: Row;
-  users: AppUser;
-  status_limits: Row;
-  deletions: Deletion;
-  receipt_edits: ReceiptEdit;
-  hardware_updates: HardwareUpdate;
-  qc_checks: QcCheck;
-  rig_reports: RigReport;
-  acknowledgments: Acknowledgment;
-  lost_notes: LostNote;
-  audits: Audit;
-  settings: Setting;
-  sd_card_durations: SdCardDuration;
-  attention_notes: AttentionNote;
-  delay_notes: DelayNote;
+    /**
+   * Record a permanent deletion in the "deletions" tab.
+   * Creates the tab the first time it is needed.
+   */
+  async logDeletion(row: TabRows["deletions"]) {
+    try {
+      await this.backend.append("deletions", [row]);
+    } catch {
+      await this.backend.ensureTabs();
+      await this.backend.append("deletions", [row]);
+    }
+  }
+  
+  /**
+   * Record an admin edit to a past receipt in the "receipt_edits" tab.
+   * Creates the tab the first time it is needed.
+   */
+  async logReceiptEdit(row: TabRows["receipt_edits"]) {
+    try {
+      await this.backend.append("receipt_edits", [row]);
+    } catch {
+      await this.backend.ensureTabs();
+      await this.backend.append("receipt_edits", [row]);
+    }
+  }
+
+  /**
+   * Permanent deletion.
+   * The calling server action must enforce Admin authorization.
+   */
+  async deleteItemAndHistory(
+    itemId: string
+  ): Promise<DeleteItemResult> {
+    const id = itemId.trim();
+
+    if (!id) {
+      throw new Error("An item ID is required.");
+    }
+
+    if (!this.backend.deleteItemAndHistory) {
+      throw new Error(
+        "Permanent deletion is not supported by the active storage backend."
+      );
+    }
+
+    return this.backend.deleteItemAndHistory(id);
+  }
 }
