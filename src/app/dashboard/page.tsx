@@ -901,7 +901,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const qcKeep: Record<string, string> = { ...keepParams };
 
   // Sanitization table filter (Rig dashboard): "" = all, "yes" or "no" narrows the table to that result.
-  const san = one(sp.san) === "yes" || one(sp.san) === "no" ? one(sp.san) : "";
+  const sanRaw = one(sp.san);
+  const san = sanRaw === "yes" || sanRaw === "no" ? sanRaw : "";
   const sanKeep: Record<string, string> = { ...keepParams };
 
   // Acknowledgements chart: grouped by city (default) or by FO/IFO role.
