@@ -101,14 +101,47 @@ export default async function SdDetailsPage({ searchParams }: PageProps<"/sd-det
   const cardLabel = { fontSize: "0.8rem", color: "#64748b", marginTop: 2 };
 
   const hasFilters = teamFilter || subTeamFilter || cityFilter || memberFilter || dateFrom || dateTo || q;
+  // Same filters as the page, download instead of /sd-details/export — city-wise, then IC-wise.
+  const exportHref = `/sd-details/export?${new URLSearchParams({
+    ...(teamFilter && { team: teamFilter }),
+    ...(subTeamFilter && { subteam: subTeamFilter }),
+    ...(cityFilter && { city: cityFilter }),
+    ...(memberFilter && { member: memberFilter }),
+    ...(dateFrom && { from: dateFrom }),
+    ...(dateTo && { to: dateTo }),
+    ...(q && { q }),
+  })}`;
 
   return (
     <main className={styles.pageWide}>
       <p className={styles.back}>
         <Link href="/">← Home</Link> · <Link href="/dashboard">Dashboard</Link>
       </p>
-      <h1>SD card details ({all.length})</h1>
-      <p className={styles.muted}>Every SD Card Duration Hour entry — saved here and also sent to the Google Sheet.</p>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <h1 style={{ margin: 0 }}>SD card details ({all.length})</h1>
+        <a
+          href={exportHref}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "8px 16px",
+            borderRadius: 6,
+            border: "1px solid #1e293b",
+            background: "#1e293b",
+            color: "#fff",
+            fontWeight: 600,
+            fontSize: "0.88rem",
+            textDecoration: "none",
+          }}
+        >
+          Download CSV (city &amp; IC-wise)
+        </a>
+      </div>
+      <p className={styles.muted}>
+        Every SD Card Duration Hour entry — saved here and also sent to the Google Sheet. The download uses
+        whichever filters are active below.
+      </p>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", margin: "12px 0 18px" }}>
         <div style={card}>
