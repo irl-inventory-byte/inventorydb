@@ -28,16 +28,11 @@ interface FleetCounts {
   green: number;
   sdCards: number;
   rigs: number;
-  newCards: number; // "New" in the SD card sheet's New/Old column
-  oldCards: number; // "Old"
-  ageUnknown: number; // not in the sheet, or New/Old blank
+  newCards: number;
+  oldCards: number;
+  ageUnknown: number;
 }
 
-/**
- * New / Old for every SD card in the inventory, from the SD card sheet's New/Old column (matched by Asset
- * Tag). null = the sheet could not be read. Given SHEET_TIMEOUT_MS to finish; past that it falls back to
- * null and lets the page render. The read keeps going in the background and fills the cache.
- */
 const SHEET_TIMEOUT_MS = 4000;
 
 async function sheetAges(): Promise<Map<string, string> | null> {
@@ -53,28 +48,12 @@ async function sheetAges(): Promise<Map<string, string> | null> {
 
 interface SummaryKpisProps {
   d: Dashboard;
-
-  // For a hub dashboard, include every hub ID in its scope.
-  // Multiple IDs must be comma-separated.
   hubParam?: string;
-
-  // Existing callers may pass items directly.
-  // If omitted, this component loads the items itself.
   items?: readonly Item[];
-  /** Rigs view: the first card is "Rigs" and its links show rigs only. */
   rigView?: boolean;
-  /**
-   * Where the "Late items" tile links to. When given, used instead of the default inventory list link.
-   * Omit on a page with no Needs attention table (the hub dashboard).
-   */
   attentionHref?: string;
-  /**
-   * Cards the admin has recorded as already broken before this system tracked them — not real item
-   * rows, so they aren't in `items`/`d.total`. Added on top here so Fleet's Total agrees with Broken.
-   */
   baselineTotal?: number;
   baselineStorage?: { gb256: number; gb512: number };
-  /** Broken and retired counts (already including each one's admin baseline). */
   brokenCount?: number;
   retiredCount?: number;
 }
@@ -97,48 +76,27 @@ interface FleetTile {
   bg: string;
   border: string;
   text: string;
-  heading?: string; // section title shown above this tile
+  heading?: string;
 }
 
-/**
- * Safely parse the attributes JSON.
- * Missing or invalid JSON is treated as missing card details.
- */
 function readAttributes(raw: string): Record<string, unknown> {
   try {
     const parsed: unknown = JSON.parse(raw || "{}");
-
-    if (
-      parsed !== null &&
-      typeof parsed === "object" &&
-      !Array.isArray(parsed)
-    ) {
+    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
       return parsed as Record<string, unknown>;
     }
   } catch {
     // Keep the dashboard working when a record has invalid JSON.
   }
-
   return {};
 }
 
-/** Read a string or numeric attribute without coercing objects. */
 function attributeText(value: unknown): string {
-  if (typeof value === "string") {
-    return value.trim();
-  }
-
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return String(value);
-  }
-
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
   return "";
 }
 
-/**
- * Counts SD cards by storage, colour and New/Old, and rigs separately.
- * Cards with a colour other than Black or Green are simply not shown as a colour tile.
- */
 function countFleet(items: readonly Item[], ages: Map<string, string> | null): FleetCounts {
   const counts: FleetCounts = {
     storage512: 0,
@@ -154,7 +112,6 @@ function countFleet(items: readonly Item[], ages: Map<string, string> | null): F
   };
 
   for (const item of items) {
-    // Storage and colour only apply to SD cards; rigs are counted separately.
     if (item.item_type === "rig") {
       counts.rigs++;
       continue;
@@ -167,26 +124,15 @@ function countFleet(items: readonly Item[], ages: Map<string, string> | null): F
     else counts.ageUnknown++;
 
     const attributes = readAttributes(item.attributes);
+    const capacity = attributeText(attributes.capacity).replace(/\s+/g, "").toUpperCase();
 
-    const capacity = attributeText(attributes.capacity)
-      .replace(/\s+/g, "")
-      .toUpperCase();
-
-    if (capacity === "512GB" || capacity === "512") {
-      counts.storage512++;
-    } else if (capacity === "256GB" || capacity === "256") {
-      counts.storage256++;
-    } else {
-      counts.storageUnknown++;
-    }
+    if (capacity === "512GB" || capacity === "512") counts.storage512++;
+    else if (capacity === "256GB" || capacity === "256") counts.storage256++;
+    else counts.storageUnknown++;
 
     const colour = attributeText(attributes.card_type).toLowerCase();
-
-    if (colour === "black") {
-      counts.black++;
-    } else if (colour === "green") {
-      counts.green++;
-    }
+    if (colour === "black") counts.black++;
+    else if (colour === "green") counts.green++;
   }
 
   return counts;
@@ -194,8 +140,7 @@ function countFleet(items: readonly Item[], ages: Map<string, string> | null): F
 
 /**
  * Server component.
- * Do not add "use client" to this file:
- * getStore() must run on the server.
+ * Do not add "use client" to this file: getStore() must run on the server.
  */
 export async function SummaryKpis({
   d,
@@ -215,13 +160,8 @@ export async function SummaryKpis({
       ...params,
     })}`;
 
-  // Load inventory here when the parent did not pass items.
-  const sourceItems =
-    items !== undefined
-      ? items
-      : await getStore().list("items");
+  const sourceItems = items !== undefined ? items : await getStore().list("items");
 
-  // Scope the breakdown to the hub IDs supplied by a hub page.
   const hubIds = new Set(
     (hubParam ?? "")
       .split(",")
@@ -230,37 +170,25 @@ export async function SummaryKpis({
   );
 
   const fleetItems =
-    hubIds.size > 0
-      ? sourceItems.filter((item) =>
-          hubIds.has(item.current_hub)
-        )
-      : sourceItems;
+    hubIds.size > 0 ? sourceItems.filter((item) => hubIds.has(item.current_hub)) : sourceItems;
 
   const hasSd = fleetItems.some((i) => i.item_type !== "rig" && i.item_type !== "mobile");
   const ages = hasSd ? await sheetAges() : null;
   const fleet = countFleet(fleetItems, ages);
-  // Fold the admin's "already broken before tracking" baseline into the storage breakdown too.
   if (baselineStorage) {
     fleet.storage512 += baselineStorage.gb512;
     fleet.storage256 += baselineStorage.gb256;
     fleet.sdCards += baselineTotal;
   }
 
-  // A second read can differ if inventory changed during rendering, or if the caller supplied a
-  // different hub scope. Compared against the real tracked total (the baseline is not an item row).
   const scopeMismatch = fleetItems.length !== d.total;
 
   const total = d.total + baselineTotal;
   const unusable = total - d.usable;
-  const pct =
-    d.utilization === null
-      ? null
-      : Math.round(d.utilization);
+  const pct = d.utilization === null ? null : Math.round(d.utilization);
 
-  // Share of the SD card total, shown next to each tile's count.
   const share = (count: number) => (fleet.sdCards > 0 ? `${Math.round((count / fleet.sdCards) * 100)}%` : "");
 
-  // Each tile has its own colour: storage in blues, card colour in the card's real colour.
   const sdDetails: FleetTile[] = [
     {
       label: "512 GB",
@@ -295,7 +223,6 @@ export async function SummaryKpis({
       border: "#16a34a",
       text: "#14532d",
     },
-    // New / Old from the SD card sheet (only when the sheet could be read).
     ...(ages
       ? [
           {
@@ -318,10 +245,8 @@ export async function SummaryKpis({
       : []),
   ];
 
-  // Broken and Retired percentages are of the TOTAL fleet only (e.g. 89 of 1,653 = 5.4%).
   const totalShare = (count: number) => (total > 0 ? `${((count / total) * 100).toFixed(1)}%` : "");
 
-  // "Unusable" title goes above the first of Broken / Retired that is shown.
   const fleetDetails: FleetTile[] = [
     ...(fleet.sdCards > 0 ? sdDetails : []),
     ...(brokenCount > 0
@@ -368,7 +293,6 @@ export async function SummaryKpis({
     {
       key: "fleet",
       icon: "layers",
-      // Rig view says "Rigs"; SD cards keep "Fleet".
       label: rigView ? "Rigs" : fleet.sdCards > 0 ? "Fleet — storage update" : "Fleet",
       value: n(total),
       note:
@@ -382,9 +306,7 @@ export async function SummaryKpis({
       icon: "activity",
       label: "Utilization",
       value: pct === null ? "—" : `${pct}%`,
-      note: `${n(d.outCount)} out of ${n(
-        d.usable
-      )} usable items`,
+      note: `${n(d.outCount)} out of ${n(d.usable)} usable items`,
       href: list({
         status: rigView
           ? "pending,traveling,with_fo,with_qc,with_hardware,with_internal"
@@ -399,13 +321,9 @@ export async function SummaryKpis({
       value: n(d.waiting),
       note:
         d.waiting > 0
-          ? `Sent or traveling · oldest ${dayText(
-              d.oldestWaitingDays
-            )}`
+          ? `Sent or traveling · oldest ${dayText(d.oldestWaitingDays)}`
           : "Nothing waiting",
-      href: hubParam
-        ? list({ status: "pending,traveling" })
-        : "/handover/receive",
+      href: hubParam ? list({ status: "pending,traveling" }) : "/handover/receive",
     },
     {
       key: "late",
@@ -414,16 +332,9 @@ export async function SummaryKpis({
       value: n(d.lateCards),
       note:
         d.lateCards > 0
-          ? `Over ${LATE_AFTER_HOURS} hours · oldest ${howLong(
-              d.oldestLateHours ?? 0
-            )}`
+          ? `Over ${LATE_AFTER_HOURS} hours · oldest ${howLong(d.oldestLateHours ?? 0)}`
           : `Nothing over ${LATE_AFTER_HOURS} hours`,
-      href:
-        attentionHref ??
-        list({
-          status: "with_fo,traveling,pending",
-          late: "1",
-        }),
+      href: attentionHref ?? list({ status: "with_fo,traveling,pending", late: "1" }),
       warn: d.lateCards > 0,
     },
   ];
@@ -432,11 +343,7 @@ export async function SummaryKpis({
     <section
       className={`${styles.summaryGrid} ${styles.summaryRows}`}
       aria-label="Management summary"
-      style={{
-        height: "auto",
-        maxHeight: "none",
-        overflow: "visible",
-      }}
+      style={{ height: "auto", maxHeight: "none", overflow: "visible" }}
     >
       {cards.map((card) => (
         <Link
@@ -456,73 +363,45 @@ export async function SummaryKpis({
               : undefined
           }
         >
-          {/* Card title and icon. */}
           <span className={styles.summaryTop}>
-            <span className={styles.summaryLabel}>
-              {card.label}
-            </span>
-
-            <span
-              className={`${styles.summaryIcon} ${
-                card.warn ? styles.summaryIconWarn : ""
-              }`}
-            >
+            <span className={styles.summaryLabel}>{card.label}</span>
+            <span className={`${styles.summaryIcon} ${card.warn ? styles.summaryIconWarn : ""}`}>
               <Icon name={card.icon} size={18} />
             </span>
           </span>
 
-          {/* Main metric. */}
-          <span className={styles.summaryValue}>
-            {card.value}
-          </span>
-
-          {/* Utilization meter. */}
-          {card.meter !== undefined && (
-            <span
-              className={styles.meter}
-              role="img"
-              aria-label={`${card.meter}% utilization`}
-            >
-              <i
-                style={{
-                  width: `${Math.max(
-                    0,
-                    Math.min(100, card.meter)
-                  )}%`,
-                }}
-              />
+          {card.key === "utilization" ? (
+            <span className={styles.utilBody}>
+              <span className={styles.utilLeft}>
+                <span className={styles.summaryValue}>{card.value}</span>
+                {card.meter !== undefined && (
+                  <span className={styles.meter} role="img" aria-label={`${card.meter}% utilization`}>
+                    <i style={{ width: `${Math.max(0, Math.min(100, card.meter))}%` }} />
+                  </span>
+                )}
+                <span className={styles.summaryNote}>{card.note}</span>
+              </span>
+              <span className={styles.utilDefn}>
+                <strong>Utilization</strong> = items in use ÷ usable items.
+                <br />
+                <strong>In use</strong> = out of the hub: with an FO, IFO, rig team or internal person, or sent and
+                not received yet.
+                <br />
+                <strong>Usable</strong> = every item except lost, damaged and retired.
+              </span>
             </span>
+          ) : (
+            <>
+              <span className={styles.summaryValue}>{card.value}</span>
+              {card.meter !== undefined && (
+                <span className={styles.meter} role="img" aria-label={`${card.meter}% utilization`}>
+                  <i style={{ width: `${Math.max(0, Math.min(100, card.meter))}%` }} />
+                </span>
+              )}
+              <span className={styles.summaryNote}>{card.note}</span>
+            </>
           )}
 
-          <span className={styles.summaryNote}>
-            {card.note}
-          </span>
-
-          {/* What Utilization means. */}
-          {card.key === "utilization" && (
-            <span
-              style={{
-                display: "block",
-                width: "100%",
-                marginTop: 12,
-                paddingTop: 12,
-                borderTop: "1px solid #cbd5e1",
-                fontSize: 12,
-                lineHeight: 1.5,
-                color: "#334155",
-                whiteSpace: "normal",
-              }}
-            >
-              <strong>Utilization</strong> = items in use ÷ usable items.
-              <br />
-              <strong>In use</strong> = out of the hub: with an FO, IFO, rig team or internal person, or sent and not
-              received yet.
-              <br />
-              <strong>Usable</strong> = every item except lost, damaged and retired.
-            </span>
-          )}
-
-          {/* Storage, colour, age and unusable details inside Fleet. */}
           {card.key === "fleet" && fleetDetails.length > 0 && (
             <span
               style={{
@@ -538,8 +417,7 @@ export async function SummaryKpis({
               <span
                 style={{
                   display: "grid",
-                  gridTemplateColumns:
-                    "repeat(2, minmax(0, 1fr))",
+                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
                   gap: 8,
                 }}
               >
@@ -598,44 +476,21 @@ export async function SummaryKpis({
                 ))}
               </span>
 
-              {/* Never silently ignore missing storage attributes. */}
               {fleet.storageUnknown > 0 && (
-                <span
-                  style={{
-                    display: "block",
-                    marginTop: 8,
-                    fontSize: 12,
-                  }}
-                >
-                  Unknown / other storage:{" "}
-                  {n(fleet.storageUnknown)}
+                <span style={{ display: "block", marginTop: 8, fontSize: 12 }}>
+                  Unknown / other storage: {n(fleet.storageUnknown)}
                 </span>
               )}
 
               {hasSd && !ages && (
-                <span
-                  style={{
-                    display: "block",
-                    marginTop: 8,
-                    fontSize: 12,
-                  }}
-                >
+                <span style={{ display: "block", marginTop: 8, fontSize: 12 }}>
                   New / Old: the SD card sheet could not be read right now.
                 </span>
               )}
 
-              {/* Flag differing scopes or concurrent data changes. */}
               {scopeMismatch && (
-                <span
-                  style={{
-                    display: "block",
-                    marginTop: 8,
-                    fontSize: 12,
-                    fontWeight: 600,
-                  }}
-                >
-                  Breakdown covers {n(fleetItems.length)} items;
-                  Fleet shows {n(d.total)}. Refresh the page. If
+                <span style={{ display: "block", marginTop: 8, fontSize: 12, fontWeight: 600 }}>
+                  Breakdown covers {n(fleetItems.length)} items; Fleet shows {n(d.total)}. Refresh the page. If
                   this persists, check the hub scope.
                 </span>
               )}

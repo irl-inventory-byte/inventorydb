@@ -732,9 +732,37 @@
 .summaryGrid.summaryRows > :nth-child(-n + 2) {
   grid-column: 1 / -1;
 }
+/* Utilization: numbers on the left, definition on the right. */
+.utilBody {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.utilLeft {
+  display: grid;
+  gap: 6px;
+}
+.utilDefn {
+  padding-left: 24px;
+  border-left: 1px solid #cbd5e1;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #334155;
+  white-space: normal;
+}
 @media (max-width: 640px) {
   .summaryGrid.summaryRows {
     grid-template-columns: 1fr;
+  }
+  .utilBody {
+    grid-template-columns: 1fr;
+  }
+  .utilDefn {
+    padding-left: 0;
+    border-left: 0;
+    padding-top: 12px;
+    border-top: 1px solid #cbd5e1;
   }
 }
 .summary {
