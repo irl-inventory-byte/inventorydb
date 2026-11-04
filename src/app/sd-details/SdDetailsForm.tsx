@@ -151,10 +151,13 @@ export default function SdDetailsForm({
           <input type="text" name="duration" required pattern="\d{1,2}:\d{2}:\d{2}" placeholder="HH:MM:SS (e.g. 01:30:45)" style={input} />
         </label>
 
-        <label style={field}>
-          Failed hours (HH:MM:SS)
-          <input type="text" name="failed_hours" pattern="\d{1,2}:\d{2}:\d{2}" placeholder="HH:MM:SS, leave blank if none" style={input} />
-        </label>
+        {/* Rig form only — not shown on the IM form. */}
+        {team === "rig" && (
+          <label style={field}>
+            Failed hours (HH:MM:SS)
+            <input type="text" name="failed_hours" pattern="\d{1,2}:\d{2}:\d{2}" placeholder="HH:MM:SS, leave blank if none" style={input} />
+          </label>
+        )}
 
         <label style={field}>
           No. of raw clips *
@@ -193,7 +196,7 @@ export default function SdDetailsForm({
                 <th style={{ padding: "6px 8px" }}>City</th>
                 <th style={{ padding: "6px 8px" }}>Serial</th>
                 <th style={{ padding: "6px 8px" }}>Duration</th>
-                <th style={{ padding: "6px 8px" }}>Failed</th>
+                {team === "rig" && <th style={{ padding: "6px 8px" }}>Failed</th>}
                 <th style={{ padding: "6px 8px" }}>Clips</th>
                 <th style={{ padding: "6px 8px" }}>Submitted</th>
               </tr>
@@ -213,7 +216,7 @@ export default function SdDetailsForm({
                   <td style={{ padding: "6px 8px" }}>{r.city}</td>
                   <td style={{ padding: "6px 8px" }}>{r.serial}</td>
                   <td style={{ padding: "6px 8px" }}>{r.duration}</td>
-                  <td style={{ padding: "6px 8px" }}>{r.failed_hours || "—"}</td>
+                  {team === "rig" && <td style={{ padding: "6px 8px" }}>{r.failed_hours || "—"}</td>}
                   <td style={{ padding: "6px 8px" }}>{r.raw_clips}</td>
                   <td style={{ padding: "6px 8px", color: "#64748b" }}>{r.recorded_at ? formatIst(r.recorded_at) : "—"}</td>
                 </tr>
