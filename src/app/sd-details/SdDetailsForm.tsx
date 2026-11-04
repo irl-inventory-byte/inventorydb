@@ -28,6 +28,7 @@ export default function SdDetailsForm({
   saved,
   error,
   recent,
+  defaultMember,
 }: {
   team: "im" | "rig";
   action: (formData: FormData) => void;
@@ -38,6 +39,9 @@ export default function SdDetailsForm({
   saved: boolean;
   error: string;
   recent: SdCardDuration[];
+  /** The logged-in person's own name, when it's in memberOptions — pre-selects the dropdown so they
+   * don't have to pick themselves every time. "" if not found (e.g. an admin filling this in for someone else). */
+  defaultMember?: string;
 }) {
   const field: CSSProperties = { display: "flex", flexDirection: "column", gap: 3, fontSize: "0.78rem", color: "#334155" };
   const input: CSSProperties = { padding: "7px 9px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: "0.88rem", background: "#fff" };
@@ -66,6 +70,19 @@ export default function SdDetailsForm({
       >
         <input type="hidden" name="team" value={team} />
 
+        {team === "rig" && (
+          <label style={field}>
+            Team *
+            <select name="sub_team" required defaultValue="" style={input}>
+              <option value="" disabled>
+                Select team
+              </option>
+              <option value="rig">Rig team</option>
+              <option value="productivity">Productivity team</option>
+            </select>
+          </label>
+        )}
+
         <label style={field}>
           SD card date *
           <input type="date" name="card_date" required max={new Date().toISOString().slice(0, 10)} style={input} />
@@ -73,7 +90,7 @@ export default function SdDetailsForm({
 
         <label style={field}>
           {memberLabel} *
-          <select name="team_member" required defaultValue="" style={input}>
+          <select name="team_member" required defaultValue={defaultMember || ""} style={input}>
             <option value="" disabled>
               Select {memberLabel}
             </option>
@@ -135,6 +152,11 @@ export default function SdDetailsForm({
         </label>
 
         <label style={field}>
+          Failed hours (HH:MM:SS)
+          <input type="text" name="failed_hours" pattern="\d{1,2}:\d{2}:\d{2}" placeholder="HH:MM:SS, leave blank if none" style={input} />
+        </label>
+
+        <label style={field}>
           No. of raw clips *
           <input type="number" name="raw_clips" required min={0} placeholder="e.g. 25" style={input} />
         </label>
@@ -164,12 +186,14 @@ export default function SdDetailsForm({
             <thead>
               <tr style={{ textAlign: "left", borderBottom: "2px solid #cbd5e1" }}>
                 <th style={{ padding: "6px 8px" }}>Date</th>
+                {team === "rig" && <th style={{ padding: "6px 8px" }}>Team</th>}
                 <th style={{ padding: "6px 8px" }}>{memberLabel}</th>
                 <th style={{ padding: "6px 8px" }}>FO / IFO</th>
                 <th style={{ padding: "6px 8px" }}>IC</th>
                 <th style={{ padding: "6px 8px" }}>City</th>
                 <th style={{ padding: "6px 8px" }}>Serial</th>
                 <th style={{ padding: "6px 8px" }}>Duration</th>
+                <th style={{ padding: "6px 8px" }}>Failed</th>
                 <th style={{ padding: "6px 8px" }}>Clips</th>
                 <th style={{ padding: "6px 8px" }}>Submitted</th>
               </tr>
@@ -178,6 +202,9 @@ export default function SdDetailsForm({
               {recent.map((r) => (
                 <tr key={r.record_id} style={{ borderBottom: "1px solid #e2e8f0" }}>
                   <td style={{ padding: "6px 8px" }}>{r.card_date}</td>
+                  {team === "rig" && (
+                    <td style={{ padding: "6px 8px" }}>{r.sub_team === "productivity" ? "Productivity team" : "Rig team"}</td>
+                  )}
                   <td style={{ padding: "6px 8px" }}>{r.team_member}</td>
                   <td style={{ padding: "6px 8px" }}>{r.fo_ifo || "—"}</td>
                   <td style={{ padding: "6px 8px" }}>
@@ -186,6 +213,7 @@ export default function SdDetailsForm({
                   <td style={{ padding: "6px 8px" }}>{r.city}</td>
                   <td style={{ padding: "6px 8px" }}>{r.serial}</td>
                   <td style={{ padding: "6px 8px" }}>{r.duration}</td>
+                  <td style={{ padding: "6px 8px" }}>{r.failed_hours || "—"}</td>
                   <td style={{ padding: "6px 8px" }}>{r.raw_clips}</td>
                   <td style={{ padding: "6px 8px", color: "#64748b" }}>{r.recorded_at ? formatIst(r.recorded_at) : "—"}</td>
                 </tr>

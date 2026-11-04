@@ -6,6 +6,10 @@ import { formatIst } from "@/lib/time";
 import styles from "../admin/admin.module.css";
 
 const TEAM_NAME: Record<string, string> = { im: "IM", rig: "Rig team" };
+// For rig-team rows, which hub actually sent it in — "Rig team" or "Productivity team" (same role,
+// two hubs). Blank sub_team on an older rig row (saved before this field existed) falls back to "Rig team".
+const subTeamLabel = (r: { team: string; sub_team?: string }) =>
+  r.team !== "rig" ? "" : r.sub_team === "productivity" ? "Productivity team" : "Rig team";
 
 /**
  * SD CARD DETAILS: combined report of every "SD Card Duration Hour" entry saved by the IM and Rig
@@ -14,11 +18,16 @@ const TEAM_NAME: Record<string, string> = { im: "IM", rig: "Rig team" };
  * entry forms, which only show each team their own recent entries. Also reachable from the Dashboard
  * (see dashboard/page.tsx), not just the home page.
  */
-export default async function SdDetailsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+export default async function SdDetailsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   await requireRole("admin", "im", "rig");
   const sp = await searchParams;
 
   const teamFilter = one(sp.team); // "" (all), "im" or "rig"
+  const subTeamFilter = one(sp.subteam); // "" (all), "rig" or "productivity" — only meaningful within team=rig
   const cityFilter = one(sp.city);
   const memberFilter = one(sp.member); // team member name
   const dateFrom = one(sp.from); // "YYYY-MM-DD", filters by card_date
@@ -51,6 +60,7 @@ export default async function SdDetailsPage({ searchParams }: { searchParams: Pr
 
   let rows = all;
   if (teamFilter) rows = rows.filter((r) => r.team === teamFilter);
+  if (subTeamFilter) rows = rows.filter((r) => r.team === "rig" && (r.sub_team || "rig") === subTeamFilter);
   if (cityFilter) rows = rows.filter((r) => r.city === cityFilter);
   if (memberFilter) rows = rows.filter((r) => r.team_member === memberFilter);
   if (dateFrom) rows = rows.filter((r) => r.card_date >= dateFrom);
@@ -70,6 +80,7 @@ export default async function SdDetailsPage({ searchParams }: { searchParams: Pr
   const keep = (extra: Record<string, string>) =>
     `/sd-details?${new URLSearchParams({
       ...(teamFilter && { team: teamFilter }),
+      ...(subTeamFilter && { subteam: subTeamFilter }),
       ...(cityFilter && { city: cityFilter }),
       ...(memberFilter && { member: memberFilter }),
       ...(dateFrom && { from: dateFrom }),
@@ -93,7 +104,7 @@ export default async function SdDetailsPage({ searchParams }: { searchParams: Pr
   const cardValue = { fontSize: "1.6rem", fontWeight: 700, color: "#1e293b", lineHeight: 1.1 };
   const cardLabel = { fontSize: "0.8rem", color: "#64748b", marginTop: 2 };
 
-  const hasFilters = teamFilter || cityFilter || memberFilter || dateFrom || dateTo || q;
+  const hasFilters = teamFilter || subTeamFilter || cityFilter || memberFilter || dateFrom || dateTo || q;
 
   return (
     <main className={styles.pageWide}>
@@ -155,11 +166,25 @@ export default async function SdDetailsPage({ searchParams }: { searchParams: Pr
           All · {all.length}
         </Link>
         {byTeam.map((t) => (
-          <Link key={t.team} href={keep({ team: t.team })} aria-current={t.team === teamFilter ? "true" : undefined} style={chip(t.team === teamFilter)}>
+          <Link key={t.team} href={keep({ team: t.team, subteam: "" })} aria-current={t.team === teamFilter ? "true" : undefined} style={chip(t.team === teamFilter)}>
             {t.label} · {t.count}
           </Link>
         ))}
       </nav>
+
+      {teamFilter === "rig" && (
+        <nav aria-label="Filter by rig sub-team" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "0 0 10px" }}>
+          <Link href={keep({ subteam: "" })} aria-current={!subTeamFilter ? "true" : undefined} style={chip(!subTeamFilter)}>
+            Rig + Productivity
+          </Link>
+          <Link href={keep({ subteam: "rig" })} aria-current={subTeamFilter === "rig" ? "true" : undefined} style={chip(subTeamFilter === "rig")}>
+            Rig team
+          </Link>
+          <Link href={keep({ subteam: "productivity" })} aria-current={subTeamFilter === "productivity" ? "true" : undefined} style={chip(subTeamFilter === "productivity")}>
+            Productivity team
+          </Link>
+        </nav>
+      )}
 
       {cities.length > 0 && (
         <nav aria-label="Filter by city" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "0 0 10px" }}>
@@ -176,6 +201,7 @@ export default async function SdDetailsPage({ searchParams }: { searchParams: Pr
 
       <form className={styles.row} method="get" style={{ margin: "0 0 10px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         {teamFilter && <input type="hidden" name="team" value={teamFilter} />}
+        {subTeamFilter && <input type="hidden" name="subteam" value={subTeamFilter} />}
         {cityFilter && <input type="hidden" name="city" value={cityFilter} />}
         {q && <input type="hidden" name="q" value={one(sp.q)} />}
         <label style={{ fontSize: "0.85rem", color: "#334155" }}>
@@ -194,6 +220,7 @@ export default async function SdDetailsPage({ searchParams }: { searchParams: Pr
 
       <form className={styles.row} method="get" style={{ margin: "0 0 16px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         {teamFilter && <input type="hidden" name="team" value={teamFilter} />}
+        {subTeamFilter && <input type="hidden" name="subteam" value={subTeamFilter} />}
         {cityFilter && <input type="hidden" name="city" value={cityFilter} />}
         {memberFilter && <input type="hidden" name="member" value={memberFilter} />}
         <label style={{ fontSize: "0.85rem", color: "#334155" }}>
@@ -207,6 +234,7 @@ export default async function SdDetailsPage({ searchParams }: { searchParams: Pr
 
       <form className={styles.row} method="get" style={{ margin: "0 0 16px" }}>
         {teamFilter && <input type="hidden" name="team" value={teamFilter} />}
+        {subTeamFilter && <input type="hidden" name="subteam" value={subTeamFilter} />}
         {cityFilter && <input type="hidden" name="city" value={cityFilter} />}
         {memberFilter && <input type="hidden" name="member" value={memberFilter} />}
         {dateFrom && <input type="hidden" name="from" value={dateFrom} />}
@@ -231,6 +259,7 @@ export default async function SdDetailsPage({ searchParams }: { searchParams: Pr
                 <th>City</th>
                 <th>Serial</th>
                 <th>Duration</th>
+                <th>Failed</th>
                 <th>Clips</th>
                 <th>Recorded by</th>
                 <th>Submitted</th>
@@ -240,7 +269,7 @@ export default async function SdDetailsPage({ searchParams }: { searchParams: Pr
               {rows.map((r) => (
                 <tr key={r.record_id}>
                   <td>{r.card_date}</td>
-                  <td>{TEAM_NAME[r.team] ?? r.team}</td>
+                  <td>{r.team === "rig" ? subTeamLabel(r) : TEAM_NAME[r.team] ?? r.team}</td>
                   <td>{r.team_member}</td>
                   <td>{r.fo_ifo || "—"}</td>
                   <td>
@@ -249,6 +278,7 @@ export default async function SdDetailsPage({ searchParams }: { searchParams: Pr
                   <td>{r.city}</td>
                   <td>{r.serial}</td>
                   <td>{r.duration}</td>
+                  <td>{r.failed_hours || "—"}</td>
                   <td>{r.raw_clips}</td>
                   <td>{r.recorded_by_name || r.recorded_by || "—"}</td>
                   <td>{r.recorded_at ? formatIst(r.recorded_at) : "—"}</td>

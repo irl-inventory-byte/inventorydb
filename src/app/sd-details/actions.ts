@@ -51,13 +51,22 @@ export async function saveSdDetails(formData: FormData) {
   const city = String(formData.get("city") ?? "").trim();
   const serial = String(formData.get("serial") ?? "").trim();
   const duration = String(formData.get("duration") ?? "").trim();
+  const failedHours = String(formData.get("failed_hours") ?? "").trim();
   const rawClips = String(formData.get("raw_clips") ?? "").trim();
+  // Rig form only: which hub actually sent this in — "Rig team" or "Productivity team" (same role,
+  // two different hubs; see lib/rig-hub.ts). Not asked on the IM form, so always "" there.
+  const subTeamRaw = String(formData.get("sub_team") ?? "").trim();
+  const subTeam = team === "rig" ? (subTeamRaw === "productivity" ? "productivity" : "rig") : "";
 
   if (!cardDate || !teamMember || !icName || !city || !serial || !duration || !rawClips) {
     back({ error: "Fill in all the required fields." });
   }
+  if (team === "rig" && subTeamRaw !== "rig" && subTeamRaw !== "productivity") {
+    back({ error: "Choose Rig team or Productivity team." });
+  }
   if (!icNumber.startsWith("IC-")) back({ error: "IC-Number must start with IC-." });
   if (!/^\d{1,2}:\d{2}:\d{2}$/.test(duration)) back({ error: "Duration must be in HH:MM:SS format, e.g. 01:30:45." });
+  if (failedHours && !/^\d{1,2}:\d{2}:\d{2}$/.test(failedHours)) back({ error: "Failed hours must be in HH:MM:SS format, e.g. 00:15:00." });
 
   const people = await getStore().list("people");
   const recordedByName = displayName(people, user.personId ?? "") || user.name || user.email || "";
@@ -67,6 +76,7 @@ export async function saveSdDetails(formData: FormData) {
     {
       record_id: recordId,
       team,
+      sub_team: subTeam,
       card_date: cardDate,
       team_member: teamMember,
       fo_ifo: foIfo,
@@ -75,6 +85,7 @@ export async function saveSdDetails(formData: FormData) {
       city,
       serial,
       duration,
+      failed_hours: failedHours,
       raw_clips: rawClips,
       recorded_by: user.email ?? "unknown",
       recorded_by_name: recordedByName,
@@ -86,12 +97,14 @@ export async function saveSdDetails(formData: FormData) {
   const forwarded = await forwardToScript(team, {
     "SD CARD DATE": cardDate,
     [team === "im" ? "IM" : "RIG TEAM NAME"]: teamMember,
+    ...(team === "rig" && { TEAM: subTeam === "productivity" ? "Productivity team" : "Rig team" }),
     "FO / IFO": foIfo,
     "IC NAME": icName,
     CITY: city,
     "IC-NUMBER": icNumber,
     "SD CARD SERIAL NUMBER / ASSET TAG": serial,
     DU_TIME: duration,
+    FAILED_HOURS: failedHours,
     "NO. OF RAW CLIPS": rawClips,
   });
   await getStore().upsert("sd_card_durations", [{ record_id: recordId, forwarded }]);

@@ -136,6 +136,7 @@ export const TABS = {
   sd_card_durations: [
     "record_id",
     "team", // "im" | "rig" — which of the two forms this came from
+    "sub_team", // only when team "rig": "rig" | "productivity" — which hub actually sent it. "" for IM entries.
     "card_date", // SD CARD DATE, YYYY-MM-DD
     "team_member", // IM name (im form) or Rig/Productivity team member name (rig form)
     "fo_ifo", // FO / IFO name
@@ -144,6 +145,7 @@ export const TABS = {
     "city",
     "serial", // SD card serial number / asset tag
     "duration", // DU_TIME, HH:MM:SS
+    "failed_hours", // how much of the duration failed/was unusable, HH:MM:SS — optional, "" if none
     "raw_clips", // No. of raw clips
     "recorded_by", // login email
     "recorded_by_name",
@@ -368,6 +370,7 @@ export interface Acknowledgment extends Row {
 export interface SdCardDuration extends Row {
   record_id: string;
   team: string; // "im" | "rig"
+  sub_team: string; // "rig" | "productivity" (only set when team is "rig") | ""
   card_date: string;
   team_member: string;
   fo_ifo: string;
@@ -376,6 +379,7 @@ export interface SdCardDuration extends Row {
   city: string;
   serial: string;
   duration: string;
+  failed_hours: string;
   raw_clips: string;
   recorded_by: string;
   recorded_by_name: string;

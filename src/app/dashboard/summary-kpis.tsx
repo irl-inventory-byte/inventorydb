@@ -1,4 +1,3 @@
-import { Fragment } from "react";
 import Link from "next/link";
 import { LATE_AFTER_HOURS, type Dashboard } from "@/lib/dashboard";
 import type { Item } from "@/lib/schema";
@@ -9,10 +8,16 @@ import styles from "./dashboard.module.css";
 import { Icon, type IconName } from "./icons";
 
 const howLong = (hours: number) =>
-  hours < 48 ? `${Math.floor(hours)} hours` : `${Math.floor(hours / 24)} days`;
+  hours < 48
+    ? `${Math.floor(hours)} hours`
+    : `${Math.floor(hours / 24)} days`;
 
 const dayText = (days: number | null) =>
-  days === null ? "" : days === 0 ? "today" : `${days} day${days === 1 ? "" : "s"} ago`;
+  days === null
+    ? ""
+    : days === 0
+      ? "today"
+      : `${days} day${days === 1 ? "" : "s"} ago`;
 
 interface FleetCounts {
   storage512: number;
@@ -20,13 +25,27 @@ interface FleetCounts {
   storageUnknown: number;
   black: number;
   green: number;
+  colourUnknown: number;
   sdCards: number;
   rigs: number;
-  newCards: number;
-  oldCards: number;
-  ageUnknown: number;
+  newCards: number; // "New" in the SD card sheet's New/Old column
+  oldCards: number; // "Old"
+  ageUnknown: number; // not in the sheet, or New/Old blank
 }
 
+/**
+ * New / Old for every SD card in the inventory, from the SD card sheet's New/Old column (matched by Asset
+ * Tag). The sheet is read through the same short cache as Add SD card. null = the sheet could not be read.
+ *
+ * This is a SEPARATE Google Sheet from the app's own database, read directly via the Sheets API —
+ * on a cache miss (every 5 min) that can be several Google API round trips one after another. Rather
+ * than let a slow or slow-to-authenticate read stall the whole dashboard, this gives it SHEET_TIMEOUT_MS
+ * to finish; past that it falls back to null (same as "could not be read") and lets the page render.
+ * The read keeps going in the background and fills the cache, so the next load is normally fast again.
+ * (Bumped from 1.5s to 4s — 1.5s was timing out too often and New/Old kept falling back to the text
+ * message instead of showing tiles. Combined with the 15-minute cache, most loads should still hit a
+ * warm cache and render instantly; only a true cache-miss load pays this cost, and it's capped at 4s.)
+ */
 const SHEET_TIMEOUT_MS = 4000;
 
 async function sheetAges(): Promise<Map<string, string> | null> {
@@ -42,12 +61,31 @@ async function sheetAges(): Promise<Map<string, string> | null> {
 
 interface SummaryKpisProps {
   d: Dashboard;
+
+  // For a hub dashboard, include every hub ID in its scope.
+  // Multiple IDs must be comma-separated.
   hubParam?: string;
+
+  // Existing callers may pass items directly.
+  // If omitted, this component loads the items itself.
   items?: readonly Item[];
+  /** Rigs view: the first card is "Rigs" and its links show rigs only. */
   rigView?: boolean;
+  /**
+   * Where the "Late items" tile links to. When given, used instead of the default inventory list link —
+   * e.g. the dashboard's own "#attention" section, showing every delayed card with no filter applied.
+   * Omit on a page with no Needs attention table (the hub dashboard), where the default inventory link stays.
+   */
   attentionHref?: string;
+  /**
+   * Cards the admin has recorded as already broken before this system tracked them (see the Broken
+   * tile's "Starting count" box) — not real item rows, so they aren't in `items`/`d.total`. Added on
+   * top here so Fleet's Total and usable/non-usable split agree with the Broken tile's own number.
+   */
   baselineTotal?: number;
   baselineStorage?: { gb256: number; gb512: number };
+  /** Broken and retired counts (already including each one's admin "starting count" baseline — see
+   * the dashboard's "Broken / Retired" tile), shown as their own tiles in the Fleet breakdown below. */
   brokenCount?: number;
   retiredCount?: number;
 }
@@ -63,34 +101,51 @@ interface SummaryCard {
   warn?: boolean;
 }
 
-interface FleetTile {
-  label: string;
-  count: number;
-  pct: string;
-  bg: string;
-  border: string;
-  text: string;
-  heading?: string;
-}
-
+/**
+ * Safely parse the attributes JSON.
+ * Missing or invalid JSON is treated as missing card details.
+ */
 function readAttributes(raw: string): Record<string, unknown> {
   try {
     const parsed: unknown = JSON.parse(raw || "{}");
-    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+
+    if (
+      parsed !== null &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed)
+    ) {
       return parsed as Record<string, unknown>;
     }
   } catch {
     // Keep the dashboard working when a record has invalid JSON.
   }
+
   return {};
 }
 
+/** Read a string or numeric attribute without coercing objects. */
 function attributeText(value: unknown): string {
-  if (typeof value === "string") return value.trim();
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+
   return "";
 }
 
+/**
+ * Read the fields saved by the updated Add item action:
+ *
+ * {
+ *   "capacity": "512 GB",
+ *   "card_type": "Black"
+ * }
+ *
+ * Storage and colour are separate breakdowns of the same items.
+ */
 function countFleet(items: readonly Item[], ages: Map<string, string> | null): FleetCounts {
   const counts: FleetCounts = {
     storage512: 0,
@@ -98,6 +153,7 @@ function countFleet(items: readonly Item[], ages: Map<string, string> | null): F
     storageUnknown: 0,
     black: 0,
     green: 0,
+    colourUnknown: 0,
     sdCards: 0,
     rigs: 0,
     newCards: 0,
@@ -106,6 +162,7 @@ function countFleet(items: readonly Item[], ages: Map<string, string> | null): F
   };
 
   for (const item of items) {
+    // Storage and colour only apply to SD cards; rigs are counted separately.
     if (item.item_type === "rig") {
       counts.rigs++;
       continue;
@@ -118,15 +175,30 @@ function countFleet(items: readonly Item[], ages: Map<string, string> | null): F
     else counts.ageUnknown++;
 
     const attributes = readAttributes(item.attributes);
-    const capacity = attributeText(attributes.capacity).replace(/\s+/g, "").toUpperCase();
 
-    if (capacity === "512GB" || capacity === "512") counts.storage512++;
-    else if (capacity === "256GB" || capacity === "256") counts.storage256++;
-    else counts.storageUnknown++;
+    const capacity = attributeText(attributes.capacity)
+      .replace(/\s+/g, "")
+      .toUpperCase();
 
-    const colour = attributeText(attributes.card_type).toLowerCase();
-    if (colour === "black") counts.black++;
-    else if (colour === "green") counts.green++;
+    if (capacity === "512GB" || capacity === "512") {
+      counts.storage512++;
+    } else if (capacity === "256GB" || capacity === "256") {
+      counts.storage256++;
+    } else {
+      counts.storageUnknown++;
+    }
+
+    const colour = attributeText(
+      attributes.card_type
+    ).toLowerCase();
+
+    if (colour === "black") {
+      counts.black++;
+    } else if (colour === "green") {
+      counts.green++;
+    } else {
+      counts.colourUnknown++;
+    }
   }
 
   return counts;
@@ -134,7 +206,8 @@ function countFleet(items: readonly Item[], ages: Map<string, string> | null): F
 
 /**
  * Server component.
- * Do not add "use client" to this file: getStore() must run on the server.
+ * Do not add "use client" to this file:
+ * getStore() must run on the server.
  */
 export async function SummaryKpis({
   d,
@@ -154,8 +227,14 @@ export async function SummaryKpis({
       ...params,
     })}`;
 
-  const sourceItems = items !== undefined ? items : await getStore().list("items");
+  // NEW: load inventory here when the parent did not pass items.
+  // This allows the existing <SummaryKpis d={d} /> call to work.
+  const sourceItems =
+    items !== undefined
+      ? items
+      : await getStore().list("items");
 
+  // Scope the breakdown to the hub IDs supplied by a hub page.
   const hubIds = new Set(
     (hubParam ?? "")
       .split(",")
@@ -164,40 +243,44 @@ export async function SummaryKpis({
   );
 
   const fleetItems =
-    hubIds.size > 0 ? sourceItems.filter((item) => hubIds.has(item.current_hub)) : sourceItems;
+    hubIds.size > 0
+      ? sourceItems.filter((item) =>
+          hubIds.has(item.current_hub)
+        )
+      : sourceItems;
 
   const hasSd = fleetItems.some((i) => i.item_type !== "rig" && i.item_type !== "mobile");
   const ages = hasSd ? await sheetAges() : null;
   const fleet = countFleet(fleetItems, ages);
+  // Fold the admin's "already broken before tracking" baseline into the storage breakdown too, so
+  // the 512/256 GB tiles and the Total agree with each other and with the Broken tile's own number.
   if (baselineStorage) {
     fleet.storage512 += baselineStorage.gb512;
     fleet.storage256 += baselineStorage.gb256;
     fleet.sdCards += baselineTotal;
   }
 
-  // Manual adjustment (SD cards only, not rigs): Green cards +89, Old cards +93.
-  const EXTRA_GREEN = 89;
-  const EXTRA_OLD = 93;
-  if (!rigView) {
-    fleet.green += EXTRA_GREEN;
-    if (ages) fleet.oldCards += EXTRA_OLD;
-  }
-
+  // A second read can differ if inventory changed during rendering,
+  // or if the caller supplied a different hub scope. (Compared against the real tracked total —
+  // the baseline is phantom, not a row in `items`, so it's left out of this check on purpose.)
   const scopeMismatch = fleetItems.length !== d.total;
 
   const total = d.total + baselineTotal;
   const unusable = total - d.usable;
-  const pct = d.utilization === null ? null : Math.round(d.utilization);
+  const pct =
+    d.utilization === null
+      ? null
+      : Math.round(d.utilization);
 
-  // Rig view keeps the original four-card grid; SD cards get the new layout.
-  const sdLayout = !rigView;
-
+  // Share of the SD card total, e.g. 903 of 1479 = 61%. Shown next to each tile's count so the two
+  // sides of a split (512 vs 256, Black vs Green, New vs Old) are easy to compare at a glance.
   const share = (count: number) => (fleet.sdCards > 0 ? `${Math.round((count / fleet.sdCards) * 100)}%` : "");
 
-  const sdDetails: FleetTile[] = [
+  // Each tile has its own colour so the four are easy to tell apart:
+  // storage in blues, card colour in the card's real colour.
+  const sdDetails = [
     {
       label: "512 GB",
-      heading: "Usable",
       count: fleet.storage512,
       pct: share(fleet.storage512),
       bg: "#e0e7ff",
@@ -228,6 +311,7 @@ export async function SummaryKpis({
       border: "#16a34a",
       text: "#14532d",
     },
+    // New / Old from the SD card sheet (only when the sheet could be read).
     ...(ages
       ? [
           {
@@ -250,18 +334,22 @@ export async function SummaryKpis({
       : []),
   ];
 
-  // Broken and Retired percentages are of the TOTAL fleet only.
-  const totalShare = (count: number) => (total > 0 ? `${((count / total) * 100).toFixed(1)}%` : "");
+  // Broken and Retired's own percentage is of the two combined (how the unusable pile splits between
+  // them), not of the whole fleet — e.g. Broken 89 of 94 unusable = 95%, not 89 of 1,653 total = 5%.
+  const unusableTotal = brokenCount + retiredCount;
+  const unusableShare = (count: number) => (unusableTotal > 0 ? `${Math.round((count / unusableTotal) * 100)}%` : "");
 
-  const fleetDetails: FleetTile[] = [
+  // Order: storage (512/256), colour (Black/Green), age (New/Old) — all from sdDetails — then
+  // Broken, then Retired, then Rigs last. (No separate "Unusable" tile — the top note line above
+  // already says "N lost, damaged or retired", and Broken + Retired below add up to that same N.)
+  const fleetDetails = [
     ...(fleet.sdCards > 0 ? sdDetails : []),
     ...(brokenCount > 0
       ? [
           {
             label: "Broken cards",
-            heading: "Unusable",
             count: brokenCount,
-            pct: totalShare(brokenCount),
+            pct: unusableShare(brokenCount),
             bg: "#fee2e2",
             border: "#dc2626",
             text: "#7f1d1d",
@@ -272,9 +360,8 @@ export async function SummaryKpis({
       ? [
           {
             label: "Retired cards",
-            heading: brokenCount > 0 ? undefined : "Unusable",
             count: retiredCount,
-            pct: totalShare(retiredCount),
+            pct: unusableShare(retiredCount),
             bg: "#f3f4f6",
             border: "#6b7280",
             text: "#1f2937",
@@ -295,171 +382,192 @@ export async function SummaryKpis({
       : []),
   ];
 
-  const fleetCard: SummaryCard = {
-    key: "fleet",
-    icon: "layers",
-    label: rigView ? "Rigs" : fleet.sdCards > 0 ? "Fleet — storage update" : "Fleet",
-    value: n(total),
-    note:
-      unusable > 0
-        ? `${n(unusable)} lost, damaged or retired · ${n(d.usable)} usable`
-        : `${n(d.usable)} usable`,
-    href: list(),
-  };
+  const cards: SummaryCard[] = [
+    {
+      key: "fleet",
+      icon: "layers",
+      // Rig view says "Rigs"; SD cards keep "Fleet".
+      label: rigView ? "Rigs" : fleet.sdCards > 0 ? "Fleet — storage update" : "Fleet",
+      value: n(total),
+      note:
+        unusable > 0
+          ? `${n(unusable)} lost, damaged or retired · ${n(d.usable)} usable`
+          : `${n(d.usable)} usable`,
+      href: list(),
+    },
+    // "Waiting to be received" sits right above Utilization, and "Late items" (below) right after it —
+    // the two numbers that most need day-to-day attention bracket the Utilization box, per request.
+    {
+      key: "waiting",
+      icon: "inbox",
+      label: "Waiting to be received",
+      value: n(d.waiting),
+      note:
+        d.waiting > 0
+          ? `Sent or traveling · oldest ${dayText(
+              d.oldestWaitingDays
+            )}`
+          : "Nothing waiting",
+      href: hubParam
+        ? list({ status: "pending,traveling" })
+        : "/handover/receive",
+    },
+    {
+      key: "utilization",
+      icon: "activity",
+      label: "Utilization",
+      value: pct === null ? "—" : `${pct}%`,
+      note: `${n(d.outCount)} out of ${n(
+        d.usable
+      )} usable items`,
+      href: list({
+        status: rigView
+          ? "pending,traveling,with_fo,with_qc,with_hardware,with_internal"
+          : "pending,traveling,with_fo,with_rig,with_internal",
+      }),
+      meter: pct ?? 0,
+    },
+    {
+      key: "late",
+      icon: "alert",
+      label: "Late items",
+      value: n(d.lateCards),
+      note:
+        d.lateCards > 0
+          ? `Over ${LATE_AFTER_HOURS} hours · oldest ${howLong(
+              d.oldestLateHours ?? 0
+            )}`
+          : `Nothing over ${LATE_AFTER_HOURS} hours`,
+      // Opens the dashboard's own Needs attention table (every delayed card, unfiltered) when given one;
+      // else the inventory list with ONLY the late items (and only this city's hubs from a city page).
+      href:
+        attentionHref ??
+        list({
+          status: "with_fo,traveling,pending",
+          late: "1",
+        }),
+      warn: d.lateCards > 0,
+    },
+  ];
 
-  const utilCard: SummaryCard = {
-    key: "utilization",
-    icon: "activity",
-    label: "Utilization",
-    value: pct === null ? "—" : `${pct}%`,
-    note: `${n(d.outCount)} out of ${n(d.usable)} usable items`,
-    href: list({
-      status: rigView
-        ? "pending,traveling,with_fo,with_qc,with_hardware,with_internal"
-        : "pending,traveling,with_fo,with_rig,with_internal",
-    }),
-    meter: pct ?? 0,
-  };
-
-  const waitingCard: SummaryCard = {
-    key: "waiting",
-    icon: "inbox",
-    label: "Waiting to be received",
-    value: n(d.waiting),
-    note:
-      d.waiting > 0
-        ? `Sent or traveling · oldest ${dayText(d.oldestWaitingDays)}`
-        : "Nothing waiting",
-    href: hubParam ? list({ status: "pending,traveling" }) : "/handover/receive",
-  };
-
-  const lateCard: SummaryCard = {
-    key: "late",
-    icon: "alert",
-    label: "Late items",
-    value: n(d.lateCards),
-    note:
-      d.lateCards > 0
-        ? `Over ${LATE_AFTER_HOURS} hours · oldest ${howLong(d.oldestLateHours ?? 0)}`
-        : `Nothing over ${LATE_AFTER_HOURS} hours`,
-    href: attentionHref ?? list({ status: "with_fo,traveling,pending", late: "1" }),
-    warn: d.lateCards > 0,
-  };
-
-  const header = (card: SummaryCard) => (
-    <span className={styles.summaryTop}>
-      <span className={styles.summaryLabel}>{card.label}</span>
-      <span className={`${styles.summaryIcon} ${card.warn ? styles.summaryIconWarn : ""}`}>
-        <Icon name={card.icon} size={18} />
-      </span>
-    </span>
-  );
-
-  // RIGS: original four-card grid.
-  if (!sdLayout) {
-    return (
-      <section
-        className={styles.summaryGrid}
-        aria-label="Management summary"
-        style={{ height: "auto", maxHeight: "none", overflow: "visible" }}
-      >
-        {[fleetCard, utilCard, waitingCard, lateCard].map((card) => (
-          <Link key={card.key} href={card.href} className={styles.summary}>
-            {header(card)}
-            <span className={styles.summaryValue}>{card.value}</span>
-            {card.meter !== undefined && (
-              <span className={styles.meter} role="img" aria-label={`${card.meter}% utilization`}>
-                <i style={{ width: `${Math.max(0, Math.min(100, card.meter))}%` }} />
-              </span>
-            )}
-            <span className={styles.summaryNote}>{card.note}</span>
-            {card.key === "utilization" && (
-              <span
-                style={{
-                  display: "block",
-                  marginTop: 12,
-                  paddingTop: 12,
-                  borderTop: "1px solid #cbd5e1",
-                  fontSize: 12,
-                  lineHeight: 1.5,
-                  color: "#334155",
-                }}
-              >
-                <strong>Utilization</strong> = items in use ÷ usable items.
-                <br />
-                <strong>In use</strong> = out of the hub: with an FO, IFO, rig team or internal person, or sent
-                and not received yet.
-                <br />
-                <strong>Usable</strong> = every item except lost, damaged and retired.
-              </span>
-            )}
-          </Link>
-        ))}
-      </section>
-    );
-  }
-
-  // SD CARDS: Fleet box, then Utilization box with Waiting + Late inside.
   return (
     <section
-      className={`${styles.summaryGrid} ${styles.summaryRows}`}
+      className={styles.summaryGrid}
       aria-label="Management summary"
-      style={{ height: "auto", maxHeight: "none", overflow: "visible" }}
+      style={{
+        height: "auto",
+        maxHeight: "none",
+        overflow: "visible",
+      }}
     >
-      {/* BOX 1: Fleet */}
-      <Link
-        href={fleetCard.href}
-        className={styles.summary}
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          height: "auto",
-          maxHeight: "none",
-          minWidth: 0,
-          overflow: "visible",
-        }}
-      >
-        {header(fleetCard)}
-        <span className={styles.summaryValue}>{fleetCard.value}</span>
-        <span className={styles.summaryNote}>{fleetCard.note}</span>
+      {cards.map((card) => (
+        <Link
+          key={card.key}
+          href={card.href}
+          className={styles.summary}
+          style={
+            card.key === "fleet" || card.key === "utilization"
+              ? {
+                  display: "flex",
+                  flexDirection: "column",
+                  height: "auto",
+                  maxHeight: "none",
+                  minWidth: 0,
+                  overflow: "visible",
+                }
+              : undefined
+          }
+        >
+          {/* Existing card title and icon. */}
+          <span className={styles.summaryTop}>
+            <span className={styles.summaryLabel}>
+              {card.label}
+            </span>
 
-        {fleetDetails.length > 0 && (
-          <span
-            style={{
-              display: "block",
-              flexShrink: 0,
-              width: "100%",
-              marginTop: 12,
-              paddingTop: 12,
-              borderTop: "1px solid #cbd5e1",
-              whiteSpace: "normal",
-            }}
-          >
+            <span
+              className={`${styles.summaryIcon} ${
+                card.warn ? styles.summaryIconWarn : ""
+              }`}
+            >
+              <Icon name={card.icon} size={18} />
+            </span>
+          </span>
+
+          {/* Existing main metric. */}
+          <span className={styles.summaryValue}>
+            {card.value}
+          </span>
+
+          {/* Existing utilization meter. */}
+          {card.meter !== undefined && (
+            <span
+              className={styles.meter}
+              role="img"
+              aria-label={`${card.meter}% utilization`}
+            >
+              <i
+                style={{
+                  width: `${Math.max(
+                    0,
+                    Math.min(100, card.meter)
+                  )}%`,
+                }}
+              />
+            </span>
+          )}
+
+          <span className={styles.summaryNote}>
+            {card.note}
+          </span>
+
+          {/* What Utilization means. */}
+          {card.key === "utilization" && (
             <span
               style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: 8,
+                display: "block",
+                width: "100%",
+                marginTop: 12,
+                paddingTop: 12,
+                borderTop: "1px solid #cbd5e1",
+                fontSize: 12,
+                lineHeight: 1.5,
+                color: "#334155",
+                whiteSpace: "normal",
               }}
             >
-              {fleetDetails.map((detail) => (
-                <Fragment key={detail.label}>
-                  {detail.heading && (
-                    <span
-                      style={{
-                        gridColumn: "1 / -1",
-                        fontSize: 11,
-                        fontWeight: 700,
-                        letterSpacing: "0.06em",
-                        textTransform: "uppercase",
-                        color: "#475569",
-                        marginTop: 4,
-                      }}
-                    >
-                      {detail.heading}
-                    </span>
-                  )}
+              <strong>Utilization</strong> = items in use ÷ usable items.
+              <br />
+              <strong>In use</strong> = out of the hub: with an FO, IFO, rig team or internal person, or sent and not
+              received yet.
+              <br />
+              <strong>Usable</strong> = every item except lost, damaged and retired.
+            </span>
+          )}
+
+          {/* NEW: storage and colour details inside Fleet. */}
+          {card.key === "fleet" && fleetDetails.length > 0 && (
+            <span
+              style={{
+                display: "block",
+                flexShrink: 0,
+                width: "100%",
+                marginTop: 12,
+                paddingTop: 12,
+                borderTop: "1px solid #cbd5e1",
+                whiteSpace: "normal",
+              }}
+            >
+              <span
+                style={{
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(2, minmax(0, 1fr))",
+                  gap: 8,
+                }}
+              >
+                {fleetDetails.map((detail) => (
                   <span
+                    key={detail.label}
                     style={{
                       display: "flex",
                       flexDirection: "column",
@@ -473,9 +581,16 @@ export async function SummaryKpis({
                       color: detail.text,
                     }}
                   >
-                    <span style={{ fontSize: 12, fontWeight: 600, whiteSpace: "normal" }}>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        whiteSpace: "normal",
+                      }}
+                    >
                       {detail.label}
                     </span>
+
                     <strong
                       style={{
                         fontSize: 20,
@@ -487,70 +602,86 @@ export async function SummaryKpis({
                     >
                       {n(detail.count)}
                       {detail.pct && (
-                        <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.75 }}>{detail.pct}</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.75 }}>
+                          {detail.pct}
+                        </span>
                       )}
                     </strong>
                   </span>
-                </Fragment>
-              ))}
+                ))}
+              </span>
+
+              {/* Never silently ignore missing attributes. */}
+              {fleet.storageUnknown > 0 && (
+                <span
+                  style={{
+                    display: "block",
+                    marginTop: 8,
+                    fontSize: 12,
+                  }}
+                >
+                  Unknown / other storage:{" "}
+                  {n(fleet.storageUnknown)}
+                </span>
+              )}
+
+              {hasSd && !ages && (
+                <span
+                  style={{
+                    display: "block",
+                    marginTop: 8,
+                    fontSize: 12,
+                  }}
+                >
+                  New / Old: the SD card sheet could not be read right now.
+                </span>
+              )}
+
+              {fleet.colourUnknown > 0 && (
+                <span
+                  style={{
+                    display: "block",
+                    marginTop: 8,
+                    fontSize: 12,
+                  }}
+                >
+                  Unknown / other colour:{" "}
+                  {n(fleet.colourUnknown)}
+                </span>
+              )}
+
+              {/* Flag differing scopes or concurrent data changes. */}
+              {scopeMismatch && (
+                <span
+                  style={{
+                    display: "block",
+                    marginTop: 8,
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  Breakdown covers {n(fleetItems.length)} items;
+                  Fleet shows {n(d.total)}. Refresh the page. If
+                  this persists, check the hub scope.
+                </span>
+              )}
+
+              <span
+                style={{
+                  display: "block",
+                  marginTop: 8,
+                  fontSize: 12,
+                  lineHeight: 1.4,
+                  color: "#0284c7",
+                  fontWeight: 600,
+                }}
+              >
+              
+              </span>
             </span>
-
-            {fleet.storageUnknown > 0 && (
-              <span style={{ display: "block", marginTop: 8, fontSize: 12 }}>
-                Unknown / other storage: {n(fleet.storageUnknown)}
-              </span>
-            )}
-
-            {hasSd && !ages && (
-              <span style={{ display: "block", marginTop: 8, fontSize: 12 }}>
-                New / Old: the SD card sheet could not be read right now.
-              </span>
-            )}
-
-            {scopeMismatch && (
-              <span style={{ display: "block", marginTop: 8, fontSize: 12, fontWeight: 600 }}>
-                Breakdown covers {n(fleetItems.length)} items; Fleet shows {n(d.total)}. Refresh the page. If
-                this persists, check the hub scope.
-              </span>
-            )}
-          </span>
-        )}
-      </Link>
-
-      {/* BOX 2: Utilization, with Waiting and Late inside it */}
-      <div
-        className={styles.summary}
-        style={{ height: "auto", maxHeight: "none", minWidth: 0, overflow: "visible" }}
-      >
-        <Link href={utilCard.href} className={styles.utilBody}>
-          <span className={styles.utilLeft}>
-            {header(utilCard)}
-            <span className={styles.summaryValue}>{utilCard.value}</span>
-            <span className={styles.meter} role="img" aria-label={`${utilCard.meter}% utilization`}>
-              <i style={{ width: `${Math.max(0, Math.min(100, utilCard.meter ?? 0))}%` }} />
-            </span>
-            <span className={styles.summaryNote}>{utilCard.note}</span>
-          </span>
-          <span className={styles.utilDefn}>
-            <strong>Utilization</strong> = items in use ÷ usable items.
-            <br />
-            <strong>In use</strong> = out of the hub: with an FO, IFO, rig team or internal person, or sent and
-            not received yet.
-            <br />
-            <strong>Usable</strong> = every item except lost, damaged and retired.
-          </span>
+          )}
         </Link>
-
-        <div className={styles.utilTiles}>
-          {[waitingCard, lateCard].map((card) => (
-            <Link key={card.key} href={card.href} className={styles.utilTile}>
-              {header(card)}
-              <span className={styles.summaryValue}>{card.value}</span>
-              <span className={styles.summaryNote}>{card.note}</span>
-            </Link>
-          ))}
-        </div>
-      </div>
+      ))}
     </section>
   );
 }

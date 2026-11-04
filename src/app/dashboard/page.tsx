@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
+import { displayName } from "@/lib/actors";
 import { requireRole } from "@/lib/authz";
 import { LATE_AFTER_HOURS, computeDashboard } from "@/lib/dashboard";
 import { buildHubTree } from "@/lib/hub-tree";
@@ -302,6 +303,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const showEmpty = one(sp.empty) === "1";
   const hiddenEmpty = countHidden(tree, false);
   const canHandle = HANDLER_ROLES.includes(user.role);
+  // Only Abhishek Yadav may edit the Broken tile's "starting count" override (see dashboard/actions.ts;
+  // this is just the UI hide — that action also checks server-side). No login email was given, so this
+  // matches by name, the same way the action's own audit-log "byName" is computed.
+  const myDisplayName = displayName(people, user.personId ?? "") || user.name || "";
+  const canEditBrokenBaseline = myDisplayName.trim().toLowerCase() === "abhishek yadav";
   const activeHubs = hubs.filter((h) => h.active !== "false").length;
 
   const s = d.byStatus;
@@ -510,9 +516,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     },
     ...brokenRealOther.map((r) => ({ ...r, pct: brokenCombinedTotal ? Math.round((r.count / brokenCombinedTotal) * 100) : 0 })),
   ].sort((a, b) => b.count - a.count);
-  // Only switch to the combined baseline+live number once a baseline has actually been set;
-  // otherwise behave exactly as before (pure live count).
-  const brokenValue = brokenStorageOverride ? brokenCombinedTotal : s.damaged;
+  // Broken counts SD cards only (storageFor already excludes rigs) — not s.damaged, which would
+  // also include any rig marked damaged. Once a baseline has been set, add it on top of the live count.
+  const brokenSdOnly = brokenReal.reduce((t, r) => t + r.count, 0);
+  const brokenValue = brokenStorageOverride ? brokenCombinedTotal : brokenSdOnly;
   const retiredValue = retiredBaseline !== undefined ? retiredBaseline + s.retired : s.retired;
 
   // SD CARDS (and the "All" view): unchanged.
@@ -588,8 +595,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       href: "/retired",
       icon: "archive",
       color: "var(--text-muted)",
-      baselineKey: "retired_baseline",
-      baselineValue: retiredBaseline,
+      // No "starting count" edit box on this tile anymore (removed per request) — retiredValue still
+      // adds whatever baseline was set earlier (retiredBaseline, from settings), just not editable here.
     },
   ];
 
@@ -1106,7 +1113,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                       </div>
                     </details>
                   )}
-                  {k.storageOverrideKey && user.role === "admin" && (
+                  {k.storageOverrideKey && user.role === "admin" && canEditBrokenBaseline && (
                     <form
                       action={setBrokenStorageOverride}
                       style={{
@@ -1422,7 +1429,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
               hidden={ackHidden}
               clearHref={ackClearHref}
               role={ackRole}
-              roleHref={ackRoleHref} cities={[]} city={""}            />
+              roleHref={ackRoleHref}
+              cities={ackCities}
+              city={ackCity}
+            />
           </section>
         )}
 
