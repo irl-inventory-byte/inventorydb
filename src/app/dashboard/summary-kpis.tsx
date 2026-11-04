@@ -330,9 +330,9 @@ export async function SummaryKpis({
             label: "Old cards",
             count: fleet.oldCards,
             pct: share(fleet.oldCards),
-            bg: "#f3f4f6",
+            bg: "var(--surface-1)",
             border: "#6b7280",
-            text: "#1f2937",
+            text: "var(--text-primary)",
           },
         ]
       : []),
@@ -366,9 +366,9 @@ export async function SummaryKpis({
             label: "Retired cards",
             count: retiredCount,
             pct: unusableShare(retiredCount),
-            bg: "#f3f4f6",
+            bg: "var(--surface-1)",
             border: "#6b7280",
-            text: "#1f2937",
+            text: "var(--text-primary)",
           },
         ]
       : []),
