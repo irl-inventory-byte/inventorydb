@@ -430,7 +430,7 @@ export async function SummaryKpis({
 
   return (
     <section
-      className={styles.summaryGrid}
+      className={`${styles.summaryGrid} ${styles.summaryRows}`}
       aria-label="Management summary"
       style={{
         height: "auto",
