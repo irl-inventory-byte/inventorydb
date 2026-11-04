@@ -336,11 +336,13 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // City-wise count of items with a status (city of the hub the item is at), biggest first.
   const cityOfHub = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
   // pct = share of that tile's items in the city (whole numbers, e.g. 42%).
-  const citiesFor = (status: Status | Status[], onlyType?: string) => {
+  // `excludeHubs`: used only for "In stock" (see inStockValue below) so it doesn't double-count items
+  // that are also shown under "With rig team" — those sit in_stock at the Rig/Productivity hub.
+  const citiesFor = (status: Status | Status[], onlyType?: string, excludeHubs?: Set<string>) => {
     const wanted = new Set<string>(Array.isArray(status) ? status : [status]);
     const count = new Map<string, number>();
     for (const i of items) {
-      if (!wanted.has(i.status) || (onlyType && i.item_type !== onlyType)) continue;
+      if (!wanted.has(i.status) || (onlyType && i.item_type !== onlyType) || excludeHubs?.has(i.current_hub)) continue;
       const c = cityOfHub.get(i.current_hub) || i.current_hub || "Not set";
       count.set(c, (count.get(c) ?? 0) + 1);
     }
@@ -358,11 +360,12 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   };
 
   // SD card 256/512 GB breakdown for items with a status, biggest first (only item_type "sd_card").
-  const storageFor = (status: Status | Status[]) => {
+  // `excludeHubs`: see citiesFor above — same reason.
+  const storageFor = (status: Status | Status[], excludeHubs?: Set<string>) => {
     const wanted = new Set<string>(Array.isArray(status) ? status : [status]);
     const count = new Map<string, number>();
     for (const i of items) {
-      if (i.item_type !== "sd_card" || !wanted.has(i.status)) continue;
+      if (i.item_type !== "sd_card" || !wanted.has(i.status) || excludeHubs?.has(i.current_hub)) continue;
       const storage = cardStorage(i.attributes);
       count.set(storage, (count.get(storage) ?? 0) + 1);
     }
@@ -483,6 +486,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const prodTeamItemsList = teamItemsFor("productivity");
   const rigTeamCount = rigTeamItemsList.length;
   const prodTeamCount = prodTeamItemsList.length;
+  // Items in_stock at the Rig/Productivity team's own hub are already counted under "With rig team"
+  // (teamItemsFor above) — exclude them from "In stock" so the tiles don't double-count and sum to
+  // the true total.
+  const teamHubIds = new Set<string>([rigHubObj?.hub_id, prodHubObj?.hub_id].filter((h): h is string => !!h));
+  const inStockValue = items.filter((i) => i.status === "in_stock" && !teamHubIds.has(i.current_hub)).length;
   const teamCount = team === "productivity" ? prodTeamCount : rigTeamCount;
   const teamHref = teamHub
     ? inventory({ status: "with_rig,in_stock", hub: teamHub.hub_id })
@@ -526,13 +534,13 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const sdKpis: Kpi[] = [
     {
       label: "In stock",
-      value: s.in_stock,
-      hint: share(s.in_stock),
+      value: inStockValue,
+      hint: share(inStockValue),
       href: inventory({ status: "in_stock" }),
       icon: "check",
       color: "var(--series-3)",
-      cities: citiesFor("in_stock"),
-      storage: storageFor("in_stock"),
+      cities: citiesFor("in_stock", undefined, teamHubIds),
+      storage: storageFor("in_stock", teamHubIds),
     },
     {
       label: "With field officers",
@@ -1414,6 +1422,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             qcFrom={qcFrom}
             qcTo={qcTo}
             qcKeep={qcKeep}
+            san={san}
             sanKeep={sanKeep}
           />
         )}
