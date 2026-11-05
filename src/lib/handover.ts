@@ -79,10 +79,10 @@ function rigRouteErrors(
   if (cards.length && (to === "qc" || to === "hardware")) {
     errors.push(`Only rigs can be sent to the QC or hardware team. SD cards: ${listOf(cards.map((t) => t.item_id))}.`);
   }
-  // Mobiles go only between IMs, FOs and IFOs (the rig and internal teams don't handle mobiles).
+  // Mobiles go between IMs, FOs and IFOs, or to an Internal person — just not to the rig team.
   const mobiles = targets.filter((t) => t.item_type === "mobile");
-  if (mobiles.length && (to === "rig" || to === "internal")) {
-    errors.push(`Mobiles can be sent only to an IM, FO or IFO. Mobiles: ${listOf(mobiles.map((t) => t.item_id))}.`);
+  if (mobiles.length && to === "rig") {
+    errors.push(`Mobiles can be sent only to an IM, FO, IFO or Internal person. Mobiles: ${listOf(mobiles.map((t) => t.item_id))}.`);
   }
   if (!rigs.length) return errors;
 
