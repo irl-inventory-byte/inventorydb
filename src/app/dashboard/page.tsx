@@ -623,6 +623,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // Mobiles: the SD card tiles, without the rig team and internal ones (mobiles go only to IMs, FOs and IFOs),
   // and every tile opens the Mobile list.
   // Six even tiles (3 + 3): Total, In stock, With field officers, In transit, Lost or damaged, Retired.
+  // Broken mobiles: computed separately from the SD card Broken tile, which combines the admin's
+  // SD-only "starting count" baseline with the live SD damaged count — neither of which has anything
+  // to do with mobiles. Mobiles just get their own live count of item_type "mobile" + status "damaged".
+  const mobileBrokenValue = items.filter((i) => i.item_type === "mobile" && i.status === "damaged").length;
   const mobileKpis: Kpi[] = [
     {
       label: "Total mobiles",
@@ -634,13 +638,20 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     },
     ...sdKpis
       .filter((k) => !k.teamSwitch && k.label !== "Internal")
-      .map((k) => ({
-        ...k,
-        href: `${k.href}&type=mobile`,
-        hint: k.hint.replace("of all items", "of all mobiles"),
-        cities: k.cities?.map((c) => ({ ...c, href: `${c.href}&type=mobile` })),
-        storage: undefined, // SD card capacity breakdown doesn't apply to mobiles
-      })),
+      .map((k) => {
+        const isBroken = k.label === "Broken";
+        return {
+          ...k,
+          href: `${k.href}&type=mobile`,
+          value: isBroken ? mobileBrokenValue : k.value,
+          hint: isBroken ? share(mobileBrokenValue) : k.hint.replace("of all items", "of all mobiles"),
+          cities: k.cities?.map((c) => ({ ...c, href: `${c.href}&type=mobile` })),
+          storage: undefined, // SD card capacity breakdown doesn't apply to mobiles
+          // The SD-only "starting count" override box doesn't apply to mobiles either.
+          storageOverrideKey: isBroken ? undefined : k.storageOverrideKey,
+          storageOverrideValue: isBroken ? undefined : k.storageOverrideValue,
+        };
+      }),
   ];
   const kpis = rigView ? rigKpis : mobileView ? mobileKpis : sdKpis;
 
@@ -1455,7 +1466,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             qcFrom={qcFrom}
             qcTo={qcTo}
             qcKeep={qcKeep}
-            san={san}
             sanKeep={sanKeep}
           />
         )}
