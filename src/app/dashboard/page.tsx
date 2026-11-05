@@ -3,10 +3,9 @@ import type { CSSProperties } from "react";
 import { displayName } from "@/lib/actors";
 import { requireRole } from "@/lib/authz";
 import { LATE_AFTER_HOURS, computeDashboard } from "@/lib/dashboard";
-import { buildHubTree, type HubNode } from "@/lib/hub-tree";
+import { buildHubTree } from "@/lib/hub-tree";
 import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
-import { STATUSES } from "@/lib/schema";
-import type { Acknowledgment, DelayNote, HardwareUpdate, QcCheck, Status } from "@/lib/schema";
+import type { Acknowledgment, AttentionNote, DelayNote, HardwareUpdate, QcCheck, Status } from "@/lib/schema";
 import { HANDLER_ROLES, INVENTORY_ROLES, allowedTypes, canSeeType, storeFor, storeForAll, typeParam } from "@/lib/access";
 import TypeSwitch from "../TypeSwitch";
 import RoleSwitch from "../RoleSwitch";
@@ -20,7 +19,7 @@ import styles from "./dashboard.module.css";
 import { HubOrgChart, countHidden } from "./hub-tree-view";
 import AttentionFilter from "./attentionfilter";
 import { Icon, type IconName } from "./icons";
-import { addDelayNote, setBrokenStorageOverride, setRetiredBaseline } from "./actions";
+import { addAttentionNote, addDelayNote, setAttentionNoteStatus, setBrokenStorageOverride, setRetiredBaseline } from "./actions";
 import { SummaryKpis } from "./summary-kpis";
 import { RIG_STATES, RIG_STATE_LABELS, rigState, type RigState } from "@/lib/rig-state";
 import { NO_ACTIVITY_DAYS, RigMetrics } from "./rig-metrics";
@@ -223,6 +222,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     showQc ? store.list("hardware_updates") : Promise.resolve([] as HardwareUpdate[]),
     store.list("settings"),
     showAck ? store.list("acknowledgments") : Promise.resolve([] as Acknowledgment[]),
+    getStore().list("attention_notes").catch(() => [] as AttentionNote[]),
     getStore().list("delay_notes").catch(() => [] as DelayNote[]),
   ]);
   const reportFetch = Promise.all([
@@ -231,7 +231,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     reportStore.list("qc_checks").catch(() => [] as QcCheck[]),
     reportStore.list("hardware_updates").catch(() => [] as HardwareUpdate[]),
   ]);
-  const [items, events, people, hubs, qcChecks, hardwareUpdates, settings, acknowledgments, delayNotes] =
+  const [items, events, people, hubs, qcChecks, hardwareUpdates, settings, acknowledgments, attentionNotes, delayNotes] =
     await mainFetch;
   const [allItems, allEvents, allQc, allHw] = await reportFetch;
   const now = new Date();
@@ -310,12 +310,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   for (const k of ["type", "empty", "acity", "arole"]) if (one(sp[k])) reportKeep[k] = one(sp[k]);
 
   const d = computeDashboard(items, events, people, hubs, { hub: "", days: 14, now });
-  // The hubs table has a stray "Internal team" row from an old import whose hub_id doesn't round-trip
-  // through the URL cleanly (clicking it 404s at /dashboard/hub/[id]). Drop that broken row from the
-  // tree, and add a clean "Internal" node in its place, built from items by status (with_internal)
-  // rather than from a hub record — its own items and city are untouched everywhere else a hub is
-  // picked. It links to /dashboard/hub/internal, which dashboard/hub/[id]/page.tsx special-cases to
-  // render dashboard/hub/internal-view.tsx instead of looking up a hub.
+  // "Internal team" isn't a real location — hide it from the Hub hierarchy chart specifically (the hub
+  // record and its items are untouched; it still works everywhere else a hub is picked).
   const isInternalTeamHub = (h: (typeof hubs)[number]) =>
     (h.name ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "") === "internalteam" ||
     (h.hub_id ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "") === "internalteam";
@@ -323,21 +319,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     hubs.filter((h) => !isInternalTeamHub(h)),
     items,
   );
-  const internalItems = items.filter((i) => i.status === "with_internal");
-  if (internalItems.length > 0) {
-    const byStatus = Object.fromEntries(STATUSES.map((s) => [s, 0])) as Record<Status, number>;
-    byStatus.with_internal = internalItems.length;
-    const stats = { held: internalItems.length, inStock: 0, out: internalItems.length, byStatus };
-    const internalNode: HubNode = {
-      hub: { hub_id: "internal", name: "Internal", city: "", is_central: "false", active: "true", parent_hub: "" },
-      children: [],
-      owned: 0,
-      own: stats,
-      total: stats,
-    };
-    tree.push(internalNode);
-    tree.sort((a, b) => b.total.held - a.total.held || a.hub.name.localeCompare(b.hub.name));
-  }
   const showEmpty = one(sp.empty) === "1";
   const hiddenEmpty = countHidden(tree, false);
   const canHandle = HANDLER_ROLES.includes(user.role);
@@ -516,9 +497,12 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const teamItemsFor = (which: "rig" | "productivity") =>
     items.filter((i) => {
       if (i.status === "with_rig") return (i.sub_team || "rig") === which;
-      // In-stock items at the shared rig hub have no sub_team of their own (nobody currently holds
-      // them to have chosen one) — they're pooled stock, counted under Rig team only.
-      return which === "rig" && rigHubObj && i.current_hub === rigHubObj.hub_id && i.status === "in_stock";
+      // In-stock items at the shared rig hub are pooled stock, sorted into one pool or the other via
+      // the "Correct status / location" panel on Inventory (Team: Rig team / Productivity team) —
+      // never sent to anyone, so this is the only way an in-stock card gets a sub_team. Unsorted stock
+      // (sub_team still blank) defaults to Rig team.
+      if (i.status !== "in_stock" || !rigHubObj || i.current_hub !== rigHubObj.hub_id) return false;
+      return (i.sub_team || "rig") === which;
     });
   const rigTeamItemsList = teamItemsFor("rig");
   const prodTeamItemsList = teamItemsFor("productivity");
@@ -890,15 +874,25 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const detailHref = (key: string) => `/dashboard?${new URLSearchParams({ ...attentionKeep, adetail: key })}#delayed-items`;
   const closeDetailHref = `/dashboard?${new URLSearchParams(attentionKeep)}#attention`;
 
-  // "back" target for the per-item delay-note form below (see dashboard/actions.ts addDelayNote).
-  const attentionBack = `/dashboard?${new URLSearchParams(attentionKeep)}#attention`;
+  // Manual notes under "Needs attention" (see dashboard/actions.ts addAttentionNote / setAttentionNoteStatus):
+  // open ones first, earliest "by when" first (no date = last); done ones kept but shown separately, newest first.
+  const attentionBack = `/dashboard?${new URLSearchParams(attentionKeep)}#attention-notes`;
+  const openNotes = attentionNotes
+    .filter((n) => n.status !== "done")
+    .slice()
+    .sort((a, b) => {
+      const ad = a.due_date ? Date.parse(a.due_date) : Infinity;
+      const bd = b.due_date ? Date.parse(b.due_date) : Infinity;
+      return ad - bd || Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0");
+    });
+  const doneNotes = attentionNotes
+    .filter((n) => n.status === "done")
+    .slice()
+    .sort((a, b) => Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0"));
+  const todayStr = istDate(now);
 
   // Notes left against individual delayed cards (see dashboard/actions.ts addDelayNote), newest first.
   const delayNoteLog = delayNotes.slice().sort((a, b) => Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0"));
-  // Latest note per item_id, for the inline "Note" column on the Needs attention table below —
-  // delayNoteLog is already newest-first, so the first one seen per item wins.
-  const latestNoteByItem = new Map<string, (typeof delayNoteLog)[number]>();
-  for (const note of delayNoteLog) if (!latestNoteByItem.has(note.item_id)) latestNoteByItem.set(note.item_id, note);
   // "Moved per day" and "Moved per hour of day": each has its own Items, Person, City and Role filters, and
   // several values can be ticked in each (?mperson=a&mperson=b, kept in links as "a,b"). Items: empty = all
   // the types this login can see. Default range: the last 14 days.
@@ -1656,7 +1650,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                 <table className={styles.table} style={{ width: "100%", minWidth: "900px", borderCollapse: "separate", borderSpacing: 0 }}>
                   <thead>
                     <tr>
-                      {["Type", "Person", "Role", "City", "Sent by", "Sent on", "Count", "Out for", "Note", "Issue"].map((h) => (
+                      {["Type", "Person", "Role", "City", "Sent by", "Sent on", "Count", "Out for", "Issue"].map((h) => (
                         <th key={h} scope="col" style={TH_STYLE}>
                           {h}
                         </th>
@@ -1682,43 +1676,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                           </Link>
                         </td>
                         <td>{howLong(r.hours)}</td>
-                        <td style={{ minWidth: 180 }}>
-                          {(() => {
-                            // Representative item for this row: whichever item already has the latest
-                            // note, or the first item in the group if none does yet — new notes on this
-                            // row always attach to that same item, so re-saving edits it in place.
-                            const existing = r.items.map((it) => latestNoteByItem.get(it.id)).find(Boolean);
-                            const forItem = existing?.item_id ?? r.items[0]?.id;
-                            if (!forItem) return <span className={styles.muted}>—</span>;
-                            return (
-                              <form action={addDelayNote} style={{ display: "flex", gap: 4 }}>
-                                <input type="hidden" name="back" value={attentionBack} />
-                                <input type="hidden" name="item_id" value={forItem} />
-                                <input type="hidden" name="item_type" value={r.type} />
-                                <input type="hidden" name="person" value={r.person} />
-                                <input type="hidden" name="sent_by" value={r.sentBy} />
-                                <input
-                                  name="note"
-                                  defaultValue={existing?.note ?? ""}
-                                  placeholder="Add a note…"
-                                  style={{
-                                    flex: 1,
-                                    minWidth: 0,
-                                    padding: "3px 6px",
-                                    border: "1px solid var(--border)",
-                                    borderRadius: 6,
-                                    background: "var(--surface-1)",
-                                    color: "var(--text-primary)",
-                                    fontSize: "0.8rem",
-                                  }}
-                                />
-                                <button type="submit" style={{ padding: "3px 8px", fontSize: "0.78rem" }}>
-                                  Save
-                                </button>
-                              </form>
-                            );
-                          })()}
-                        </td>
                         <td>
                           <span className={`${styles.icon} ${TONE.warning}`} aria-hidden>
                             {GLYPH.warning}
@@ -1736,7 +1693,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                       <td className={styles.num} style={TFOOT_STYLE}>
                         {n(shownDelayed.reduce((t, r) => t + r.count, 0))}
                       </td>
-                      <td colSpan={3} style={TFOOT_STYLE}>
+                      <td colSpan={2} style={TFOOT_STYLE}>
                         {n(shownDelayed.length)} row{shownDelayed.length === 1 ? "" : "s"}
                       </td>
                     </tr>
@@ -1867,6 +1824,121 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                 </div>
               </div>
             )}
+
+            {/* MANUAL NOTES — anyone viewing the dashboard can raise a free-text flag here, with an
+                optional "by when" date; shown under the automatic delayed-card table above. */}
+            <div id="attention-notes" style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid var(--border)", scrollMarginTop: 80 }}>
+              <h3 style={{ margin: "0 0 4px" }}>Notes</h3>
+              <p className={styles.muted} style={{ margin: "0 0 12px" }}>
+                Anything else that needs a look — add a note, an optional date it's needed by, and who's flagging it
+                is recorded automatically.
+              </p>
+
+              <form
+                action={addAttentionNote}
+                style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-end", marginBottom: 16 }}
+              >
+                <input type="hidden" name="back" value={attentionBack} />
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 320px", fontSize: "0.85rem" }}>
+                  Note
+                  <input
+                    name="note"
+                    required
+                    placeholder="e.g. Chase Pune hub about 3 missing cards"
+                    style={{ padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface-1)", color: "var(--text-primary)" }}
+                  />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.85rem" }}>
+                  By when (optional)
+                  <input
+                    type="date"
+                    name="due_date"
+                    min={todayStr}
+                    style={{ padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface-1)", color: "var(--text-primary)" }}
+                  />
+                </label>
+                <button type="submit" style={{ padding: "8px 16px" }}>
+                  Add note
+                </button>
+              </form>
+
+              {openNotes.length === 0 ? (
+                <p className={styles.ok}>
+                  <span className={`${styles.icon} ${styles.iconGood}`} aria-hidden>
+                    ✓
+                  </span>{" "}
+                  No open notes right now.
+                </p>
+              ) : (
+                <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 8 }}>
+                  {openNotes.map((note) => {
+                    const overdue = note.due_date && note.due_date < todayStr;
+                    return (
+                      <li
+                        key={note.note_id}
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          justifyContent: "space-between",
+                          alignItems: "flex-start",
+                          gap: 10,
+                          padding: "10px 12px",
+                          border: `1px solid ${overdue ? "var(--critical)" : "var(--border)"}`,
+                          borderRadius: 8,
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ whiteSpace: "normal" }}>{note.note}</div>
+                          <div className={styles.muted} style={{ fontSize: "0.8rem", marginTop: 2 }}>
+                            {note.due_date && (
+                              <span style={overdue ? { color: "var(--critical)", fontWeight: 600 } : undefined}>
+                                By {note.due_date}
+                                {overdue ? " — overdue" : ""} ·{" "}
+                              </span>
+                            )}
+                            Raised by {note.recorded_by_name || note.recorded_by || "—"}
+                            {note.recorded_at && <> · {formatIst(note.recorded_at)}</>}
+                          </div>
+                        </div>
+                        <form action={setAttentionNoteStatus}>
+                          <input type="hidden" name="back" value={attentionBack} />
+                          <input type="hidden" name="note_id" value={note.note_id} />
+                          <input type="hidden" name="status" value="done" />
+                          <button type="submit" className={styles.link} style={{ whiteSpace: "nowrap" }}>
+                            Mark done
+                          </button>
+                        </form>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+
+              {doneNotes.length > 0 && (
+                <details style={{ marginTop: 12 }}>
+                  <summary className={styles.muted} style={{ cursor: "pointer" }}>
+                    Done ({doneNotes.length})
+                  </summary>
+                  <ul style={{ listStyle: "none", margin: "8px 0 0", padding: 0, display: "grid", gap: 6 }}>
+                    {doneNotes.map((note) => (
+                      <li key={note.note_id} style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 10, padding: "6px 2px" }}>
+                        <span className={styles.muted} style={{ textDecoration: "line-through" }}>
+                          {note.note}
+                        </span>
+                        <form action={setAttentionNoteStatus}>
+                          <input type="hidden" name="back" value={attentionBack} />
+                          <input type="hidden" name="note_id" value={note.note_id} />
+                          <input type="hidden" name="status" value="open" />
+                          <button type="submit" className={styles.link} style={{ whiteSpace: "nowrap" }}>
+                            Reopen
+                          </button>
+                        </form>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </div>
           </section>
 
           {/* WHO HAS ITEMS */}

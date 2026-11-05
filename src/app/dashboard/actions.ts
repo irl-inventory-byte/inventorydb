@@ -155,7 +155,11 @@ export async function setAttentionNoteStatus(formData: FormData) {
   if (!noteId) redirect(back);
 
   const store = getStore();
-  await store.upsert("attention_notes", [{ note_id: noteId, status }]);
+  // upsert() always writes every column of the table, so a bare {note_id, status} object would blank
+  // out this row's note text, due date and who-recorded-it fields. Read the row first and send it back
+  // whole, with just status changed.
+  const existing = (await store.list("attention_notes")).find((r) => r.note_id === noteId);
+  if (existing) await store.upsert("attention_notes", [{ ...existing, status }]);
 
   revalidatePath("/dashboard");
   redirect(back);

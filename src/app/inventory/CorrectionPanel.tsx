@@ -65,7 +65,16 @@ export default function CorrectionPanel({
             </option>
           ))}
         </select>
+        <select name="team" defaultValue="">
+          <option value="">Rig/Productivity: keep</option>
+          <option value="rig">Move to: Rig team</option>
+          <option value="productivity">Move to: Productivity team</option>
+        </select>
       </div>
+      <p className={styles.muted} style={{ marginTop: -4 }}>
+        &quot;Rig/Productivity&quot; sorts cards sitting in stock at the rig hub into one pool or the
+        other, without sending them to anyone — it only matters for cards at the Rig team hub.
+      </p>
       <div className={styles.row}>
         <input name="note" placeholder="Note (required), e.g. found with FO in Kadapa" required />
         <button type="submit">Apply correction</button>
