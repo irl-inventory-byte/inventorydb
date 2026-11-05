@@ -82,7 +82,7 @@ function rigRouteErrors(
   // Mobiles go between IMs, FOs and IFOs, or to an Internal person — just not to the rig team.
   const mobiles = targets.filter((t) => t.item_type === "mobile");
   if (mobiles.length && to === "rig") {
-    errors.push(`Mobiles can be sent only to an IM, FO, IFO or Internal person. Mobiles: ${listOf(mobiles.map((t) => t.item_id))}.`);
+    errors.push(`Mobiles can be sent only to an IM, FO, IFO and Internal person. Mobiles: ${listOf(mobiles.map((t) => t.item_id))}.`);
   }
   if (!rigs.length) return errors;
 
