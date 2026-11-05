@@ -12,6 +12,7 @@ import { Collapsible } from "../../collapsible";
 import styles from "../../dashboard.module.css";
 import { breakdown } from "../../hub-tree-view";
 import { SummaryKpis } from "../../summary-kpis";
+import { InternalView } from "../internal-view";
 
 const ACTION_LABELS: Record<Action, string> = {
   check_out: "Sent",
@@ -41,6 +42,12 @@ export default async function HubDetailPage({ params, searchParams }: PageProps<
     store.list("people"),
     store.list("hubs"),
   ]);
+
+  // "internal" is not a real hub_id — see dashboard/hub/internal-view.tsx and the synthetic "Internal"
+  // node dashboard/page.tsx adds to the Hub hierarchy chart, which links here.
+  if (id === "internal") {
+    return <InternalView items={items} events={events} hubs={hubs} />;
+  }
 
   const roots = buildHubTree(hubs, items);
   const node = findNode(roots, id);
