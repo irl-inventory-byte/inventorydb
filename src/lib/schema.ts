@@ -149,6 +149,7 @@ export const TABS = {
     "serial", // SD card serial number / asset tag
     "duration", // DU_TIME, HH:MM:SS
     "failed_hours", // how much of the duration failed/was unusable, HH:MM:SS — optional, "" if none
+    "failed_raw_clips", // how many of the raw clips failed/were unusable — optional, "" if none
     "raw_clips", // No. of raw clips
     "recorded_by", // login email
     "recorded_by_name",
@@ -416,6 +417,7 @@ export interface SdCardDuration extends Row {
   serial: string;
   duration: string;
   failed_hours: string;
+  failed_raw_clips: string;
   raw_clips: string;
   recorded_by: string;
   recorded_by_name: string;

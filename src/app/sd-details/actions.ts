@@ -52,6 +52,7 @@ export async function saveSdDetails(formData: FormData) {
   const serial = String(formData.get("serial") ?? "").trim();
   const duration = String(formData.get("duration") ?? "").trim();
   const failedHours = String(formData.get("failed_hours") ?? "").trim();
+  const failedRawClips = String(formData.get("failed_raw_clips") ?? "").trim();
   const rawClips = String(formData.get("raw_clips") ?? "").trim();
   // Rig form only: which hub actually sent this in — "Rig team" or "Productivity team" (same role,
   // two different hubs; see lib/rig-hub.ts). Not asked on the IM form, so always "" there.
@@ -67,6 +68,7 @@ export async function saveSdDetails(formData: FormData) {
   if (!icNumber.startsWith("IC-")) back({ error: "IC-Number must start with IC-." });
   if (!/^\d{1,2}:\d{2}:\d{2}$/.test(duration)) back({ error: "Duration must be in HH:MM:SS format, e.g. 01:30:45." });
   if (failedHours && !/^\d{1,2}:\d{2}:\d{2}$/.test(failedHours)) back({ error: "Failed hours must be in HH:MM:SS format, e.g. 00:15:00." });
+  if (failedRawClips && !/^\d+$/.test(failedRawClips)) back({ error: "Failed clips must be a whole number." });
 
   const people = await getStore().list("people");
   const recordedByName = displayName(people, user.personId ?? "") || user.name || user.email || "";
@@ -85,6 +87,7 @@ export async function saveSdDetails(formData: FormData) {
     serial,
     duration,
     failed_hours: failedHours,
+    failed_raw_clips: failedRawClips,
     raw_clips: rawClips,
     recorded_by: user.email ?? "unknown",
     recorded_by_name: recordedByName,
@@ -92,26 +95,6 @@ export async function saveSdDetails(formData: FormData) {
     forwarded: "",
   };
   await getStore().appendRows("sd_card_durations", [rowToSave]);
-
-  // TEMPORARY DIAGNOSTIC: some saved rows have come back with every field blank except record_id.
-  // Read this row straight back and compare it to what was just sent — if anything didn't stick, say
-  // so on screen (instead of "Saved.") with exactly which fields and what was sent, so the next
-  // submission tells us precisely what's going wrong. Safe to remove once that's understood and fixed.
-  const justSaved = (await getStore().list("sd_card_durations")).find((r) => r.record_id === recordId);
-  const keys = Object.keys(rowToSave) as (keyof typeof rowToSave)[];
-  const mismatches = justSaved
-    ? keys.filter((k) => k !== "recorded_at" && String(justSaved[k] ?? "") !== String(rowToSave[k] ?? ""))
-    : null;
-  if (!justSaved) {
-    back({ error: `DIAGNOSTIC: row ${recordId} was not found on readback right after saving it.` });
-  }
-  if (mismatches && mismatches.length) {
-    back({
-      error: `DIAGNOSTIC: these fields didn't save correctly — ${mismatches
-        .map((k) => `${k}: sent "${rowToSave[k]}" but got back "${justSaved![k] ?? ""}"`)
-        .join(" | ")}`,
-    });
-  }
 
   const forwarded = await forwardToScript(team, {
     "SD CARD DATE": cardDate,
@@ -124,9 +107,49 @@ export async function saveSdDetails(formData: FormData) {
     "SD CARD SERIAL NUMBER / ASSET TAG": serial,
     DU_TIME: duration,
     FAILED_HOURS: failedHours,
+    FAILED_RAW_CLIPS: failedRawClips,
     "NO. OF RAW CLIPS": rawClips,
   });
-  await getStore().upsert("sd_card_durations", [{ record_id: recordId, forwarded }]);
+  // Send the WHOLE row back, not just {record_id, forwarded} — upsert() always writes every column of
+  // the table, so a partial object here would blank out every other field on this row (that was the
+  // original bug: the row looked right for a moment, then went blank once this ran).
+  await getStore().upsert("sd_card_durations", [{ ...rowToSave, forwarded }]);
 
   back({ saved: "1" });
+}
+
+/**
+ * Called from the SD card details form when the serial number field loses focus: looks up the most
+ * recent prior submission for that same serial (across both IM and Rig forms) and returns the fields
+ * that are safe to copy forward — FO/IFO, IC name, IC-Number, city, duration and raw clips — so the
+ * form can pre-fill them. The person can still edit anything before submitting. Returns null when
+ * there's no prior entry for that serial, so the form leaves everything as typed.
+ */
+export async function lookupSdDetailsBySerial(serial: string): Promise<{
+  fo_ifo: string;
+  ic_name: string;
+  ic_number: string;
+  city: string;
+  duration: string;
+  raw_clips: string;
+} | null> {
+  await requireRole("admin", "im", "rig");
+  const s = serial.trim();
+  if (!s) return null;
+
+  const all = await getStore().list("sd_card_durations");
+  const matches = all
+    .filter((r) => r.serial.trim() === s)
+    .sort((a, b) => Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0"));
+  const latest = matches[0];
+  if (!latest) return null;
+
+  return {
+    fo_ifo: latest.fo_ifo || "",
+    ic_name: latest.ic_name || "",
+    ic_number: latest.ic_number || "",
+    city: latest.city || "",
+    duration: latest.duration || "",
+    raw_clips: latest.raw_clips || "",
+  };
 }
