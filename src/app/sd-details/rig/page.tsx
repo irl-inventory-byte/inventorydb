@@ -6,8 +6,8 @@ import styles from "../../admin/admin.module.css";
 import SdDetailsForm from "../SdDetailsForm";
 import { saveSdDetails } from "../actions";
 
-/** Rig SD card details — admin and IM only. See src/app/sd-details/SdDetailsForm.tsx / actions.ts. */
-export default async function ImSdDetailsPage({
+/** Rig SD card details — admin and Rig team only. See src/app/sd-details/SdDetailsForm.tsx / actions.ts. */
+  export default async function RigSdDetailsPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -22,8 +22,11 @@ export default async function ImSdDetailsPage({
     store.list("sd_card_durations"),
   ]);
 
+  // Rig team and Productivity team members both carry the "rig" role (see lib/rig-hub.ts) — which
+  // pool they're sending for on a given day is chosen on the form itself (the Team dropdown), not by
+  // who they are.
   const memberOptions = people
-    .filter((p) => p.role === "im" && p.active !== "false")
+    .filter((p) => p.role === "rig" && p.active !== "false")
     .map((p) => ({ id: p.person_id, name: p.name }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const foIfoOptions = people
@@ -39,12 +42,12 @@ export default async function ImSdDetailsPage({
   }
   const cities = [...byCity.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
-  // Pre-select the logged-in person's own name, if they're an IM themselves (not when an admin not
-  // listed as an IM is filling this in on someone else's behalf).
+  // Pre-select the logged-in person's own name, if they're a Rig team member themselves (not when an
+  // admin not listed on the Rig team is filling this in on someone else's behalf).
   const defaultMember = memberOptions.find((m) => m.id === user.personId)?.name ?? "";
 
   const recent = all
-    .filter((r) => r.team === "im")
+    .filter((r) => r.team === "rig")
     .sort((a, b) => Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0"))
     .slice(0, 50);
 
@@ -57,9 +60,9 @@ export default async function ImSdDetailsPage({
       <p className={styles.muted}>SD Card Duration Hour — recorded here and also sent to the Google Sheet.</p>
 
       <SdDetailsForm
-        team="im"
+        team="rig"
         action={saveSdDetails}
-        memberLabel="IM"
+        memberLabel="Rig team name"
         memberOptions={memberOptions}
         foIfoOptions={foIfoOptions}
         cities={cities}
