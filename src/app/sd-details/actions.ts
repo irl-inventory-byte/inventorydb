@@ -72,27 +72,46 @@ export async function saveSdDetails(formData: FormData) {
   const recordedByName = displayName(people, user.personId ?? "") || user.name || user.email || "";
 
   const recordId = `sdd-${randomUUID().slice(0, 8)}`;
-  await getStore().appendRows("sd_card_durations", [
-    {
-      record_id: recordId,
-      team,
-      sub_team: subTeam,
-      card_date: cardDate,
-      team_member: teamMember,
-      fo_ifo: foIfo,
-      ic_name: icName,
-      ic_number: icNumber,
-      city,
-      serial,
-      duration,
-      failed_hours: failedHours,
-      raw_clips: rawClips,
-      recorded_by: user.email ?? "unknown",
-      recorded_by_name: recordedByName,
-      recorded_at: istTimestamp(),
-      forwarded: "",
-    },
-  ]);
+  const rowToSave = {
+    record_id: recordId,
+    team,
+    sub_team: subTeam,
+    card_date: cardDate,
+    team_member: teamMember,
+    fo_ifo: foIfo,
+    ic_name: icName,
+    ic_number: icNumber,
+    city,
+    serial,
+    duration,
+    failed_hours: failedHours,
+    raw_clips: rawClips,
+    recorded_by: user.email ?? "unknown",
+    recorded_by_name: recordedByName,
+    recorded_at: istTimestamp(),
+    forwarded: "",
+  };
+  await getStore().appendRows("sd_card_durations", [rowToSave]);
+
+  // TEMPORARY DIAGNOSTIC: some saved rows have come back with every field blank except record_id.
+  // Read this row straight back and compare it to what was just sent — if anything didn't stick, say
+  // so on screen (instead of "Saved.") with exactly which fields and what was sent, so the next
+  // submission tells us precisely what's going wrong. Safe to remove once that's understood and fixed.
+  const justSaved = (await getStore().list("sd_card_durations")).find((r) => r.record_id === recordId);
+  const keys = Object.keys(rowToSave) as (keyof typeof rowToSave)[];
+  const mismatches = justSaved
+    ? keys.filter((k) => k !== "recorded_at" && String(justSaved[k] ?? "") !== String(rowToSave[k] ?? ""))
+    : null;
+  if (!justSaved) {
+    back({ error: `DIAGNOSTIC: row ${recordId} was not found on readback right after saving it.` });
+  }
+  if (mismatches && mismatches.length) {
+    back({
+      error: `DIAGNOSTIC: these fields didn't save correctly — ${mismatches
+        .map((k) => `${k}: sent "${rowToSave[k]}" but got back "${justSaved![k] ?? ""}"`)
+        .join(" | ")}`,
+    });
+  }
 
   const forwarded = await forwardToScript(team, {
     "SD CARD DATE": cardDate,
