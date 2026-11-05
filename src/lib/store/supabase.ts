@@ -54,7 +54,7 @@ export class SupabaseBackend implements TableBackend {
   }
 
   private async call(
-    method: "GET" | "POST" | "DELETE",
+    method: "GET" | "POST" | "DELETE" | "PATCH",
     tab: TabName | "table_versions",
     query: string,
     body?: unknown,
@@ -285,9 +285,34 @@ export class SupabaseBackend implements TableBackend {
 
   private async upsertNow(tab: TabName, rows: Row[]) {
     const key = TABS[tab][0];
+    const columns = TABS[tab];
+
+    // A row that's missing some of the tab's columns is a PARTIAL update (e.g. "just set `forwarded`
+    // on this one row") — sent as its own PATCH so only those fields change on the live row. A row
+    // that has every column is a full upsert, batched through INSERT ... ON CONFLICT DO UPDATE as
+    // before. The two must not be mixed through clean(), which fills every missing column with "" —
+    // that's exactly what was blanking out whole rows: a partial upsert elsewhere in the app would
+    // get "cleaned" into a full row of mostly blanks and silently wipe out the real data.
+    const partial: Row[] = [];
+    const full: Row[] = [];
+    for (const r of rows) (columns.every((c) => r[c] !== undefined) ? full : partial).push(r);
+
+    for (const r of partial) {
+      const id = r[key];
+      if (!id) continue;
+      const body: Row = {};
+      for (const c of columns) {
+        if (c === key) continue; // identifies the row via the filter, not a column to set
+        if (r[c] !== undefined) body[c] = r[c] === null ? "" : String(r[c]);
+      }
+      if (Object.keys(body).length === 0) continue;
+      await this.call("PATCH", tab, `${key}=eq.${encodeURIComponent(id)}`, body, { Prefer: "return=minimal" });
+    }
+
+    if (full.length === 0) return;
     // The same key twice in one request is refused by Postgres, so the last one wins (like the sheet).
     const byKey = new Map<string, Row>();
-    for (const r of this.clean(tab, rows)) {
+    for (const r of this.clean(tab, full)) {
       byKey.delete(r[key]);
       byKey.set(r[key], r);
     }
