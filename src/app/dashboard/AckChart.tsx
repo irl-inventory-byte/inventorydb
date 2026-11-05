@@ -19,9 +19,9 @@ export default function AckChart({
   cities,
   city,
 }: {
-  by: "city" | "role";
+  by: "city" | "role" | "day";
   buckets: AckBucket[];
-  href: (by: "city" | "role") => string;
+  href: (by: "city" | "role" | "day") => string;
   ackFrom: string; // YYYY-MM-DD, "" = no lower bound
   ackTo: string; // YYYY-MM-DD, "" = no upper bound
   hidden: Record<string, string>; // other dashboard filters + the current grouping, carried by the date form
@@ -42,7 +42,7 @@ export default function AckChart({
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
         <h2 style={{ margin: 0 }}>Acknowledgements</h2>
         <nav aria-label="Group by" style={{ display: "flex", gap: 6 }}>
-          {(["city", "role"] as const).map((v) => (
+          {(["city", "role", "day"] as const).map((v) => (
             <Link
               key={v}
               href={href(v)}
@@ -58,7 +58,7 @@ export default function AckChart({
                 fontWeight: by === v ? 700 : 500,
               }}
             >
-              By {v === "city" ? "city" : "FO / IFO"}
+              By {v === "city" ? "city" : v === "role" ? "FO / IFO" : "day"}
             </Link>
           ))}
         </nav>

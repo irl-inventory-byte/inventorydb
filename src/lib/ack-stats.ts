@@ -1,4 +1,5 @@
 import type { Acknowledgment, Hub, Person } from "./schema";
+import { istDate } from "./time";
 
 export interface AckBucket {
   label: string;
@@ -52,4 +53,30 @@ export function ackByRole(acks: Acknowledgment[], people: Person[], roleFilter: 
     else if (role === "ifo") add(ifo, a);
   }
   return [fo, ifo].filter((b) => b.total > 0);
+}
+
+/**
+ * Same acknowledgments, grouped by the calendar day they were sent (IST), oldest first — a daily trend
+ * instead of a breakdown. Only FO/IFO recipients are counted, same as ackByCity. `roleFilter` narrows to
+ * just FO or just IFO; "" (default) keeps both. An undated row (created_at missing or unparseable) is
+ * grouped under "Unknown date" at the end, rather than silently dropped.
+ */
+export function ackByDay(acks: Acknowledgment[], people: Person[], roleFilter: "" | "fo" | "ifo" = ""): AckBucket[] {
+  const roleOf = new Map(people.map((p) => [p.person_id, p.role]));
+  const buckets = new Map<string, AckBucket>();
+  const dayLabel = (iso: string) =>
+    new Date(`${iso}T00:00:00+05:30`).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short" });
+  for (const a of acks) {
+    const role = roleOf.get(a.to_id);
+    if (role !== "fo" && role !== "ifo") continue;
+    if (roleFilter && role !== roleFilter) continue;
+    const t = Date.parse(a.created_at || "");
+    const key = Number.isNaN(t) ? "unknown" : istDate(new Date(t));
+    const label = key === "unknown" ? "Unknown date" : dayLabel(key);
+    if (!buckets.has(key)) buckets.set(key, bucket(label));
+    add(buckets.get(key)!, a);
+  }
+  const known = [...buckets.entries()].filter(([k]) => k !== "unknown").sort(([a], [b]) => a.localeCompare(b));
+  const unknown = buckets.has("unknown") ? [["unknown", buckets.get("unknown")!] as const] : [];
+  return [...known, ...unknown].map(([, b]) => b);
 }

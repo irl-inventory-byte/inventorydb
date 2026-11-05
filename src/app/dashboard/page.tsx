@@ -23,7 +23,7 @@ import { addAttentionNote, addDelayNote, setAttentionNoteStatus, setBrokenStorag
 import { SummaryKpis } from "./summary-kpis";
 import { RIG_STATES, RIG_STATE_LABELS, rigState, type RigState } from "@/lib/rig-state";
 import { NO_ACTIVITY_DAYS, RigMetrics } from "./rig-metrics";
-import { ackByCity, ackByRole } from "@/lib/ack-stats";
+import { ackByCity, ackByDay, ackByRole } from "@/lib/ack-stats";
 import AckChart from "./AckChart";
 import { inactiveRigs } from "@/lib/rig-metrics";
 import { getStore } from "@/lib/store";
@@ -310,7 +310,15 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   for (const k of ["type", "empty", "acity", "arole"]) if (one(sp[k])) reportKeep[k] = one(sp[k]);
 
   const d = computeDashboard(items, events, people, hubs, { hub: "", days: 14, now });
-  const tree = buildHubTree(hubs, items);
+  // "Internal team" isn't a real location — hide it from the Hub hierarchy chart specifically (the hub
+  // record and its items are untouched; it still works everywhere else a hub is picked).
+  const isInternalTeamHub = (h: (typeof hubs)[number]) =>
+    (h.name ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "") === "internalteam" ||
+    (h.hub_id ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "") === "internalteam";
+  const tree = buildHubTree(
+    hubs.filter((h) => !isInternalTeamHub(h)),
+    items,
+  );
   const showEmpty = one(sp.empty) === "1";
   const hiddenEmpty = countHidden(tree, false);
   const canHandle = HANDLER_ROLES.includes(user.role);
@@ -952,8 +960,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const san = sanRaw === "yes" || sanRaw === "no" ? sanRaw : "";
   const sanKeep: Record<string, string> = { ...keepParams };
 
-  // Acknowledgements chart: grouped by city (default) or by FO/IFO role.
-  const ackBy = one(sp.ackBy) === "role" ? "role" : "city";
+  // Acknowledgements chart: grouped by city (default), by FO/IFO role, or by day sent.
+  const ackBy = one(sp.ackBy) === "role" ? "role" : one(sp.ackBy) === "day" ? "day" : "city";
   const ackFrom = one(sp.ackFrom); // YYYY-MM-DD, inclusive
   const ackTo = one(sp.ackTo); // YYYY-MM-DD, inclusive
   const ackCity = one(sp.ackCity); // narrows to recipients in this one city, on top of everything else
@@ -973,10 +981,14 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // Narrows to just FO or just IFO recipients, on top of the date range, city and either grouping.
   const ackRole = one(sp.ackRole) === "fo" || one(sp.ackRole) === "ifo" ? (one(sp.ackRole) as "fo" | "ifo") : "";
   const ackBuckets =
-    ackBy === "role" ? ackByRole(ackInRange, people, ackRole) : ackByCity(ackInRange, people, hubs, ackRole);
+    ackBy === "role"
+      ? ackByRole(ackInRange, people, ackRole)
+      : ackBy === "day"
+        ? ackByDay(ackInRange, people, ackRole)
+        : ackByCity(ackInRange, people, hubs, ackRole);
   const ackBase = { ...keepParams, ...(ackFrom && { ackFrom }), ...(ackTo && { ackTo }), ...(ackCity && { ackCity }) }; // no ackBy/ackRole — each link below adds its own
   const ackParams = { ...ackBase, ...(ackRole && { ackRole }) };
-  const ackHref = (by: "city" | "role") => `/dashboard?${new URLSearchParams({ ...ackParams, ...(by !== "city" && { ackBy: by }) })}#acknowledgements`;
+  const ackHref = (by: "city" | "role" | "day") => `/dashboard?${new URLSearchParams({ ...ackParams, ...(by !== "city" && { ackBy: by }) })}#acknowledgements`;
   const ackRoleHref = (role: "" | "fo" | "ifo") =>
     `/dashboard?${new URLSearchParams({ ...ackBase, ...(ackBy !== "city" && { ackBy }), ...(role && { ackRole: role }) })}#acknowledgements`;
   // Hidden fields the date-range filter form must carry so it doesn't lose the other dashboard filters or the current grouping/role.
@@ -1480,6 +1492,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             qcFrom={qcFrom}
             qcTo={qcTo}
             qcKeep={qcKeep}
+            san={san}
             sanKeep={sanKeep}
           />
         )}
