@@ -27,13 +27,18 @@ export default function SendToFields({
   allowInternal = true,
   bangalore,
   rigTeam,
+  productivityTeam,
   alwaysBangalore = false,
 }: {
   groups: PersonGroup[];
   hubs: { id: string; name: string }[];
   allowInternal?: boolean;
   bangalore?: { id: string; name: string }; // QC and hardware teams always work here
-  rigTeam?: { id: string; name: string }; // the rig team's own location (falls back to Bangalore if not set up)
+  rigTeam?: { id: string; name: string }; // the rig team's own location
+  productivityTeam?: { id: string; name: string }; // the productivity team's own location — a separate hub
+  // from the rig team's, even though both the Rig team and the Productivity team are the same "rig" role.
+  // Not auto-filled (see the "rig" category below): whoever is sending must pick the right one every time,
+  // since picking the wrong one silently puts the items under the wrong team on the dashboard.
   alwaysBangalore?: boolean; // the sender is the QC or hardware team: every send stays at Bangalore
 }) {
   const [role, setRole] = useState("");
@@ -66,8 +71,11 @@ export default function SendToFields({
                 setPerson(""); // a person from the old category must not stay selected
                 setInternalName("");
                 setCity("");
-                // Rig team: default the location to their own hub, but it stays a normal, changeable dropdown.
-                if (newRole === "rig" && rigTeam) setHub(rigTeam.id);
+                // Rig team category covers two separate locations (Rig team hub and Productivity team hub)
+                // under the same role — left blank on purpose, so whoever is sending has to actively pick
+                // which of the two this recipient is actually on, instead of it quietly staying on whichever
+                // one was last selected.
+                if (newRole === "rig") setHub("");
               }}
             >
               <option value="">Select a category</option>
@@ -152,9 +160,10 @@ export default function SendToFields({
           Send to (location)
         </label>
         <div className={styles.control}>
-          {role === "rig" && !rigTeam ? (
+          {role === "rig" && !rigTeam && !productivityTeam ? (
             <p className={styles.error}>
-              No &quot;Rig team&quot; hub found. Add one in Manage hubs (named &quot;Rig team&quot;) before sending to the rig team.
+              No &quot;Rig team&quot; or &quot;Productivity team&quot; hub found. Add them in Manage hubs before sending to the rig
+              team.
             </p>
           ) : bangalore && (alwaysBangalore || role === "qc" || role === "hardware") ? (
             <>
@@ -164,6 +173,46 @@ export default function SendToFields({
             </>
           ) : (
           <>
+          {role === "rig" && (rigTeam || productivityTeam) && (
+            <div className={styles.pair} style={{ marginBottom: 8 }} role="group" aria-label="Rig team or Productivity team">
+              {rigTeam && (
+                <button
+                  type="button"
+                  onClick={() => setHub(rigTeam.id)}
+                  aria-pressed={hub === rigTeam.id}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: 6,
+                    border: hub === rigTeam.id ? "2px solid #1e293b" : "1px solid #cbd5e1",
+                    background: hub === rigTeam.id ? "#1e293b" : "#fff",
+                    color: hub === rigTeam.id ? "#fff" : "#1a1a1a",
+                    fontWeight: hub === rigTeam.id ? 700 : 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  Rig team
+                </button>
+              )}
+              {productivityTeam && (
+                <button
+                  type="button"
+                  onClick={() => setHub(productivityTeam.id)}
+                  aria-pressed={hub === productivityTeam.id}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: 6,
+                    border: hub === productivityTeam.id ? "2px solid #1e293b" : "1px solid #cbd5e1",
+                    background: hub === productivityTeam.id ? "#1e293b" : "#fff",
+                    color: hub === productivityTeam.id ? "#fff" : "#1a1a1a",
+                    fontWeight: hub === productivityTeam.id ? 700 : 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  Productivity team
+                </button>
+              )}
+            </div>
+          )}
           <select
             id="hub"
             name="hub"
