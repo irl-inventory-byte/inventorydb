@@ -34,7 +34,7 @@ export const TABS = {
     "to_id",
     "from_hub", // the hub the card was at before this step (`hub` is where it is after)
   ],
-  people: ["person_id", "name", "role", "hub", "linked_user", "active", "mobile", "sub_team"], // mobile: 10 digits, required for new/edited people. sub_team: "rig" | "productivity", only used when role is "rig"
+  people: ["person_id", "name", "role", "hub", "linked_user", "active", "mobile"], // mobile: 10 digits, required for new/edited people
   hubs: ["hub_id", "name", "city", "is_central", "active", "parent_hub"], // parent_hub: the hub this one sits under, blank for a top-level hub
   item_types: ["type", "fields"],
   users: ["email", "role", "person_id", "active", "secondary_role"], // secondary_role: optional 2nd role the login can switch to
@@ -258,12 +258,6 @@ export interface ItemEvent extends Row {
   from_hub: string;
 }
 
-// sub_team (used by dashboard/page.tsx's "With rig team" tile: "rig" | "productivity", only meaningful
-// when role is "rig" — "" or "rig" means Rig team) and mobile are deliberately NOT listed as explicit
-// properties here, same reason mobile isn't: Row's index signature (Record<string, string>) already
-// types every column as string on access (person.sub_team, person.mobile), without making it a required
-// field on every Person object literal — which would otherwise break every test fixture that doesn't
-// set it.
 export interface Person extends Row {
   person_id: string;
   name: string;
