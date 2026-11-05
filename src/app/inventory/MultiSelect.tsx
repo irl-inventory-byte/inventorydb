@@ -17,6 +17,7 @@ export default function MultiSelect({
   options,
   selected,
   searchable = false,
+  group,
 }: {
   name: string;
   label: string;
@@ -24,6 +25,10 @@ export default function MultiSelect({
   options: { value: string; label: string }[];
   selected: string[];
   searchable?: boolean;
+  /** Give every dropdown that sits in the same filter row the same `group` string — the browser then
+   *  only lets one of them be open at a time (opening one closes any other with the same name), instead
+   *  of several popping open on top of each other. Omit it for a dropdown that stands alone. */
+  group?: string;
 }) {
   const [query, setQuery] = useState("");
 
@@ -42,7 +47,7 @@ export default function MultiSelect({
   );
 
   return (
-    <details style={{ position: "relative" }}>
+    <details name={group} style={{ position: "relative" }}>
       <summary
         aria-label={`${label}: ${summary}`}
         style={{

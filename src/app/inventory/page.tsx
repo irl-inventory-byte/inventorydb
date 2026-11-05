@@ -861,6 +861,7 @@ export default async function InventoryPage({
           allLabel="All statuses"
           options={STATUSES.map((st) => ({ value: st, label: STATUS_LABELS[st] }))}
           selected={statuses}
+          group="inventory-filters"
         />
 
         {type === "sd_card" && (
@@ -873,6 +874,7 @@ export default async function InventoryPage({
               { value: "512 GB", label: "512 GB" },
             ]}
             selected={storages}
+            group="inventory-filters"
           />
         )}
 
@@ -882,6 +884,7 @@ export default async function InventoryPage({
           allLabel="All cities"
           options={cityOptions}
           selected={cities}
+          group="inventory-filters"
         />
 
         <MultiSelect
@@ -890,6 +893,7 @@ export default async function InventoryPage({
           allLabel="All hubs"
           options={sortedHubs.map((h) => ({ value: h.hub_id, label: h.name }))}
           selected={hubIds}
+          group="inventory-filters"
         />
 
         {/* Date range on each item's last movement (IST). */}

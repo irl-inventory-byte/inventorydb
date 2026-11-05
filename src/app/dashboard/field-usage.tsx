@@ -165,6 +165,7 @@ export function FieldUsageCard({
           allLabel="All cities"
           options={cities.map((c) => ({ value: c, label: c }))}
           selected={city}
+          group="field-usage-filters"
         />
         <MultiSelect
           name="uperson"
@@ -173,6 +174,7 @@ export function FieldUsageCard({
           options={fos.map((p) => ({ value: p.id, label: p.label }))}
           selected={person}
           searchable
+          group="field-usage-filters"
         />
         {models.length > 1 && (
           <MultiSelect
@@ -181,6 +183,7 @@ export function FieldUsageCard({
             allLabel="All models"
             options={models.map((m) => ({ value: m, label: m }))}
             selected={model}
+            group="field-usage-filters"
           />
         )}
         <label>

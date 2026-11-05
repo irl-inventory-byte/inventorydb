@@ -94,6 +94,7 @@ function MoveFilters({
           allLabel="All items"
           options={types.map((t) => ({ value: t.id, label: t.label }))}
           selected={itemTypes}
+          group={`${prefix}filters`}
         />
       )}
       <MultiSelect
@@ -103,6 +104,7 @@ function MoveFilters({
         options={shownPeople.map((p) => ({ value: p.id, label: p.role ? `${p.label} (${roleName(p.role)})` : p.label }))}
         selected={person}
         searchable
+        group={`${prefix}filters`}
       />
       <MultiSelect
         name={`${prefix}city`}
@@ -110,6 +112,7 @@ function MoveFilters({
         allLabel="All cities"
         options={cities.map((c) => ({ value: c, label: c }))}
         selected={city}
+        group={`${prefix}filters`}
       />
       <MultiSelect
         name={`${prefix}role`}
@@ -117,6 +120,7 @@ function MoveFilters({
         allLabel="All roles"
         options={roles.map((r) => ({ value: r, label: roleName(r) }))}
         selected={role}
+        group={`${prefix}filters`}
       />
       <label>
         From

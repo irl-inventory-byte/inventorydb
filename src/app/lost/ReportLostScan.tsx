@@ -166,7 +166,7 @@ export default function ReportLostScan({
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: "0.72rem", color: "#64748b" }}>
             Role(s) (who had it)
-            <details style={{ position: "relative" }}>
+            <details name="lost-report-filters" style={{ position: "relative" }}>
               <summary
                 aria-label={`Role: ${roleSummary}`}
                 style={{
@@ -237,7 +237,15 @@ export default function ReportLostScan({
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: "0.72rem", color: "#64748b" }}>
             Person(s) who had it
-            <MultiSelect name="personIds" label="Person" allLabel="None chosen" options={peopleOptions} selected={[]} searchable />
+            <MultiSelect
+              name="personIds"
+              label="Person"
+              allLabel="None chosen"
+              options={peopleOptions}
+              selected={[]}
+              searchable
+              group="lost-report-filters"
+            />
           </label>
         </div>
         <button
