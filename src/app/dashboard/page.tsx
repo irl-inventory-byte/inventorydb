@@ -1115,8 +1115,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 .kpi-city > summary::-webkit-details-marker{display:none}
 .kpi-city[open] > summary{font-weight:600}
 .kpi-city > div{position:absolute;left:0;top:100%;z-index:30;min-width:220px;max-height:300px;overflow:auto;background:#fff;border:1px solid #d1d5db;border-radius:10px;box-shadow:0 10px 30px rgba(15,23,42,.15);padding:6px}
-.kpi-city a{display:flex;justify-content:space-between;gap:16px;padding:6px 8px;border-radius:6px;color:inherit;text-decoration:none;white-space:nowrap}
+.kpi-city a{display:flex;justify-content:space-between;gap:16px;padding:6px 8px;border-radius:6px;color:#0f172a;text-decoration:none;white-space:nowrap}
 .kpi-city a:hover{background:#f1f5f9}
+.kpi-city a span{color:#0f172a}
 .kpi-tile{display:flex}
 .kpi-tile > a{flex:1;min-width:0}
 `}</style>
