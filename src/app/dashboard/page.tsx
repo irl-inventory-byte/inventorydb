@@ -19,7 +19,6 @@ import styles from "./dashboard.module.css";
 import { HubOrgChart, countHidden } from "./hub-tree-view";
 import AttentionFilter from "./attentionfilter";
 import { Icon, type IconName } from "./icons";
-import TeamSelect from "./TeamSelect";
 import { addAttentionNote, addDelayNote, setAttentionNoteStatus, setBrokenStorageOverride, setRetiredBaseline } from "./actions";
 import { SummaryKpis } from "./summary-kpis";
 import { RIG_STATES, RIG_STATE_LABELS, rigState, type RigState } from "@/lib/rig-state";
@@ -343,7 +342,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     storageOverrideValue?: { gb256: number; gb512: number }; // current override, if any — prefills the edit form
     baselineKey?: string; // settings key for a simple one-number starting-count baseline (see setRetiredBaseline)
     baselineValue?: number; // current baseline, if any — prefills the edit form
-    teamSwitch?: boolean; // true: render the Rig team / Productivity team dropdown under this tile
   };
   // City-wise count of items with a status (city of the hub the item is at), biggest first.
   const cityOfHub = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
@@ -481,32 +479,38 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     });
   }
 
-  // "With rig team" tile: a dropdown between the Rig team hub and the Productivity team hub. Items counted:
-  // anything checked out to the rig team (status "with_rig", wherever it currently sits — rig team people can
-  // be at different hubs/cities), plus anything sitting in stock at that team's own hub (current_hub = the
-  // team's hub, status "in_stock"). Productivity team has no "with_rig"-style status of its own, so it only
-  // gets the in-stock-at-its-hub items.
+  // "With rig team" tile: ONE combined headline (Rig team + Productivity team added together), with a
+  // "Hub wise" breakdown underneath showing each sub-team's own count. Which sub-team an item belongs to
+  // is decided by where it was actually SENT (current_hub, set from the "Send to" location on the send
+  // form) — not by status alone: both the Rig team and the Productivity team receive items with status
+  // "with_rig" (there's no separate status for Productivity team), so going by status used to dump every
+  // with_rig item into the Rig team bucket even when it was really sent to the Productivity team. Items
+  // sitting in stock at a team's own hub (status "in_stock") count toward that same team.
   const rigHubObj = rigTeamHub(hubs);
   const prodHubObj = productivityTeamHub(hubs);
-  const team = one(sp.team) === "productivity" ? "productivity" : "rig";
-  const teamHub = team === "productivity" ? prodHubObj : rigHubObj;
   const teamItemsFor = (which: "rig" | "productivity") => {
     const hubObj = which === "productivity" ? prodHubObj : rigHubObj;
-    return items.filter((i) => (which === "rig" && i.status === "with_rig") || (hubObj && i.current_hub === hubObj.hub_id && i.status === "in_stock"));
+    return items.filter((i) => hubObj && i.current_hub === hubObj.hub_id && (i.status === "with_rig" || i.status === "in_stock"));
   };
   const rigTeamItemsList = teamItemsFor("rig");
   const prodTeamItemsList = teamItemsFor("productivity");
   const rigTeamCount = rigTeamItemsList.length;
   const prodTeamCount = prodTeamItemsList.length;
+  const teamCount = rigTeamCount + prodTeamCount; // the tile's headline: both sub-teams combined
   // Items in_stock at the Rig/Productivity team's own hub are already counted under "With rig team"
   // (teamItemsFor above) — exclude them from "In stock" so the tiles don't double-count and sum to
   // the true total.
   const teamHubIds = new Set<string>([rigHubObj?.hub_id, prodHubObj?.hub_id].filter((h): h is string => !!h));
   const inStockValue = items.filter((i) => i.status === "in_stock" && !teamHubIds.has(i.current_hub)).length;
-  const teamCount = team === "productivity" ? prodTeamCount : rigTeamCount;
-  const teamHref = teamHub
-    ? inventory({ status: "with_rig,in_stock", hub: teamHub.hub_id })
-    : inventory({ status: "with_rig" });
+  const teamHref =
+    teamHubIds.size > 0 ? inventory({ status: "with_rig,in_stock", hub: [...teamHubIds].join(",") }) : inventory({ status: "with_rig" });
+  // Breakdown rows shown under the tile (reuses the generic "hub-wise" dropdown shape).
+  const teamBreakdown = [
+    rigHubObj && { hub: "Rig team", count: rigTeamCount, href: inventory({ status: "with_rig,in_stock", hub: rigHubObj.hub_id }) },
+    prodHubObj && { hub: "Productivity team", count: prodTeamCount, href: inventory({ status: "with_rig,in_stock", hub: prodHubObj.hub_id }) },
+  ]
+    .filter((r): r is { hub: string; count: number; href: string } => !!r)
+    .map((r) => ({ ...r, pct: teamCount ? Math.round((r.count / teamCount) * 100) : 0 }));
 
   // The Broken tile's storage breakdown combines the admin's manual baseline (already-broken cards
   // that predate storage tracking, or were never scanned into the system) with the LIVE counts of
@@ -565,13 +569,13 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       storage: storageFor("with_fo"),
     },
     {
-      label: team === "productivity" ? "With productivity team" : "With rig team",
+      label: "With rig team",
       value: teamCount,
       hint: share(teamCount),
       href: teamHref,
       icon: "database",
       color: "var(--series-7)",
-      teamSwitch: true,
+      hubs: teamBreakdown,
     },
     { label: "Internal", value: s.with_internal, hint: share(s.with_internal), href: inventory({ status: "with_internal" }), icon: "user", color: "var(--series-1)" },
     {
@@ -637,7 +641,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       color: "var(--series-1)",
     },
     ...sdKpis
-      .filter((k) => !k.teamSwitch && k.label !== "Internal")
+      .filter((k) => k.label !== "With rig team" && k.label !== "Internal")
       .map((k) => {
         const isBroken = k.label === "Broken";
         return {
@@ -1105,7 +1109,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 .kpi-tile > a{flex:1;min-width:0}
 `}</style>
           {kpis.map((k) =>
-            k.cities || k.storage || k.hubs || k.teamSwitch || k.baselineKey ? (
+            k.cities || k.storage || k.hubs || k.baselineKey ? (
               <div key={k.label} className={styles.kpi} style={{ "--kpi": k.color, overflow: "visible" } as CSSProperties}>
                 <span className={styles.kpiIcon}>
                   <Icon name={k.icon} size={22} />
@@ -1327,12 +1331,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                         ))}
                       </div>
                     </details>
-                  )}
-                  {k.teamSwitch && (
-                    <form method="get" style={{ display: "flex", gap: 6, marginTop: 4, alignItems: "center" }}>
-                      {type && <input type="hidden" name="type" value={type} />}
-                      <TeamSelect team={team} rigLabel={`Rig team · ${n(rigTeamCount)}`} prodLabel={`Productivity team · ${n(prodTeamCount)}`} />
-                    </form>
                   )}
                 </span>
               </div>
