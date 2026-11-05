@@ -479,8 +479,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     });
   }
 
-  // "With rig team" tile: ONE combined headline (Rig team + Productivity team added together), with a
-  // "Hub wise" breakdown underneath showing each sub-team's own count. The Rig team and the Productivity
+  // "With rig team" and "With productivity team": two separate tiles. The Rig team and the Productivity
   // team are the same role and work out of the same hub — so which one an item belongs to is decided by
   // the PERSON it was sent to (their sub_team, set in Manage people), not by status or hub: both sub-teams
   // receive items with status "with_rig", and there's no separate hub to tell them apart by.
@@ -499,21 +498,16 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const prodTeamItemsList = teamItemsFor("productivity");
   const rigTeamCount = rigTeamItemsList.length;
   const prodTeamCount = prodTeamItemsList.length;
-  const teamCount = rigTeamCount + prodTeamCount; // the tile's headline: both sub-teams combined
   // Items in_stock at the rig team's own hub are already counted under "With rig team" (teamItemsFor
   // above) — exclude them from "In stock" so the tiles don't double-count and sum to the true total.
   const teamHubIds = new Set<string>([rigHubObj?.hub_id].filter((h): h is string => !!h));
   const inStockValue = items.filter((i) => i.status === "in_stock" && !teamHubIds.has(i.current_hub)).length;
+  // Both the "With rig team" and "With productivity team" tiles link here — there's only one physical
+  // hub, so the link can't filter by sub-team the way it filters by hub; the tiles' own counts are
+  // still accurate, just the destination list shows both sub-teams together.
   const teamHref = rigHubObj
     ? inventory({ status: "with_rig,in_stock", hub: rigHubObj.hub_id })
     : inventory({ status: "with_rig" });
-  // Breakdown rows shown under the tile (reuses the generic "hub-wise" dropdown shape). Both link to the
-  // same hub-filtered list (there's only one physical hub) — the split itself is accurate even though the
-  // link can't filter by sub-team the way it filters by hub.
-  const teamBreakdown = [
-    { hub: "Rig team", count: rigTeamCount, href: teamHref },
-    { hub: "Productivity team", count: prodTeamCount, href: teamHref },
-  ].map((r) => ({ ...r, pct: teamCount ? Math.round((r.count / teamCount) * 100) : 0 }));
 
   // The Broken tile's storage breakdown combines the admin's manual baseline (already-broken cards
   // that predate storage tracking, or were never scanned into the system) with the LIVE counts of
@@ -573,12 +567,19 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     },
     {
       label: "With rig team",
-      value: teamCount,
-      hint: share(teamCount),
+      value: rigTeamCount,
+      hint: share(rigTeamCount),
       href: teamHref,
       icon: "database",
       color: "var(--series-7)",
-      hubs: teamBreakdown,
+    },
+    {
+      label: "With productivity team",
+      value: prodTeamCount,
+      hint: share(prodTeamCount),
+      href: teamHref,
+      icon: "database",
+      color: "var(--series-7)",
     },
     { label: "Internal", value: s.with_internal, hint: share(s.with_internal), href: inventory({ status: "with_internal" }), icon: "user", color: "var(--series-1)" },
     {
@@ -644,7 +645,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       color: "var(--series-1)",
     },
     ...sdKpis
-      .filter((k) => k.label !== "With rig team" && k.label !== "Internal")
+      .filter((k) => k.label !== "With rig team" && k.label !== "With productivity team" && k.label !== "Internal")
       .map((k) => {
         const isBroken = k.label === "Broken";
         return {
