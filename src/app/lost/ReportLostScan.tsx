@@ -125,7 +125,7 @@ export default function ReportLostScan({
           onChange={(e) => setNote(e.target.value)}
           placeholder={`Reason (required) — why ${label}`}
           required
-          style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: "0.85rem" }}
+          style={{ padding: "10px 12px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: "0.95rem", minHeight: 40 }}
         />
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8 }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: "0.72rem", color: "#64748b" }}>
