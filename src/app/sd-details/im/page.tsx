@@ -12,7 +12,7 @@ export default async function ImSdDetailsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireRole("admin", "im");
+  const user = await requireRole("admin", "im");
   const sp = await searchParams;
 
   const store = getStore();
@@ -39,6 +39,10 @@ export default async function ImSdDetailsPage({
   }
   const cities = [...byCity.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
+  // Pre-select the logged-in person's own name, if they're an IM themselves (not when an admin not
+  // listed as an IM is filling this in on someone else's behalf).
+  const defaultMember = memberOptions.find((m) => m.id === user.personId)?.name ?? "";
+
   const recent = all
     .filter((r) => r.team === "im")
     .sort((a, b) => Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0"))
@@ -62,6 +66,7 @@ export default async function ImSdDetailsPage({
         saved={one(sp.saved) === "1"}
         error={one(sp.error)}
         recent={recent}
+        defaultMember={defaultMember}
       />
     </main>
   );

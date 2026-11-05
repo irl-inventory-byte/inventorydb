@@ -7,8 +7,12 @@ import SdDetailsForm from "../SdDetailsForm";
 import { saveSdDetails } from "../actions";
 
 /** IM SD card details — admin and IM only. See src/app/sd-details/SdDetailsForm.tsx / actions.ts. */
-export default async function ImSdDetailsPage({ searchParams }: PageProps<"/sd-details/im">) {
-  const user = await requireRole("admin", "im");
+export default async function ImSdDetailsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const user = await requireRole("admin", "rig");
   const sp = await searchParams;
 
   const store = getStore();
