@@ -53,7 +53,7 @@ export default async function ImSdDetailsPage({
       <p className={styles.back}>
         <Link href="/">← Home</Link>
       </p>
-      <h1>IM SD card details</h1>
+      <h1>Rig SD card details</h1>
       <p className={styles.muted}>SD Card Duration Hour — recorded here and also sent to the Google Sheet.</p>
 
       <SdDetailsForm
