@@ -18,10 +18,11 @@ export default function AckChart({
   roleHref,
   cities,
   city,
+  avgResponse,
 }: {
-  by: "city" | "role" | "day";
+  by: "city" | "role" | "day" | "hour";
   buckets: AckBucket[];
-  href: (by: "city" | "role" | "day") => string;
+  href: (by: "city" | "role" | "day" | "hour") => string;
   ackFrom: string; // YYYY-MM-DD, "" = no lower bound
   ackTo: string; // YYYY-MM-DD, "" = no upper bound
   hidden: Record<string, string>; // other dashboard filters + the current grouping, carried by the date form
@@ -30,6 +31,7 @@ export default function AckChart({
   roleHref: (role: "" | "fo" | "ifo") => string;
   cities: string[]; // every city with at least one FO/IFO, for the city filter dropdown
   city: string; // "" = all cities
+  avgResponse: string; // e.g. "2h 15m", already formatted — "" when nothing answered yet to average
 }) {
   const max = Math.max(1, ...buckets.map((b) => b.total));
   const totals = buckets.reduce(
@@ -41,8 +43,8 @@ export default function AckChart({
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
         <h2 style={{ margin: 0 }}>Acknowledgements</h2>
-        <nav aria-label="Group by" style={{ display: "flex", gap: 6 }}>
-          {(["city", "role", "day"] as const).map((v) => (
+        <nav aria-label="Group by" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {(["city", "role", "day", "hour"] as const).map((v) => (
             <Link
               key={v}
               href={href(v)}
@@ -58,7 +60,7 @@ export default function AckChart({
                 fontWeight: by === v ? 700 : 500,
               }}
             >
-              By {v === "city" ? "city" : v === "role" ? "FO / IFO" : "day"}
+              By {v === "city" ? "city" : v === "role" ? "FO / IFO" : v === "day" ? "day" : "hour"}
             </Link>
           ))}
         </nav>
@@ -164,6 +166,11 @@ export default function AckChart({
             <span>
               <strong>{totals.pending}</strong> pending
             </span>
+            {avgResponse && (
+              <span>
+                <strong>{avgResponse}</strong> average time to acknowledge
+              </span>
+            )}
           </div>
         </div>
       )}

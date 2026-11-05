@@ -29,6 +29,7 @@ export default async function SdDetailsPage({
   const teamFilter = one(sp.team); // "" (all), "im" or "rig"
   const subTeamFilter = one(sp.subteam); // "" (all), "rig" or "productivity" — only meaningful within team=rig
   const cityFilter = one(sp.city);
+  const icFilter = one(sp.ic); // IC name
   const memberFilter = one(sp.member); // team member name
   const dateFrom = one(sp.from); // "YYYY-MM-DD", filters by card_date
   const dateTo = one(sp.to); // "YYYY-MM-DD", filters by card_date
@@ -56,6 +57,7 @@ export default async function SdDetailsPage({
   ];
 
   const cities = [...new Set(all.map((r) => r.city).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const ics = [...new Set(all.map((r) => r.ic_name).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const members = [...new Set(all.map((r) => r.team_member).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
   // City-wise matrix: total / IM / Rig counts per city, always over the full set (not the active filters).
@@ -75,6 +77,7 @@ export default async function SdDetailsPage({
   if (teamFilter) rows = rows.filter((r) => r.team === teamFilter);
   if (subTeamFilter) rows = rows.filter((r) => r.team === "rig" && (r.sub_team || "rig") === subTeamFilter);
   if (cityFilter) rows = rows.filter((r) => r.city === cityFilter);
+  if (icFilter) rows = rows.filter((r) => r.ic_name === icFilter);
   if (memberFilter) rows = rows.filter((r) => r.team_member === memberFilter);
   if (dateFrom) rows = rows.filter((r) => r.card_date >= dateFrom);
   if (dateTo) rows = rows.filter((r) => r.card_date <= dateTo);
@@ -95,6 +98,7 @@ export default async function SdDetailsPage({
       ...(teamFilter && { team: teamFilter }),
       ...(subTeamFilter && { subteam: subTeamFilter }),
       ...(cityFilter && { city: cityFilter }),
+      ...(icFilter && { ic: icFilter }),
       ...(memberFilter && { member: memberFilter }),
       ...(dateFrom && { from: dateFrom }),
       ...(dateTo && { to: dateTo }),
@@ -117,12 +121,13 @@ export default async function SdDetailsPage({
   const cardValue = { fontSize: "1.6rem", fontWeight: 700, color: "#1e293b", lineHeight: 1.1 };
   const cardLabel = { fontSize: "0.8rem", color: "#64748b", marginTop: 2 };
 
-  const hasFilters = teamFilter || subTeamFilter || cityFilter || memberFilter || dateFrom || dateTo || q;
+  const hasFilters = teamFilter || subTeamFilter || cityFilter || icFilter || memberFilter || dateFrom || dateTo || q;
   // Same filters as the page, download instead of /sd-details/export — city-wise, then IC-wise.
   const exportHref = `/sd-details/export?${new URLSearchParams({
     ...(teamFilter && { team: teamFilter }),
     ...(subTeamFilter && { subteam: subTeamFilter }),
     ...(cityFilter && { city: cityFilter }),
+    ...(icFilter && { ic: icFilter }),
     ...(memberFilter && { member: memberFilter }),
     ...(dateFrom && { from: dateFrom }),
     ...(dateTo && { to: dateTo }),
@@ -254,6 +259,17 @@ export default async function SdDetailsPage({
         {cityFilter && <input type="hidden" name="city" value={cityFilter} />}
         {q && <input type="hidden" name="q" value={one(sp.q)} />}
         <label style={{ fontSize: "0.85rem", color: "#334155" }}>
+          IC{" "}
+          <select name="ic" defaultValue={icFilter}>
+            <option value="">All</option>
+            {ics.map((ic) => (
+              <option key={ic} value={ic}>
+                {ic}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label style={{ fontSize: "0.85rem", color: "#334155" }}>
           Team member{" "}
           <select name="member" defaultValue={memberFilter}>
             <option value="">All</option>
@@ -271,6 +287,7 @@ export default async function SdDetailsPage({
         {teamFilter && <input type="hidden" name="team" value={teamFilter} />}
         {subTeamFilter && <input type="hidden" name="subteam" value={subTeamFilter} />}
         {cityFilter && <input type="hidden" name="city" value={cityFilter} />}
+        {icFilter && <input type="hidden" name="ic" value={icFilter} />}
         {memberFilter && <input type="hidden" name="member" value={memberFilter} />}
         <label style={{ fontSize: "0.85rem", color: "#334155" }}>
           Date from <input type="date" name="from" defaultValue={dateFrom} aria-label="Date from" />
@@ -285,6 +302,7 @@ export default async function SdDetailsPage({
         {teamFilter && <input type="hidden" name="team" value={teamFilter} />}
         {subTeamFilter && <input type="hidden" name="subteam" value={subTeamFilter} />}
         {cityFilter && <input type="hidden" name="city" value={cityFilter} />}
+        {icFilter && <input type="hidden" name="ic" value={icFilter} />}
         {memberFilter && <input type="hidden" name="member" value={memberFilter} />}
         {dateFrom && <input type="hidden" name="from" value={dateFrom} />}
         {dateTo && <input type="hidden" name="to" value={dateTo} />}

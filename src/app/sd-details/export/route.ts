@@ -16,7 +16,7 @@ function csvCell(value: string): string {
  * Download the SD card details report as CSV, grouped city-wise then IC-wise (sorted by City, then
  * IC name) — same filters as the /sd-details page, so the file holds exactly what the page is
  * showing (every matching row, not just the page on screen):
- *   GET /sd-details/export?team=rig&subteam=productivity&city=…&member=…&from=…&to=…&q=…
+ *   GET /sd-details/export?team=rig&subteam=productivity&city=…&ic=…&member=…&from=…&to=…&q=…
  */
 export async function GET(request: Request) {
   await requireRole("admin", "im", "rig");
@@ -25,6 +25,7 @@ export async function GET(request: Request) {
   const teamFilter = params.get("team") ?? "";
   const subTeamFilter = params.get("subteam") ?? "";
   const cityFilter = params.get("city") ?? "";
+  const icFilter = params.get("ic") ?? "";
   const memberFilter = params.get("member") ?? "";
   const dateFrom = params.get("from") ?? "";
   const dateTo = params.get("to") ?? "";
@@ -36,6 +37,7 @@ export async function GET(request: Request) {
   if (teamFilter) rows = rows.filter((r) => r.team === teamFilter);
   if (subTeamFilter) rows = rows.filter((r) => r.team === "rig" && (r.sub_team || "rig") === subTeamFilter);
   if (cityFilter) rows = rows.filter((r) => r.city === cityFilter);
+  if (icFilter) rows = rows.filter((r) => r.ic_name === icFilter);
   if (memberFilter) rows = rows.filter((r) => r.team_member === memberFilter);
   if (dateFrom) rows = rows.filter((r) => r.card_date >= dateFrom);
   if (dateTo) rows = rows.filter((r) => r.card_date <= dateTo);
