@@ -8,7 +8,7 @@ import styles from "../form.module.css";
 import { sendCards } from "../actions";
 import SendScanFields from "./SendScanFields";
 import { rigCondition } from "@/lib/rig-state";
-import { productivityTeamHub, rigHomeHub, rigTeamHub } from "@/lib/rig-hub";
+import { rigHomeHub, rigTeamHub } from "@/lib/rig-hub";
 import HardwareSendFields from "./HardwareSendFields";
 import QcSendFields from "./QcSendFields";
 import SendToFields from "./SendToFields";
@@ -76,14 +76,12 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
   // QC and hardware teams always work at Bangalore.
   const bangaloreHub = rigHomeHub(hubs);
   const bangalore = bangaloreHub ? { id: bangaloreHub.hub_id, name: bangaloreHub.name } : undefined;
-  // The rig team's own location. undefined (not Bangalore) if that hub hasn't been added yet — SendToFields
-  // then shows an error instead of silently using Bangalore.
+  // The rig team's own location — shared by both the Rig team and the Productivity team (same role,
+  // same hub; which sub-team someone is on is set on their Person record, see admin/people). undefined
+  // (not Bangalore) if that hub hasn't been added yet — SendToFields then shows an error instead of
+  // silently using Bangalore.
   const rigTeamHubRow = rigTeamHub(hubs);
   const rigTeam = rigTeamHubRow ? { id: rigTeamHubRow.hub_id, name: rigTeamHubRow.name } : undefined;
-  // The productivity team's own location — a separate hub from the rig team's (see rig-hub.ts). undefined
-  // if that hub hasn't been added yet (Manage hubs → + Add a hub, named "Productivity team").
-  const productivityTeamHubRow = productivityTeamHub(hubs);
-  const productivityTeam = productivityTeamHubRow ? { id: productivityTeamHubRow.hub_id, name: productivityTeamHubRow.name } : undefined;
 
   // Start at the IM's own hub. Someone with no hub (an admin) starts where most cards are in stock.
   const stockByHub = new Map<string, number>();
@@ -177,7 +175,6 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
             allowInternal={!held}
             bangalore={bangalore}
             rigTeam={rigTeam}
-            productivityTeam={productivityTeam}
             alwaysBangalore={false}
           />
         )}

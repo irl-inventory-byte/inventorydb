@@ -34,7 +34,7 @@ export const TABS = {
     "to_id",
     "from_hub", // the hub the card was at before this step (`hub` is where it is after)
   ],
-  people: ["person_id", "name", "role", "hub", "linked_user", "active", "mobile"], // mobile: 10 digits, required for new/edited people
+  people: ["person_id", "name", "role", "hub", "linked_user", "active", "mobile", "sub_team"], // mobile: 10 digits, required for new/edited people. sub_team: "rig" | "productivity", only used when role is "rig"
   hubs: ["hub_id", "name", "city", "is_central", "active", "parent_hub"], // parent_hub: the hub this one sits under, blank for a top-level hub
   item_types: ["type", "fields"],
   users: ["email", "role", "person_id", "active", "secondary_role"], // secondary_role: optional 2nd role the login can switch to
@@ -265,6 +265,10 @@ export interface Person extends Row {
   hub: string;
   linked_user: string;
   active: string;
+  // "rig" | "productivity" — only meaningful when role is "rig": the Rig team and the Productivity team
+  // are the same role and work out of the same hub, so this is what actually tells them apart (see
+  // dashboard/page.tsx's "With rig team" tile). "" (or "rig") means Rig team.
+  sub_team: string;
 }
 
 export interface Hub extends Row {

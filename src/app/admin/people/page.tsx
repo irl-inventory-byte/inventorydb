@@ -342,6 +342,13 @@ export default async function PeoplePage({
           ))}
         </select>
 
+        {/* Only used when role is "Rig team" — Rig team and Productivity team share the same role and
+            hub, so this is what tells them apart. Ignored for every other role. */}
+        <select name="sub_team" defaultValue="rig" aria-label="Rig team sub-team (only used for Rig team)">
+          <option value="rig">Rig team</option>
+          <option value="productivity">Productivity team</option>
+        </select>
+
         <select
           name="hub"
           defaultValue={defaultHubId}

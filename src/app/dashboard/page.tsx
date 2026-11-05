@@ -30,7 +30,7 @@ import { getStore } from "@/lib/store";
 import { MonthlyReportCard } from "./monthly-report";
 import { buildMonthlyReport, pickFilter } from "@/lib/monthly-report";
 import type { Item } from "@/lib/schema";
-import { productivityTeamHub, rigTeamHub } from "@/lib/rig-hub";
+import { rigTeamHub } from "@/lib/rig-hub";
 
 const inventory = (params: Record<string, string>) => `/inventory?${new URLSearchParams(params)}`;
 
@@ -480,37 +480,40 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   }
 
   // "With rig team" tile: ONE combined headline (Rig team + Productivity team added together), with a
-  // "Hub wise" breakdown underneath showing each sub-team's own count. Which sub-team an item belongs to
-  // is decided by where it was actually SENT (current_hub, set from the "Send to" location on the send
-  // form) — not by status alone: both the Rig team and the Productivity team receive items with status
-  // "with_rig" (there's no separate status for Productivity team), so going by status used to dump every
-  // with_rig item into the Rig team bucket even when it was really sent to the Productivity team. Items
-  // sitting in stock at a team's own hub (status "in_stock") count toward that same team.
+  // "Hub wise" breakdown underneath showing each sub-team's own count. The Rig team and the Productivity
+  // team are the same role and work out of the same hub — so which one an item belongs to is decided by
+  // the PERSON it was sent to (their sub_team, set in Manage people), not by status or hub: both sub-teams
+  // receive items with status "with_rig", and there's no separate hub to tell them apart by.
   const rigHubObj = rigTeamHub(hubs);
-  const prodHubObj = productivityTeamHub(hubs);
-  const teamItemsFor = (which: "rig" | "productivity") => {
-    const hubObj = which === "productivity" ? prodHubObj : rigHubObj;
-    return items.filter((i) => hubObj && i.current_hub === hubObj.hub_id && (i.status === "with_rig" || i.status === "in_stock"));
-  };
+  const personById = new Map(people.map((p) => [p.person_id, p]));
+  const subTeamOfHolder = (holderId: string): "rig" | "productivity" =>
+    personById.get(holderId)?.sub_team === "productivity" ? "productivity" : "rig";
+  const teamItemsFor = (which: "rig" | "productivity") =>
+    items.filter((i) => {
+      if (i.status === "with_rig") return subTeamOfHolder(i.current_holder) === which;
+      // In-stock items at the shared rig hub have no individual holder to attribute to a sub-team —
+      // they're pooled stock, counted under Rig team only.
+      return which === "rig" && rigHubObj && i.current_hub === rigHubObj.hub_id && i.status === "in_stock";
+    });
   const rigTeamItemsList = teamItemsFor("rig");
   const prodTeamItemsList = teamItemsFor("productivity");
   const rigTeamCount = rigTeamItemsList.length;
   const prodTeamCount = prodTeamItemsList.length;
   const teamCount = rigTeamCount + prodTeamCount; // the tile's headline: both sub-teams combined
-  // Items in_stock at the Rig/Productivity team's own hub are already counted under "With rig team"
-  // (teamItemsFor above) — exclude them from "In stock" so the tiles don't double-count and sum to
-  // the true total.
-  const teamHubIds = new Set<string>([rigHubObj?.hub_id, prodHubObj?.hub_id].filter((h): h is string => !!h));
+  // Items in_stock at the rig team's own hub are already counted under "With rig team" (teamItemsFor
+  // above) — exclude them from "In stock" so the tiles don't double-count and sum to the true total.
+  const teamHubIds = new Set<string>([rigHubObj?.hub_id].filter((h): h is string => !!h));
   const inStockValue = items.filter((i) => i.status === "in_stock" && !teamHubIds.has(i.current_hub)).length;
-  const teamHref =
-    teamHubIds.size > 0 ? inventory({ status: "with_rig,in_stock", hub: [...teamHubIds].join(",") }) : inventory({ status: "with_rig" });
-  // Breakdown rows shown under the tile (reuses the generic "hub-wise" dropdown shape).
+  const teamHref = rigHubObj
+    ? inventory({ status: "with_rig,in_stock", hub: rigHubObj.hub_id })
+    : inventory({ status: "with_rig" });
+  // Breakdown rows shown under the tile (reuses the generic "hub-wise" dropdown shape). Both link to the
+  // same hub-filtered list (there's only one physical hub) — the split itself is accurate even though the
+  // link can't filter by sub-team the way it filters by hub.
   const teamBreakdown = [
-    rigHubObj && { hub: "Rig team", count: rigTeamCount, href: inventory({ status: "with_rig,in_stock", hub: rigHubObj.hub_id }) },
-    prodHubObj && { hub: "Productivity team", count: prodTeamCount, href: inventory({ status: "with_rig,in_stock", hub: prodHubObj.hub_id }) },
-  ]
-    .filter((r): r is { hub: string; count: number; href: string } => !!r)
-    .map((r) => ({ ...r, pct: teamCount ? Math.round((r.count / teamCount) * 100) : 0 }));
+    { hub: "Rig team", count: rigTeamCount, href: teamHref },
+    { hub: "Productivity team", count: prodTeamCount, href: teamHref },
+  ].map((r) => ({ ...r, pct: teamCount ? Math.round((r.count / teamCount) * 100) : 0 }));
 
   // The Broken tile's storage breakdown combines the admin's manual baseline (already-broken cards
   // that predate storage tracking, or were never scanned into the system) with the LIVE counts of
