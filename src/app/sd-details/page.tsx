@@ -18,7 +18,11 @@ const subTeamLabel = (r: { team: string; sub_team?: string }) =>
  * entry forms, which only show each team their own recent entries. Also reachable from the Dashboard
  * (see dashboard/page.tsx), not just the home page.
  */
-export default async function SdDetailsPage({ searchParams }: PageProps<"/sd-details">) {
+export default async function SdDetailsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   await requireRole("admin", "im", "rig");
   const sp = await searchParams;
 
@@ -32,11 +36,24 @@ export default async function SdDetailsPage({ searchParams }: PageProps<"/sd-det
 
   const all = await getStore().list("sd_card_durations");
 
-  const byTeam = (["im", "rig"] as const).map((team) => ({
-    team,
-    label: TEAM_NAME[team],
-    count: all.filter((r) => r.team === team).length,
-  }));
+  // IM, then the two rig sub-teams split out as their own cards (same split as the dashboard's "With
+  // rig team" / "With productivity team" tiles) — Rig team and Productivity team share the same "rig"
+  // team value here, told apart only by sub_team.
+  const byTeam = [
+    { team: "im" as const, subteam: "", label: TEAM_NAME.im, count: all.filter((r) => r.team === "im").length },
+    {
+      team: "rig" as const,
+      subteam: "rig",
+      label: "Rig team",
+      count: all.filter((r) => r.team === "rig" && (r.sub_team || "rig") === "rig").length,
+    },
+    {
+      team: "rig" as const,
+      subteam: "productivity",
+      label: "Productivity team",
+      count: all.filter((r) => r.team === "rig" && r.sub_team === "productivity").length,
+    },
+  ];
 
   const cities = [...new Set(all.map((r) => r.city).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const members = [...new Set(all.map((r) => r.team_member).filter(Boolean))].sort((a, b) => a.localeCompare(b));
@@ -153,7 +170,7 @@ export default async function SdDetailsPage({ searchParams }: PageProps<"/sd-det
           <div style={cardLabel}>This week</div>
         </div>
         {byTeam.map((t) => (
-          <div key={t.team} style={card}>
+          <div key={`${t.team}-${t.subteam}`} style={card}>
             <div style={cardValue}>{t.count}</div>
             <div style={cardLabel}>{t.label}</div>
           </div>
@@ -194,11 +211,14 @@ export default async function SdDetailsPage({ searchParams }: PageProps<"/sd-det
         <Link href={keep({ team: "" })} aria-current={!teamFilter ? "true" : undefined} style={chip(!teamFilter)}>
           All · {all.length}
         </Link>
-        {byTeam.map((t) => (
-          <Link key={t.team} href={keep({ team: t.team, subteam: "" })} aria-current={t.team === teamFilter ? "true" : undefined} style={chip(t.team === teamFilter)}>
-            {t.label} · {t.count}
-          </Link>
-        ))}
+        {byTeam.map((t) => {
+          const on = t.team === teamFilter && (t.subteam || "") === subTeamFilter;
+          return (
+            <Link key={`${t.team}-${t.subteam}`} href={keep({ team: t.team, subteam: t.subteam })} aria-current={on ? "true" : undefined} style={chip(on)}>
+              {t.label} · {t.count}
+            </Link>
+          );
+        })}
       </nav>
 
       {teamFilter === "rig" && (
