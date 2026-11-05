@@ -6,11 +6,7 @@ import styles from "../../admin/admin.module.css";
 import SdDetailsForm from "../SdDetailsForm";
 import { saveSdDetails } from "../actions";
 
-/**
- * Rig team SD card details — admin and the rig role (which covers both the Rig team and the
- * Productivity team; they're two hubs under the same "rig" role, not separate roles — see
- * lib/rig-hub.ts). See src/app/sd-details/SdDetailsForm.tsx / actions.ts.
- */
+/** Rig SD card details — admin and IM only. See src/app/sd-details/SdDetailsForm.tsx / actions.ts. */
 export default async function ImSdDetailsPage({
   searchParams,
 }: {
@@ -27,7 +23,7 @@ export default async function ImSdDetailsPage({
   ]);
 
   const memberOptions = people
-    .filter((p) => p.role === "rig" && p.active !== "false")
+    .filter((p) => p.role === "im" && p.active !== "false")
     .map((p) => ({ id: p.person_id, name: p.name }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const foIfoOptions = people
@@ -43,10 +39,12 @@ export default async function ImSdDetailsPage({
   }
   const cities = [...byCity.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
+  // Pre-select the logged-in person's own name, if they're an IM themselves (not when an admin not
+  // listed as an IM is filling this in on someone else's behalf).
   const defaultMember = memberOptions.find((m) => m.id === user.personId)?.name ?? "";
 
   const recent = all
-    .filter((r) => r.team === "rig")
+    .filter((r) => r.team === "im")
     .sort((a, b) => Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0"))
     .slice(0, 50);
 
@@ -55,13 +53,13 @@ export default async function ImSdDetailsPage({
       <p className={styles.back}>
         <Link href="/">← Home</Link>
       </p>
-      <h1>Rig team SD card details</h1>
+      <h1>Rig SD card details</h1>
       <p className={styles.muted}>SD Card Duration Hour — recorded here and also sent to the Google Sheet.</p>
 
       <SdDetailsForm
-        team="rig"
+        team="im"
         action={saveSdDetails}
-        memberLabel="Rig team name"
+        memberLabel="IM"
         memberOptions={memberOptions}
         foIfoOptions={foIfoOptions}
         cities={cities}
