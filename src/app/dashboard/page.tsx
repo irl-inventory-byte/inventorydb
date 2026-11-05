@@ -3,9 +3,8 @@ import type { CSSProperties } from "react";
 import { displayName } from "@/lib/actors";
 import { requireRole } from "@/lib/authz";
 import { LATE_AFTER_HOURS, computeDashboard } from "@/lib/dashboard";
-import { buildHubTree, type HubNode } from "@/lib/hub-tree";
+import { buildHubTree } from "@/lib/hub-tree";
 import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
-import { STATUSES } from "@/lib/schema";
 import type { Acknowledgment, AttentionNote, DelayNote, HardwareUpdate, QcCheck, Status } from "@/lib/schema";
 import { HANDLER_ROLES, INVENTORY_ROLES, allowedTypes, canSeeType, storeFor, storeForAll, typeParam } from "@/lib/access";
 import TypeSwitch from "../TypeSwitch";
@@ -311,12 +310,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   for (const k of ["type", "empty", "acity", "arole"]) if (one(sp[k])) reportKeep[k] = one(sp[k]);
 
   const d = computeDashboard(items, events, people, hubs, { hub: "", days: 14, now });
-  // The hubs table has a stray "Internal team" row from an old import whose hub_id doesn't round-trip
-  // through the URL cleanly (clicking it 404s at /dashboard/hub/[id]). Drop that broken row from the
-  // tree, and add a clean "Internal" node in its place, built from items by status (with_internal)
-  // rather than from a hub record — its own items and city are untouched everywhere else a hub is
-  // picked. It links to /dashboard/hub/internal, which dashboard/hub/[id]/page.tsx special-cases to
-  // render dashboard/hub/internal-view.tsx instead of looking up a hub.
+  // "Internal team" isn't a real location — hide it from the Hub hierarchy chart specifically (the hub
+  // record and its items are untouched; it still works everywhere else a hub is picked).
   const isInternalTeamHub = (h: (typeof hubs)[number]) =>
     (h.name ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "") === "internalteam" ||
     (h.hub_id ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "") === "internalteam";
@@ -324,21 +319,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     hubs.filter((h) => !isInternalTeamHub(h)),
     items,
   );
-  const internalItems = items.filter((i) => i.status === "with_internal");
-  if (internalItems.length > 0) {
-    const byStatus = Object.fromEntries(STATUSES.map((s) => [s, 0])) as Record<Status, number>;
-    byStatus.with_internal = internalItems.length;
-    const stats = { held: internalItems.length, inStock: 0, out: internalItems.length, byStatus };
-    const internalNode: HubNode = {
-      hub: { hub_id: "internal", name: "Internal", city: "", is_central: "false", active: "true", parent_hub: "" },
-      children: [],
-      owned: 0,
-      own: stats,
-      total: stats,
-    };
-    tree.push(internalNode);
-    tree.sort((a, b) => b.total.held - a.total.held || a.hub.name.localeCompare(b.hub.name));
-  }
   const showEmpty = one(sp.empty) === "1";
   const hiddenEmpty = countHidden(tree, false);
   const canHandle = HANDLER_ROLES.includes(user.role);
@@ -1513,6 +1493,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             qcFrom={qcFrom}
             qcTo={qcTo}
             qcKeep={qcKeep}
+            san={san}
             sanKeep={sanKeep}
           />
         )}
