@@ -258,6 +258,12 @@ export interface ItemEvent extends Row {
   from_hub: string;
 }
 
+// sub_team (used by dashboard/page.tsx's "With rig team" tile: "rig" | "productivity", only meaningful
+// when role is "rig" — "" or "rig" means Rig team) and mobile are deliberately NOT listed as explicit
+// properties here, same reason mobile isn't: Row's index signature (Record<string, string>) already
+// types every column as string on access (person.sub_team, person.mobile), without making it a required
+// field on every Person object literal — which would otherwise break every test fixture that doesn't
+// set it.
 export interface Person extends Row {
   person_id: string;
   name: string;
@@ -265,10 +271,6 @@ export interface Person extends Row {
   hub: string;
   linked_user: string;
   active: string;
-  // "rig" | "productivity" — only meaningful when role is "rig": the Rig team and the Productivity team
-  // are the same role and work out of the same hub, so this is what actually tells them apart (see
-  // dashboard/page.tsx's "With rig team" tile). "" (or "rig") means Rig team.
-  sub_team: string;
 }
 
 export interface Hub extends Row {
