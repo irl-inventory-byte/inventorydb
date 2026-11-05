@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { formatMobile } from "@/lib/mobile";
 import type { Hub, Person } from "@/lib/schema";
 import styles from "../admin.module.css";
@@ -11,7 +11,6 @@ import { PERSON_ROLES } from "./filters";
 export default function PersonRow({ person, hubs, keep = "" }: { person: Person; hubs: Hub[]; keep?: string }) {
   const formRef = useRef<HTMLFormElement>(null);
   const submit = () => formRef.current?.requestSubmit();
-  const [role, setRole] = useState(person.role);
 
   return (
     <form ref={formRef} action={savePerson} className={styles.row}>
@@ -19,28 +18,13 @@ export default function PersonRow({ person, hubs, keep = "" }: { person: Person;
       {/* The page's current filters, so they stay applied after this save. */}
       <input type="hidden" name="keep" value={keep} />
       <input name="name" defaultValue={person.name} required onBlur={(e) => e.target.value !== person.name && submit()} />
-      <select
-        name="role"
-        defaultValue={person.role}
-        onChange={(e) => {
-          setRole(e.target.value as Person["role"]);
-          submit();
-        }}
-      >
+      <select name="role" defaultValue={person.role} onChange={submit}>
         {PERSON_ROLES.map(([v, label]) => (
           <option key={v} value={v}>
             {label}
           </option>
         ))}
       </select>
-      {/* Rig team and Productivity team are the same role and the same hub — this is what actually
-          tells them apart (see dashboard "With rig team" tile). Only shown for that role. */}
-      {role === "rig" && (
-        <select name="sub_team" defaultValue={person.sub_team === "productivity" ? "productivity" : "rig"} onChange={submit}>
-          <option value="rig">Rig team</option>
-          <option value="productivity">Productivity team</option>
-        </select>
-      )}
       <select name="hub" defaultValue={person.hub} onChange={submit}>
         {hubs.map((h) => (
           <option key={h.hub_id} value={h.hub_id}>

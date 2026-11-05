@@ -28,6 +28,10 @@ export interface SendInput {
   internalName?: string; // a typed name for the "Internal" category, used instead of recipient
   toHub: string; // hub_id of the location the cards are going to. Always required
   note: string;
+  // Only meaningful when sending to the "rig" role: "rig" | "productivity" — chosen on the Send form
+  // each time, since the same person can send to either team on different days (not a fixed property
+  // of the person). Saved on the item itself; cleared once it moves on to anything else.
+  subTeam?: "rig" | "productivity";
 }
 
 // What a card becomes when an IM hands it to someone of each role.
@@ -158,6 +162,11 @@ export function planSend(targets: Item[], input: SendInput, ctx: HandoverContext
     toRole = recipient?.role;
     if (!recipient || !status) plan.errors.push("Choose the person the items are going to.");
   }
+  // Rig team and Productivity team are the same role and the same hub — only this choice, made on the
+  // send form each time, tells them apart (not a fixed property of the person, see SendInput.subTeam).
+  if (toRole === "rig" && input.subTeam !== "rig" && input.subTeam !== "productivity") {
+    plan.errors.push("Choose Rig team or Productivity team.");
+  }
   // QC and hardware teams always work at Bangalore: rigs sent to them go there, whatever was chosen.
   // The same when the QC or hardware team is SENDING (to an IM or to hardware): it stays at Bangalore.
   const senderAtBangalore = ctx.senderRole === "qc" || ctx.senderRole === "hardware";
@@ -227,6 +236,8 @@ export function planSend(targets: Item[], input: SendInput, ctx: HandoverContext
       status,
       current_hub: hub,
       current_holder: holder,
+      // Set only when this send is going to the rig role; cleared for every other destination.
+      sub_team: toRole === "rig" ? (input.subTeam ?? "rig") : "",
       last_event_id: event.event_id,
       updated_at: ctx.now,
     });
@@ -283,7 +294,7 @@ export function planReceiveHeld(targets: Item[], input: { note: string }, ctx: H
     };
     plan.events.push(event);
     // The rig is now with whoever received it (for hardware this may be a different person than was chosen).
-    plan.items.push({ ...item, status: rule.to, current_holder: ctx.actorPersonId, last_event_id: event.event_id, updated_at: ctx.now });
+    plan.items.push({ ...item, status: rule.to, current_holder: ctx.actorPersonId, sub_team: "", last_event_id: event.event_id, updated_at: ctx.now });
   }
   return plan;
 }
@@ -338,6 +349,7 @@ export function planReceive(
       status: "in_stock",
       current_hub: input.hub,
       current_holder: "",
+      sub_team: "", // no longer with the rig team once it's back in stock
       last_event_id: event.event_id,
       updated_at: ctx.now,
     });
@@ -392,7 +404,7 @@ export function planHardwareOutcome(
       status_after: status,
     };
     plan.events.push(event);
-    plan.items.push({ ...item, status, current_holder: holder, last_event_id: event.event_id, updated_at: ctx.now });
+    plan.items.push({ ...item, status, current_holder: holder, sub_team: "", last_event_id: event.event_id, updated_at: ctx.now });
   }
   return plan;
 }

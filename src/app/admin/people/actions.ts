@@ -16,9 +16,6 @@ const PersonInput = z.object({
   hub: z.string().trim().min(1),
   email: z.email("Enter a valid email address"),
   mobile: z.string().regex(/^[6-9][0-9]{9}$/, "Enter a valid 10-digit mobile number"),
-  // Only meaningful when role is "rig": which of the two sub-teams (same role, same hub) this person
-  // is actually on. Anything else is saved as "" regardless of what was submitted.
-  subTeam: z.enum(["rig", "productivity"]).optional(),
 });
 
 function normalizeEmail(value: string): string {
@@ -26,7 +23,6 @@ function normalizeEmail(value: string): string {
 }
 
 function parsePerson(formData: FormData) {
-  const subTeamRaw = String(formData.get("sub_team") ?? "");
   return PersonInput.safeParse({
     name: String(formData.get("name") ?? ""),
     role: String(formData.get("role") ?? ""),
@@ -35,13 +31,8 @@ function parsePerson(formData: FormData) {
       String(formData.get("email") ?? "")
     ),
     mobile: normalizeMobile(String(formData.get("mobile") ?? "")),
-    subTeam: subTeamRaw === "productivity" ? "productivity" : subTeamRaw === "rig" ? "rig" : undefined,
   });
 }
-
-// The saved sub_team: "" unless the role is "rig", in which case it's "productivity" or "rig" (default).
-const subTeamToSave = (role: string, subTeam: "rig" | "productivity" | undefined) =>
-  role === "rig" ? (subTeam ?? "rig") : "";
 
 /** "mobile" when the only problem is the mobile number, else "invalid". */
 function problem(formData: FormData): "mobile" | "invalid" {
@@ -129,7 +120,6 @@ export async function addPerson(formData: FormData) {
       linked_user: input.email,
       active: "true",
       mobile: input.mobile,
-      sub_team: subTeamToSave(input.role, input.subTeam),
     },
   ]);
 
@@ -225,7 +215,6 @@ export async function savePerson(formData: FormData) {
           ? "true"
           : "false",
       mobile: input.mobile,
-      sub_team: subTeamToSave(input.role, input.subTeam),
     },
   ]);
 

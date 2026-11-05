@@ -482,18 +482,15 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
   // "With rig team": one tile, total of Rig team + Productivity team, with a dropdown breaking the two
   // out. The Rig team and the Productivity team are the same role and work out of the same hub — so
-  // which one an item belongs to is decided by the PERSON it was sent to (their sub_team, set in Manage
-  // people), not by status or hub: both sub-teams receive items with status "with_rig", and there's no
-  // separate hub to tell them apart by.
+  // which one an item belongs to is decided by what was chosen on the SEND form each time (item.sub_team,
+  // see lib/handover.ts's planSend), not by the person or the hub: the same person can send to either
+  // team on different days, and both sub-teams receive items with status "with_rig" at the same hub.
   const rigHubObj = rigTeamHub(hubs);
-  const personById = new Map(people.map((p) => [p.person_id, p]));
-  const subTeamOfHolder = (holderId: string): "rig" | "productivity" =>
-    personById.get(holderId)?.sub_team === "productivity" ? "productivity" : "rig";
   const teamItemsFor = (which: "rig" | "productivity") =>
     items.filter((i) => {
-      if (i.status === "with_rig") return subTeamOfHolder(i.current_holder) === which;
-      // In-stock items at the shared rig hub have no individual holder to attribute to a sub-team —
-      // they're pooled stock, counted under Rig team only.
+      if (i.status === "with_rig") return (i.sub_team || "rig") === which;
+      // In-stock items at the shared rig hub have no sub_team of their own (nobody currently holds
+      // them to have chosen one) — they're pooled stock, counted under Rig team only.
       return which === "rig" && rigHubObj && i.current_hub === rigHubObj.hub_id && i.status === "in_stock";
     });
   const rigTeamItemsList = teamItemsFor("rig");

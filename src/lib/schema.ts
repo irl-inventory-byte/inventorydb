@@ -16,6 +16,9 @@ export const TABS = {
     "brand",
     "model", // SD card model name
     "price",
+    "sub_team", // only meaningful while status is "with_rig": "rig" | "productivity" — chosen at SEND time
+    // (same person can send to either team on different days, so this isn't a fixed property of the
+    // person — see dashboard/page.tsx's "With rig team" tile and lib/handover.ts's planSend). "" otherwise.
   ],
   events: [
     "event_id",
@@ -34,7 +37,7 @@ export const TABS = {
     "to_id",
     "from_hub", // the hub the card was at before this step (`hub` is where it is after)
   ],
-  people: ["person_id", "name", "role", "hub", "linked_user", "active", "mobile"], // mobile: 10 digits, required for new/edited people
+  people: ["person_id", "name", "role", "hub", "linked_user", "active", "mobile"], // mobile: 10 digits, required for new/edited people.
   hubs: ["hub_id", "name", "city", "is_central", "active", "parent_hub"], // parent_hub: the hub this one sits under, blank for a top-level hub
   item_types: ["type", "fields"],
   users: ["email", "role", "person_id", "active", "secondary_role"], // secondary_role: optional 2nd role the login can switch to
@@ -258,6 +261,12 @@ export interface ItemEvent extends Row {
   from_hub: string;
 }
 
+// mobile is deliberately NOT listed as an explicit property here: Row's index signature
+// (Record<string, string>) already types every column as string on access (person.mobile), without
+// making it a required field on every Person object literal — which would otherwise break every test
+// fixture that doesn't set it. (sub_team used to live here too; it's now on Item instead — see
+// dashboard/page.tsx's "With rig team" tile and lib/handover.ts's planSend — because the same person
+// can send to either team on different days, so it isn't a fixed property of the person.)
 export interface Person extends Row {
   person_id: string;
   name: string;

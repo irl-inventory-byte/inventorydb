@@ -34,8 +34,8 @@ export default function SendToFields({
   allowInternal?: boolean;
   bangalore?: { id: string; name: string }; // QC and hardware teams always work here
   rigTeam?: { id: string; name: string }; // the rig team's own location (shared by the Rig team and the
-  // Productivity team — which one an item belongs to is set on the PERSON, see admin/people, not the
-  // location, since both sub-teams work out of this one hub)
+  // Productivity team — both sub-teams work out of this one hub; which team an item belongs to is
+  // chosen on the form below, each time it's sent, since the same person can send to either team)
   alwaysBangalore?: boolean; // the sender is the QC or hardware team: every send stays at Bangalore
 }) {
   const [role, setRole] = useState("");
@@ -43,7 +43,9 @@ export default function SendToFields({
   const [internalName, setInternalName] = useState("");
   const [hub, setHub] = useState("");
   const [city, setCity] = useState("");
+  const [subTeam, setSubTeam] = useState("rig");
   const isInternal = role === INTERNAL;
+  const isRig = role === "rig";
   const isFo = role === "fo";
   const all = groups.find((g) => g.role === role)?.people ?? [];
   // FO only: the cities the field officers are in, and the list narrowed to the chosen city.
@@ -114,6 +116,23 @@ export default function SendToFields({
               </select>
             )}
           </div>
+          {isRig && (
+            <div className={styles.pair} style={{ marginTop: 8 }}>
+              <select
+                aria-label="Which team: Rig team or Productivity team"
+                name="sub_team"
+                value={subTeam}
+                required
+                onChange={(e) => setSubTeam(e.target.value)}
+              >
+                <option value="rig">Rig team</option>
+                <option value="productivity">Productivity team</option>
+              </select>
+              <span className={styles.hint} style={{ alignSelf: "center", margin: 0 }}>
+                Same role, same hub — choose which team this is actually going to today.
+              </span>
+            </div>
+          )}
           {isFo && cities.length > 0 && (
             <div className={styles.pair} style={{ marginTop: 8 }}>
               <select

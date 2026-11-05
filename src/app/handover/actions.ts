@@ -137,12 +137,16 @@ export async function sendCards(formData: FormData) {
 
   // The person (or a typed "Internal" name) and the location are both required; planSend refuses the
   // send if either is missing.
+  const subTeamRaw = String(formData.get("sub_team") ?? "");
   const input = {
     fromHub: String(formData.get("fromHub") ?? ""),
     recipient: String(formData.get("recipient") ?? ""),
     internalName: String(formData.get("internalName") ?? ""),
     toHub: String(formData.get("hub") ?? ""),
     note: String(formData.get("note") ?? ""),
+    // Only meaningful when sending to the rig role: which of the two sub-teams this is actually going
+    // to today (see SendToFields.tsx and lib/handover.ts's planSend).
+    subTeam: subTeamRaw === "productivity" ? ("productivity" as const) : subTeamRaw === "rig" ? ("rig" as const) : undefined,
   };
   // QC team: the QC result chosen on the Send page, saved for every rig in the send.
   const qcResult = String(formData.get("qcResult") ?? "");
