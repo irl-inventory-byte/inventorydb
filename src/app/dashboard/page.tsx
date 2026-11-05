@@ -337,6 +337,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     cities?: { city: string; count: number; pct: number; href: string }[]; // city-wise list, opened from the tile
     storage?: { storage: string; count: number; pct: number; href: string }[]; // SD card 256/512 GB breakdown, opened from the tile
     hubs?: { hub: string; count: number; pct: number; href: string }[]; // hub-wise breakdown, opened from the tile
+    teams?: { label: string; count: number; pct: number; href: string }[]; // Rig team / Productivity team breakdown, opened from the tile
     defn?: string; // one-line definition shown under the tile (e.g. what "Lost" vs "Broken" means)
     storageOverrideKey?: string; // settings key for an admin-editable manual override of `storage` (see dashboard/actions.ts)
     storageOverrideValue?: { gb256: number; gb512: number }; // current override, if any — prefills the edit form
@@ -479,10 +480,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     });
   }
 
-  // "With rig team" and "With productivity team": two separate tiles. The Rig team and the Productivity
-  // team are the same role and work out of the same hub — so which one an item belongs to is decided by
-  // the PERSON it was sent to (their sub_team, set in Manage people), not by status or hub: both sub-teams
-  // receive items with status "with_rig", and there's no separate hub to tell them apart by.
+  // "With rig team": one tile, total of Rig team + Productivity team, with a dropdown breaking the two
+  // out. The Rig team and the Productivity team are the same role and work out of the same hub — so
+  // which one an item belongs to is decided by the PERSON it was sent to (their sub_team, set in Manage
+  // people), not by status or hub: both sub-teams receive items with status "with_rig", and there's no
+  // separate hub to tell them apart by.
   const rigHubObj = rigTeamHub(hubs);
   const personById = new Map(people.map((p) => [p.person_id, p]));
   const subTeamOfHolder = (holderId: string): "rig" | "productivity" =>
@@ -498,16 +500,20 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const prodTeamItemsList = teamItemsFor("productivity");
   const rigTeamCount = rigTeamItemsList.length;
   const prodTeamCount = prodTeamItemsList.length;
+  const teamTotal = rigTeamCount + prodTeamCount;
   // Items in_stock at the rig team's own hub are already counted under "With rig team" (teamItemsFor
   // above) — exclude them from "In stock" so the tiles don't double-count and sum to the true total.
   const teamHubIds = new Set<string>([rigHubObj?.hub_id].filter((h): h is string => !!h));
   const inStockValue = items.filter((i) => i.status === "in_stock" && !teamHubIds.has(i.current_hub)).length;
-  // Both the "With rig team" and "With productivity team" tiles link here — there's only one physical
-  // hub, so the link can't filter by sub-team the way it filters by hub; the tiles' own counts are
-  // still accurate, just the destination list shows both sub-teams together.
+  // There's only one physical hub, so the link can't filter by sub-team the way it filters by hub — it
+  // shows both sub-teams together; the dropdown rows below link to the same place for now.
   const teamHref = rigHubObj
     ? inventory({ status: "with_rig,in_stock", hub: rigHubObj.hub_id })
     : inventory({ status: "with_rig" });
+  const teamBreakdown = [
+    { label: "Rig team", count: rigTeamCount, pct: teamTotal ? Math.round((rigTeamCount / teamTotal) * 100) : 0, href: teamHref },
+    { label: "Productivity team", count: prodTeamCount, pct: teamTotal ? Math.round((prodTeamCount / teamTotal) * 100) : 0, href: teamHref },
+  ];
 
   // The Broken tile's storage breakdown combines the admin's manual baseline (already-broken cards
   // that predate storage tracking, or were never scanned into the system) with the LIVE counts of
@@ -567,19 +573,12 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     },
     {
       label: "With rig team",
-      value: rigTeamCount,
-      hint: share(rigTeamCount),
+      value: teamTotal,
+      hint: share(teamTotal),
       href: teamHref,
       icon: "database",
       color: "var(--series-7)",
-    },
-    {
-      label: "With productivity team",
-      value: prodTeamCount,
-      hint: share(prodTeamCount),
-      href: teamHref,
-      icon: "database",
-      color: "var(--series-7)",
+      teams: teamBreakdown,
     },
     { label: "Internal", value: s.with_internal, hint: share(s.with_internal), href: inventory({ status: "with_internal" }), icon: "user", color: "var(--series-1)" },
     {
@@ -645,7 +644,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       color: "var(--series-1)",
     },
     ...sdKpis
-      .filter((k) => k.label !== "With rig team" && k.label !== "With productivity team" && k.label !== "Internal")
+      .filter((k) => k.label !== "With rig team" && k.label !== "Internal")
       .map((k) => {
         const isBroken = k.label === "Broken";
         return {
@@ -1113,7 +1112,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 .kpi-tile > a{flex:1;min-width:0}
 `}</style>
           {kpis.map((k) =>
-            k.cities || k.storage || k.hubs || k.baselineKey ? (
+            k.cities || k.storage || k.hubs || k.teams || k.baselineKey ? (
               <div key={k.label} className={styles.kpi} style={{ "--kpi": k.color, overflow: "visible" } as CSSProperties}>
                 <span className={styles.kpiIcon}>
                   <Icon name={k.icon} size={22} />
@@ -1330,6 +1329,22 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                             <span style={{ display: "inline-flex", gap: 10, alignItems: "baseline" }}>
                               <b>{n(h.count)}</b>
                               <span style={{ minWidth: 38, textAlign: "right", color: "#64748b", fontSize: "0.8rem" }}>{h.pct}%</span>
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                  {k.teams && k.teams.length > 0 && (
+                    <details className="kpi-city" name="kpi-dropdown">
+                      <summary>Rig / Productivity ({k.teams.length}) ▾</summary>
+                      <div>
+                        {k.teams.map((t) => (
+                          <Link key={t.label} href={t.href}>
+                            <span>{t.label}</span>
+                            <span style={{ display: "inline-flex", gap: 10, alignItems: "baseline" }}>
+                              <b>{n(t.count)}</b>
+                              <span style={{ minWidth: 38, textAlign: "right", color: "#64748b", fontSize: "0.8rem" }}>{t.pct}%</span>
                             </span>
                           </Link>
                         ))}
