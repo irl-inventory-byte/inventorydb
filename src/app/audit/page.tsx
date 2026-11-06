@@ -19,7 +19,9 @@ const FORM_ID = "audit-select-form";
  * them — that's logged (who, when) and shows up in the item's History, without changing its status.
  */
 export default async function AuditPage({ searchParams }: PageProps<"/audit">) {
-  const user = await requireRole(...VIEW_ROLES);
+  // VIEW_ROLES minus "internal" — Internal doesn't get City / Hub Audit (per request); kept in sync
+  // with the tile's own roles list on the home page (src/app/page.tsx).
+  const user = await requireRole(...VIEW_ROLES.filter((r) => r !== "internal"));
   const sp = await searchParams;
   const q = one(sp.q).trim().toLowerCase();
   const city = one(sp.city);

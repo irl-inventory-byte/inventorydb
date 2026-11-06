@@ -68,7 +68,9 @@ const WORK: Tile[] = [
     title: "City / Hub Audit",
     desc: "Every SD card, rig and mobile with no activity for 1+ day, by city and hub.",
     icon: "pin",
-    roles: VIEW_ROLES,
+    // VIEW_ROLES minus "internal" — Internal doesn't get this tile (per request), but still gets
+    // Dashboard and Receipts, which stay on the full VIEW_ROLES list.
+    roles: VIEW_ROLES.filter((r) => r !== "internal"),
   },
   {
     href: "/handover/send",
