@@ -107,6 +107,26 @@ export default function ScanBox({
       ),
     [items]
   );
+  // Cards split into two or more physically tagged pieces (e.g. "SD-5381D1CDE0AL-D1" and
+  // "SD-5381D1CDE0AL-D2" — same base serial, trailing "-D<number>"). When more than one piece of the
+  // same card shows up among the current scans, each is flagged "(duplicate)" in its status line below
+  // so it's clear they're siblings, not two unrelated cards. See also dashboard/page.tsx's "Duplicate
+  // cards" tile, which counts the same thing across the whole inventory.
+  const splitFamilyIds = useMemo(() => {
+    const baseOf = (id: string) => id.replace(/-D\d+$/i, "");
+    const byBase = new Map<string, Set<string>>();
+    for (const r of results) {
+      if (!r.id) continue;
+      const base = baseOf(r.id);
+      if (base === r.id) continue; // no "-D<number>" suffix
+      if (!byBase.has(base)) byBase.set(base, new Set());
+      byBase.get(base)!.add(r.id);
+    }
+    const flagged = new Set<string>();
+    for (const ids of byBase.values()) if (ids.size > 1) for (const id of ids) flagged.add(id);
+    return flagged;
+  }, [results]);
+
   const ok = results.filter((r) => r.state === "ok").length;
   // SD card or Rig for each matched item, so mixed batches are easy to check.
   const typeOf = useMemo(() => new Map(items.map((i) => [i.id, i.type ?? "sd_card"])), [items]);
@@ -206,6 +226,7 @@ export default function ScanBox({
                 <span className={styles.msg}>
                   {critical && CRITICAL[r.status!]}
                   {!critical && r.state === "ok" && (STATUS_LABELS[r.status as Status] ?? r.status)}
+                  {!critical && r.state === "ok" && r.id && splitFamilyIds.has(r.id) && " (duplicate)"}
                   {!critical && r.id && qcOf.has(r.id) && ` · ${qcOf.get(r.id)}`}
                   {!critical &&
                     r.state === "wrong" &&

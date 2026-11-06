@@ -15,6 +15,11 @@ export interface CorrectionInput {
   holder: string; // person_id, needed for pending / traveling / with_fo / with_rig
   homeHub: string; // hub_id, or "" to keep
   note: string;
+  // Moves a card between the rig team's two stock pools without sending it to anyone — e.g. an admin
+  // sorting SD cards sitting in stock at the rig hub into "Rig team" or "Productivity team" stock.
+  // "" keeps the card's current sub_team (normal corrections don't touch it). Only "rig" and
+  // "productivity" are meaningful; see schema.ts's TABS.items and dashboard/page.tsx's "With rig team".
+  team?: "rig" | "productivity" | "";
 }
 
 export interface CorrectionContext {
@@ -84,11 +89,13 @@ export function planCorrection(
     const newHub =
       input.hub || (HUB_FROM_HOLDER.has(status) && holder ? holder.hub : item.current_hub);
     const newHome = input.homeHub || item.home_hub;
+    const newTeam = input.team === "rig" || input.team === "productivity" ? input.team : item.sub_team;
 
     const stateChanged =
       status !== item.status || newHub !== item.current_hub || newHolder !== item.current_holder;
     const homeChanged = newHome !== item.home_hub;
-    if (!stateChanged && !homeChanged) {
+    const teamChanged = newTeam !== item.sub_team;
+    if (!stateChanged && !homeChanged && !teamChanged) {
       plan.unchanged.push(item.item_id);
       continue;
     }
@@ -123,6 +130,22 @@ export function planCorrection(
         hub: newHub,
         status_after: status,
       });
+    } else if (teamChanged) {
+      // Only the rig/productivity team pool changed (e.g. sorting in-stock cards) — nothing else about
+      // the item moved, but there must still be an event to log the change and hang last_event_id off.
+      events.push({
+        ...base,
+        event_id: ctx.newId("e"),
+        item_id: item.item_id,
+        action: "correct",
+        from_person: displayName(ctx.people, item.current_holder),
+        to_person: displayName(ctx.people, newHolder),
+        from_id: item.current_holder,
+        to_id: newHolder,
+        from_hub: item.current_hub,
+        hub: newHub,
+        status_after: status,
+      });
     }
     plan.events.push(...events);
     plan.items.push({
@@ -131,6 +154,7 @@ export function planCorrection(
       current_hub: newHub,
       current_holder: newHolder,
       home_hub: newHome,
+      sub_team: newTeam,
       last_event_id: events[events.length - 1].event_id,
       updated_at: ctx.now,
     });

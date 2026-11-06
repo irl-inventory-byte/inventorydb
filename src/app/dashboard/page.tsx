@@ -557,6 +557,25 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const brokenValue = brokenStorageOverride ? brokenCombinedTotal : brokenSdOnly;
   const retiredValue = retiredBaseline !== undefined ? retiredBaseline + s.retired : s.retired;
 
+  // "Duplicate cards": SD cards split into two or more physically tagged pieces that share one base
+  // serial — e.g. "SD-5381D1CDE0AL-D1" and "SD-5381D1CDE0AL-D2" are both pieces of "SD-5381D1CDE0AL".
+  // A card counts here when ANOTHER sd_card item (any status) shares its base serial; both pieces of a
+  // pair count, so a two-piece card adds 2 to this tile. See also ScanBox.tsx, which flags the same
+  // thing ("In stock (duplicate)") when both pieces are scanned together on the Send/Receive page.
+  const baseSerial = (id: string) => id.replace(/-D\d+$/i, "");
+  const dupFamilySize = new Map<string, number>();
+  for (const i of items) {
+    if (i.item_type !== "sd_card") continue;
+    const base = baseSerial(i.item_id);
+    if (base === i.item_id) continue; // no "-D<number>" suffix — not part of a split family
+    dupFamilySize.set(base, (dupFamilySize.get(base) ?? 0) + 1);
+  }
+  const duplicateValue = items.filter((i) => {
+    if (i.item_type !== "sd_card") return false;
+    const base = baseSerial(i.item_id);
+    return base !== i.item_id && (dupFamilySize.get(base) ?? 0) > 1;
+  }).length;
+
   // SD CARDS (and the "All" view): unchanged.
   const sdKpis: Kpi[] = [
     {
@@ -633,6 +652,17 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       // No "starting count" edit box on this tile anymore (removed per request) — retiredValue still
       // adds whatever baseline was set earlier (retiredBaseline, from settings), just not editable here.
     },
+    {
+      label: "Duplicate cards",
+      value: duplicateValue,
+      hint: share(duplicateValue),
+      // The inventory search has no "duplicate family" filter yet, so this opens the SD card list —
+      // narrow it further by typing the base serial (e.g. "SD-5381D1CDE0AL") into the search box.
+      href: inventory({ type: "sd_card" }),
+      icon: "layers",
+      color: "var(--series-7)",
+      defn: "SD cards split into two or more tagged pieces (e.g. …-D1, …-D2) — every piece counts here.",
+    },
   ];
 
   // Mobiles: the SD card tiles, without the rig team and internal ones (mobiles go only to IMs, FOs and IFOs),
@@ -652,7 +682,9 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       color: "var(--series-1)",
     },
     ...sdKpis
-      .filter((k) => k.label !== "With rig team" && k.label !== "Internal")
+      // "Duplicate cards" is an SD-card-only concept (split-card serials like "…-D1"/"…-D2"), so it's
+      // left off the mobile tab along with the SD-card-only "With rig team" and "Internal" tiles.
+      .filter((k) => k.label !== "With rig team" && k.label !== "Internal" && k.label !== "Duplicate cards")
       .map((k) => {
         const isBroken = k.label === "Broken";
         return {

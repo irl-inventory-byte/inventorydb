@@ -116,6 +116,7 @@ export async function applyCorrection(formData: FormData) {
     ).values(),
   ];
 
+  const teamRaw = String(formData.get("team") ?? "");
   const plan = planCorrection(
     targets,
     {
@@ -124,6 +125,7 @@ export async function applyCorrection(formData: FormData) {
       holder: String(formData.get("holder") ?? ""),
       homeHub: String(formData.get("homeHub") ?? ""),
       note: String(formData.get("note") ?? ""),
+      team: teamRaw === "rig" || teamRaw === "productivity" ? teamRaw : "",
     },
     {
       hubs,
@@ -339,6 +341,29 @@ export async function lookupAsset(serial: string) {
     condition: found.condition ?? "",
   };
 }
+
+/**
+ * DUPLICATE-FAMILY CHECK: Admin, IM and Rig. Called from the Add item form as the Serial / Asset Tag
+ * field is typed. A card split into two or more physically tagged pieces shares one base serial with a
+ * trailing "-D<number>" (e.g. "SD-5381D1CDE0AL-D1" and "SD-5381D1CDE0AL-D2" are both pieces of
+ * "SD-5381D1CDE0AL"). Returns the ids of any OTHER item already in inventory with that same base serial,
+ * so the form can warn before saving — same family this card is being added to, not a true duplicate
+ * (two identical serials), which addItem already rejects on its own. See also dashboard/page.tsx's
+ * "Duplicate cards" tile and ScanBox.tsx, which flag the same family elsewhere.
+ */
+export async function checkDuplicateFamily(itemId: string): Promise<string[]> {
+  await requireRole("admin", "im", "rig");
+
+  const id = itemId.trim();
+  const base = id.replace(/-D\d+$/i, "");
+  if (!id || base === id) return []; // no "-D<number>" suffix — not part of a split family
+
+  const items = await getStore().list("items");
+  return items
+    .filter((i) => i.item_id !== id && i.item_id.replace(/-D\d+$/i, "") === base)
+    .map((i) => i.item_id);
+}
+
 /* ------------------------------------------------------------------ */
 /* ADD MULTIPLE ITEMS                                                  */
 /* ------------------------------------------------------------------ */

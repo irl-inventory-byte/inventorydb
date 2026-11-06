@@ -10,7 +10,7 @@ import { useFormStatus } from "react-dom";
 import styles from "../admin/admin.module.css";
 import CameraAddBox from "./CameraAddBox";
 import { cameraAddSdCard } from "./camera-add";
-import { addItem, lookupAsset } from "./actions";
+import { addItem, lookupAsset, checkDuplicateFamily } from "./actions";
 
 type Hubs = {
   hub_id: string;
@@ -68,6 +68,10 @@ export default function AddCardForm({
   const [sheetDate, setSheetDate] = useState(""); // "Date" from the SD card sheet, display only
   const [condition, setCondition] = useState(""); // "New/Old" from the SD card sheet, display only
   const [note, setNote] = useState("");
+  // Set when this serial shares its base ("…-D1" / "…-D2" etc.) with another item already in
+  // inventory — see checkDuplicateFamily in ./actions. Cleared whenever the serial changes.
+  const [dupWarning, setDupWarning] = useState("");
+  const dupCheckId = useRef(0);
 
   const [lookingUp, setLookingUp] = useState(false);
   const [waitingToLookup, setWaitingToLookup] =
@@ -130,6 +134,7 @@ export default function AddCardForm({
     setLookingUp(false);
     clearDetails();
     setNote("");
+    setDupWarning("");
 
     const trimmed = value.trim();
 
@@ -144,11 +149,35 @@ export default function AddCardForm({
     }, 600);
   }
 
+  // Checks whether this serial is one piece of a split card that already has another piece in
+  // inventory (e.g. typing "…-D2" when "…-D1" is already saved) and warns if so. Runs alongside the
+  // asset-sheet lookup, on the same triggers (typing pause, blur, Enter) — not required before saving.
+  async function checkDup(value: string) {
+    const trimmed = value.trim();
+    const currentCheck = ++dupCheckId.current;
+    if (!trimmed) {
+      setDupWarning("");
+      return;
+    }
+    try {
+      const siblings = await checkDuplicateFamily(trimmed);
+      if (currentCheck !== dupCheckId.current) return;
+      setDupWarning(
+        siblings.length
+          ? `Heads up: ${siblings.join(", ")} already exists with the same base serial — this will be saved as its duplicate pair.`
+          : ""
+      );
+    } catch {
+      // Non-critical — leave whatever warning (or lack of one) was already showing.
+    }
+  }
+
   async function lookup(
     value: string,
     force = false
   ) {
     cancelScheduledLookup();
+    void checkDup(value);
 
     const trimmed = value.trim();
 
@@ -321,6 +350,22 @@ export default function AddCardForm({
             onOpen={() => hubRef.current?.reportValidity() ?? false}
             save={(code) => cameraAddSdCard(code, hubRef.current?.value ?? "")}
           />
+          {dupWarning && (
+            <p
+              role="status"
+              style={{
+                margin: 0,
+                fontSize: "0.78rem",
+                color: "#854d0e",
+                background: "#fef9c3",
+                border: "1px solid #eab308",
+                borderRadius: 6,
+                padding: "6px 10px",
+              }}
+            >
+              {dupWarning}
+            </p>
+          )}
         </div>
 
         {/* Home hub is mandatory. No default hub is selected. */}
