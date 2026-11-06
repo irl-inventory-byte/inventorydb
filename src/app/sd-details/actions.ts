@@ -54,16 +54,12 @@ export async function saveSdDetails(formData: FormData) {
   const failedHours = String(formData.get("failed_hours") ?? "").trim();
   const failedRawClips = String(formData.get("failed_raw_clips") ?? "").trim();
   const rawClips = String(formData.get("raw_clips") ?? "").trim();
-  // Rig form only: which hub actually sent this in — "Rig team" or "Productivity team" (same role,
-  // two different hubs; see lib/rig-hub.ts). Not asked on the IM form, so always "" there.
-  const subTeamRaw = String(formData.get("sub_team") ?? "").trim();
-  const subTeam = team === "rig" ? (subTeamRaw === "productivity" ? "productivity" : "rig") : "";
+  // Rig form only: not asked on the form anymore (removed per request) — every Rig-form entry is just
+  // recorded as "Rig team". Still "" for IM entries. See sd-details/SdDetailsForm.tsx.
+  const subTeam = team === "rig" ? "rig" : "";
 
   if (!cardDate || !teamMember || !icName || !city || !serial || !duration || !rawClips) {
     back({ error: "Fill in all the required fields." });
-  }
-  if (team === "rig" && subTeamRaw !== "rig" && subTeamRaw !== "productivity") {
-    back({ error: "Choose Rig team or Productivity team." });
   }
   if (!icNumber.startsWith("IC-")) back({ error: "IC-Number must start with IC-." });
   if (!/^\d{1,2}:\d{2}:\d{2}$/.test(duration)) back({ error: "Duration must be in HH:MM:SS format, e.g. 01:30:45." });

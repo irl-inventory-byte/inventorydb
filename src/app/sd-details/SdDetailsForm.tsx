@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 import type { SdCardDuration } from "@/lib/schema";
 import { formatIst } from "@/lib/time";
 import { lookupSdDetailsBySerial } from "./actions";
@@ -37,6 +37,8 @@ export default function SdDetailsForm({
   const [duration, setDuration] = useState("");
   const [rawClips, setRawClips] = useState("");
   const [autofillStatus, setAutofillStatus] = useState<"" | "looking" | "filled" | "none">("");
+  // So the SD card date field can trigger the same lookup as the serial field — see its onBlur below.
+  const serialRef = useRef<HTMLInputElement>(null);
 
   async function runLookup(rawSerial: string) {
     const serial = rawSerial.trim();
@@ -81,21 +83,20 @@ export default function SdDetailsForm({
         style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, alignItems: "end", marginBottom: 20 }}
       >
         <input type="hidden" name="team" value={team} />
-        {team === "rig" && (
-          <label style={field}>
-            Team *
-            <select name="sub_team" required defaultValue="" style={input}>
-              <option value="" disabled>
-                Select team
-              </option>
-              <option value="rig">Rig team</option>
-              <option value="productivity">Productivity team</option>
-            </select>
-          </label>
-        )}
         <label style={field}>
           SD card date *
-          <input type="date" name="card_date" required max={new Date().toISOString().slice(0, 10)} style={input} />
+          <input
+            type="date"
+            name="card_date"
+            required
+            max={new Date().toISOString().slice(0, 10)}
+            style={input}
+            onBlur={(e) => {
+              // Whichever of serial/date is filled in second triggers the lookup — so it fires
+              // whether the card is scanned first or the date is picked first.
+              if (e.currentTarget.value && serialRef.current?.value.trim()) runLookup(serialRef.current.value);
+            }}
+          />
         </label>
         <label style={field}>
           {memberLabel} *
@@ -122,6 +123,7 @@ export default function SdDetailsForm({
             required
             placeholder="Serial or asset tag"
             style={input}
+            ref={serialRef}
             onBlur={(e) => runLookup(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
