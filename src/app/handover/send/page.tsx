@@ -14,6 +14,7 @@ import QcSendFields from "./QcSendFields";
 import SendToFields from "./SendToFields";
 import { personHasRole, secondaryByPerson } from "@/lib/roles";
 import { mobileAliases } from "@/lib/scan";
+import BackLink from "../../BackLink";
 
 // The Send to list, grouped so it is easy to scan. What each group means is in the hint under the field.
 const GROUP_LABELS: Record<string, string> = {
@@ -121,7 +122,7 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
   return (
     <main className={styles.page}>
       <p className={styles.back}>
-        <Link href="/">← Home</Link>
+        <BackLink />
       </p>
       <h1>Send items</h1>
 

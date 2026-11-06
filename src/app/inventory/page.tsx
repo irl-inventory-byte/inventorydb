@@ -21,6 +21,7 @@ import BulkAddForm from "./BulkAddForm";
 import { applyCorrection } from "./actions";
 import CorrectionPanel from "./CorrectionPanel";
 import SearchBox from "./SearchBox";
+import BackLink from "../BackLink";
 
 const PAGE_SIZE = 100;
 
@@ -700,7 +701,7 @@ export default async function InventoryPage({
   return (
     <main className={styles.pageWide}>
       <p className={styles.back}>
-        <Link href="/">← Home</Link>
+        <BackLink />
       </p>
 
       {/* No logo on Inventory. Keep the logo in the receipt page only. */}

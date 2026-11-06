@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { requireRole } from "@/lib/authz";
 import { one } from "@/lib/labels";
 import { wouldCreateCycle } from "@/lib/hub-tree";
@@ -6,6 +5,7 @@ import { getStore } from "@/lib/store";
 import styles from "../admin.module.css";
 import { addHub } from "./actions";
 import HubRow from "./HubRow";
+import BackLink from "../../BackLink";
 
 const ERRORS: Record<string, string> = {
   invalid: "Please enter a valid name.",
@@ -37,7 +37,7 @@ export default async function HubsPage({ searchParams }: PageProps<"/admin/hubs"
   return (
     <main className={styles.page}>
       <p className={styles.back}>
-        <Link href="/">← Home</Link>
+        <BackLink />
       </p>
       <h1>Hubs</h1>
       <p className={styles.muted}>

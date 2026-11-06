@@ -7,6 +7,7 @@ import styles from "../admin.module.css";
 import { addPerson } from "./actions";
 import ImportForm from "./ImportForm";
 import PersonRow from "./PersonRow";
+import BackLink from "../../BackLink";
 
 const ROLE_LABELS = {
   im: "IM",
@@ -155,7 +156,7 @@ export default async function PeoplePage({
   return (
     <main className={styles.page}>
       <p className={styles.back}>
-        <Link href="/">← Home</Link>
+        <BackLink />
       </p>
 
       <h1>People</h1>

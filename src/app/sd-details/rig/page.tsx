@@ -1,13 +1,17 @@
-import Link from "next/link";
 import { requireRole } from "@/lib/authz";
 import { one } from "@/lib/labels";
 import { getStore } from "@/lib/store";
 import styles from "../../admin/admin.module.css";
 import SdDetailsForm from "../SdDetailsForm";
 import { saveSdDetails } from "../actions";
+import Link from "next/link";
 
 /** Rig SD card details — admin and Rig team only. See src/app/sd-details/SdDetailsForm.tsx / actions.ts. */
-export default async function RigSdDetailsPage({ searchParams }: PageProps<"/sd-details/rig">) {
+export default async function RigSdDetailsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ saved?: string | string[]; error?: string | string[] }>;
+}) {
   const user = await requireRole("admin", "rig");
   const sp = await searchParams;
 
@@ -50,7 +54,7 @@ export default async function RigSdDetailsPage({ searchParams }: PageProps<"/sd-
   return (
     <main className={styles.pageWide}>
       <p className={styles.back}>
-        <Link href="/">← Home</Link>
+        <Link href="/sd-details">Back</Link>
       </p>
       <h1>Rig SD card details</h1>
       <p className={styles.muted}>SD Card Duration Hour — recorded here and also sent to the Google Sheet.</p>

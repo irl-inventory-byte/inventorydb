@@ -137,7 +137,7 @@ export default async function SdDetailsPage({
   return (
     <main className={styles.pageWide}>
       <p className={styles.back}>
-        <Link href="/">← Home</Link> · <Link href="/dashboard">Dashboard</Link>
+        <Link href="/">← Back</Link> · <Link href="/dashboard">Dashboard</Link>
       </p>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0 }}>SD card details ({all.length})</h1>

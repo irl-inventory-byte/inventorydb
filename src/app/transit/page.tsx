@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/authz";
 import { one } from "@/lib/labels";
 import { formatIst } from "@/lib/time";
 import styles from "../admin/admin.module.css";
+import BackLink from "../BackLink";
 
 const TYPE_NAME: Record<string, string> = { sd_card: "SD card", rig: "Rig", mobile: "Mobile" };
 
@@ -104,7 +105,7 @@ export default async function TransitPage({
   return (
     <main className={styles.pageWide}>
       <p className={styles.back}>
-        <Link href="/">← Home</Link> · <Link href="/dashboard">Dashboard</Link>
+        <BackLink /> · <Link href="/dashboard">Dashboard</Link>
       </p>
       <h1>In transit ({allRows.length})</h1>
       <p className={styles.muted}>Items currently moving between hubs — status traveling or pending.</p>

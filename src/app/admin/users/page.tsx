@@ -6,6 +6,7 @@ import { getStore } from "@/lib/store";
 import styles from "../admin.module.css";
 import { addUser } from "./actions";
 import UserRow from "./UserRow";
+import BackLink from "../../BackLink";
 
 const ERRORS: Record<string, string> = {
   invalid: "Please enter a valid email and role.",
@@ -89,7 +90,7 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
   return (
     <main className={styles.page}>
       <p className={styles.back}>
-        <Link href="/">← Home</Link>
+        <BackLink />
       </p>
       <h1>Users</h1>
       <p className={styles.muted}>

@@ -8,13 +8,14 @@ import { requireRole } from "@/lib/authz";
 import { one } from "@/lib/labels";
 import { RECEIVE_ROLES, handoverStoreFor } from "@/lib/access";
 import { formatIst } from "@/lib/time";
-import type { Role, Status } from "@/lib/schema";
+import type { ItemEvent, Role, Status } from "@/lib/schema";
 import styles from "../../admin/admin.module.css";
 import { receiveCards } from "../actions";
 import HubSelect from "./HubSelect";
 import { mobileAliases } from "@/lib/scan";
 import { linkProblem, type LoginRole } from "@/lib/user-link";
 import ReceiveScanArea from "./ReceiveScanArea";
+import BackLink from "../../BackLink";
 
 export default async function ReceivePage({
   searchParams,
@@ -23,12 +24,15 @@ export default async function ReceivePage({
   const sp = await searchParams;
   const store = handoverStoreFor(user.role);
 
+  // Events (the biggest table) are only needed for the QC/hardware "whole team" view below (to show who
+  // sent each waiting rig and when) — everyone else never reads them, so skip that download for them.
+  const needsEvents = user.role === "qc" || user.role === "hardware";
   const [items, hubs, people, users, events] = await Promise.all([
     store.list("items"),
     store.list("hubs"),
     store.list("people"),
     store.list("users"),
-    store.list("events"),
+    needsEvents ? store.list("events") : Promise.resolve([] as ItemEvent[]),
   ]);
 
   const activeHubs = hubs
@@ -82,7 +86,7 @@ export default async function ReceivePage({
     return (
       <main className={styles.page}>
         <p className={styles.back}>
-          <Link href="/">← Home</Link>
+          <BackLink />
         </p>
         <h1>Receive rigs</h1>
         <p className={styles.muted}>
@@ -236,7 +240,7 @@ export default async function ReceivePage({
   return (
     <main className={styles.page}>
       <p className={styles.back}>
-        <Link href="/">← Home</Link>
+        <BackLink />
       </p>
 
       <h1>Receive items</h1>

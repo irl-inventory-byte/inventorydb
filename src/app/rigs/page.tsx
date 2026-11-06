@@ -6,6 +6,7 @@ import type { HardwareUpdate, QcCheck } from "@/lib/schema";
 import { RIG_STATES, RIG_STATE_LABELS, rigCondition, rigState, type RigState } from "@/lib/rig-state";
 import { formatIst } from "@/lib/time";
 import styles from "../admin/admin.module.css";
+import BackLink from "../BackLink";
 
 const QC_COLOR: Record<string, string> = {
   pass: "#15803D",
@@ -80,7 +81,7 @@ export default async function RigsPage({ searchParams }: PageProps<"/">) {
   return (
     <main className={styles.pageWide}>
       <p className={styles.back}>
-        <Link href="/">← Home</Link>
+        <BackLink />
       </p>
       <h1>Rig checks</h1>
       <p className={styles.muted}>

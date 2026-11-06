@@ -8,6 +8,7 @@ import { formatIst } from "@/lib/time";
 import styles from "../admin/admin.module.css";
 import { addLostNote } from "./actions";
 import ReportLostScan from "./ReportLostScan";
+import BackLink from "../BackLink";
 
 const TYPE_NAME: Record<string, string> = { sd_card: "SD card", rig: "Rig", mobile: "Mobile" };
 
@@ -65,7 +66,7 @@ export default async function LostItemsPage({ searchParams }: PageProps<"/lost">
   return (
     <main className={styles.pageWide}>
       <p className={styles.back}>
-        <Link href="/">← Home</Link> · <Link href="/dashboard">Dashboard</Link>
+        <BackLink /> · <Link href="/dashboard">Dashboard</Link>
       </p>
       <h1>
         {title} ({all.length})

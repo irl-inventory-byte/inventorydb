@@ -7,7 +7,7 @@ import { lastAuditedAt, unusedByCity, unusedByHub, unusedItems } from "@/lib/ite
 import { formatIst } from "@/lib/time";
 import styles from "../admin/admin.module.css";
 import { markAudited } from "./actions";
-import SelectAllCheckbox from "./Selectallcheckbox";
+import BackLink from "../BackLink";
 
 const TYPE_NAME: Record<string, string> = { sd_card: "SD card", rig: "Rig", mobile: "Mobile" };
 const MIN_DAYS = 1;
@@ -86,7 +86,7 @@ export default async function AuditPage({ searchParams }: PageProps<"/audit">) {
   return (
     <main className={styles.pageWide}>
       <p className={styles.back}>
-        <Link href="/">← Home</Link> · <Link href="/dashboard">Dashboard</Link>
+        <BackLink /> · <Link href="/dashboard">Dashboard</Link>
       </p>
       <h1>City / Hub Audit ({unused.length})</h1>
       <p className={styles.muted}>
@@ -207,9 +207,7 @@ export default async function AuditPage({ searchParams }: PageProps<"/audit">) {
             <table className={styles.table}>
               <thead>
                 <tr>
-                  <th>
-                    <SelectAllCheckbox formId={FORM_ID} />
-                  </th>
+                  <th>Select</th>
                   <th>Item</th>
                   <th>Type</th>
                   <th>Status</th>

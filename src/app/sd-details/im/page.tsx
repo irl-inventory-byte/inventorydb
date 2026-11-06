@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { requireRole } from "@/lib/authz";
 import { one } from "@/lib/labels";
 import { getStore } from "@/lib/store";
@@ -51,7 +50,7 @@ export default async function ImSdDetailsPage({
   return (
     <main className={styles.pageWide}>
       <p className={styles.back}>
-        <Link href="/">← Home</Link>
+        <a href="/sd-details">Back</a>
       </p>
       <h1>IM SD card details</h1>
       <p className={styles.muted}>SD Card Duration Hour — recorded here and also sent to the Google Sheet.</p>

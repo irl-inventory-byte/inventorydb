@@ -1,8 +1,8 @@
-import Link from "next/link";
 import { requireRole } from "@/lib/authz";
 import { getStore } from "@/lib/store";
 import { formatIst } from "@/lib/time";
 import styles from "../admin.module.css";
+import BackLink from "../../BackLink";
 
 /**
  * Admin-only log of permanently deleted items.
@@ -31,7 +31,7 @@ export default async function DeletionsPage() {
   return (
     <main className={styles.pageWide}>
       <p className={styles.back}>
-        <Link href="/">← Home</Link>
+        <BackLink />
       </p>
 
       <h1>Deleted items log</h1>

@@ -1,248 +1,256 @@
 import Link from "next/link";
-import { displayName } from "@/lib/actors";
+import SearchableSelect from "../../SearchableSelect";
 import { storeFor } from "@/lib/access";
 import { requireRole } from "@/lib/authz";
-import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
-import { inactiveRigs } from "@/lib/rig-metrics";
-import { getStore } from "@/lib/store";
+import { QC_LABELS, one } from "@/lib/labels";
+import { QC_STATUSES, type HardwareUpdate, type QcCheck } from "@/lib/schema";
+import {
+  auditParams,
+  auditPeople,
+  auditTotals,
+  auditUpdateTypes,
+  buildAuditEntries,
+  filterAuditEntries,
+  isEmptyFilter,
+  readAuditFilter,
+  resultLabel,
+} from "@/lib/rig-audit";
 import { formatIst } from "@/lib/time";
-import { NO_ACTIVITY_DAYS } from "../../dashboard/rig-metrics";
 import styles from "../../admin/admin.module.css";
-import ReportForm from "./ReportForm";
+import BackLink from "../../BackLink";
 
-const card = { border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, background: "#fff" } as const;
+const QC_COLOR: Record<string, string> = {
+  pass: "#15803D",
+  repaired: "#15803D",
+  fail: "#B42318",
+  qc_pending: "#8A4B00",
+};
+
+// Entries shown per page. The CSV download always holds every matching row.
+const PAGE_SIZE = 200;
+
+function numberText(value: number): string {
+  return value.toLocaleString("en-IN");
+}
 
 /**
- * RIG AUDIT (was "Unknown rigs"): rigs with no handover, QC result or hardware update for more than NO_ACTIVITY_DAYS days
- * (rigs with hardware, dead, R&D, lost or damaged are left out). Admin, IM and Hardware team.
- * Click a rig to see who reported it, where it is, why, with a photo, and to add a new report.
+ * QC & HARDWARE AUDIT TRAIL: every QC result and hardware update ever recorded,
+ * filterable by date, person, rig and result, with a CSV download.
+ *
+ * Read-only. Results and updates are still recorded on the rig's own page.
  */
-export default async function UnknownRigsPage({ searchParams }: PageProps<"/">) {
-  const user = await requireRole("admin", "im", "hardware");
+export default async function RigAuditPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const user = await requireRole("admin", "im", "hardware", "qc");
   const sp = await searchParams;
-  const q = one(sp.q).trim().toLowerCase();
-  const rigId = one(sp.rig);
+  const filter = readAuditFilter((key) => one(sp[key]));
 
   const store = storeFor(user.role, "rig");
-  const [rigs, events, people, hubs, qcChecks, hardware, reports] = await Promise.all([
+  const [items, qcChecks, hardwareUpdates] = await Promise.all([
     store.list("items"),
-    store.list("events"),
-    store.list("people"),
-    store.list("hubs"),
-    store.list("qc_checks"),
-    store.list("hardware_updates"),
-    getStore().list("rig_reports"),
+    store.list("qc_checks").catch(() => [] as QcCheck[]),
+    store.list("hardware_updates").catch(() => [] as HardwareUpdate[]),
   ]);
-  const now = new Date();
-  // Audit reports count as activity, so a rig someone has just gone and found leaves this list.
-  const unknown = inactiveRigs(rigs, events, qcChecks, hardware, now, NO_ACTIVITY_DAYS, reports);
 
-  const byId = new Map(rigs.map((r) => [r.item_id, r]));
-  const hubName = new Map(hubs.map((h) => [h.hub_id, h.name]));
-  const hubCity = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
-  const reportsOf = (id: string) => reports.filter((r) => r.item_id === id).reverse(); // newest first
+  const all = buildAuditEntries({ items, qcChecks, hardwareUpdates });
+  const shown = filterAuditEntries(all, filter);
+  const totals = auditTotals(shown);
 
-  const shown = unknown.filter((u) => {
-    if (!q) return true;
-    const r = byId.get(u.item_id);
-    const where = [displayName(people, u.holder), hubName.get(r?.current_hub ?? ""), hubCity.get(r?.current_hub ?? "")];
-    return [u.item_id, r?.prism_no, r?.brand, r?.model, ...where].some((v) => (v ?? "").toLowerCase().includes(q));
-  });
+  // The dropdowns list whoever and whatever is actually in the data.
+  const people = auditPeople(all);
+  const updateTypes = auditUpdateTypes(all);
 
-  const rig = rigId ? byId.get(rigId) : undefined;
-  const rigUnknown = rig ? unknown.find((u) => u.item_id === rig.item_id) : undefined;
-  const rigReports = rig ? reportsOf(rig.item_id) : [];
-  const keep = (extra: Record<string, string>) => `/rigs/unknown?${new URLSearchParams({ ...(q && { q }), ...extra })}`;
-  const me = displayName(people, user.personId ?? "") || user.name || user.email || "You";
+  // Paging keeps the filter.
+  const requestedPage = Number(one(sp.page));
+  const totalPages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+  const page = Math.min(
+    totalPages,
+    Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1,
+  );
+  const pageRows = shown.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const pageHref = (n: number) => {
+    const q = auditParams(filter, { page: String(n) });
+    return q ? `/rigs/audit?${q}` : "/rigs/audit";
+  };
+
+  const csvHref = () => {
+    const q = auditParams(filter);
+    return q ? `/rigs/audit/export?${q}` : "/rigs/audit/export";
+  };
 
   return (
     <main className={styles.pageWide}>
       <p className={styles.back}>
-        <Link href="/">← Home</Link> · <Link href="/dashboard?type=rig">Rig dashboard</Link>
+        <BackLink /> · <Link href="/rigs">Rig checks</Link>
       </p>
-      <h1>Rig Audit ({unknown.length})</h1>
+
+      <div className={styles.pageHead}>
+        <h1>QC &amp; hardware audit trail</h1>
+
+        <div className={styles.row}>
+          <a href={csvHref()} className={styles.back}>
+            Download CSV
+          </a>
+        </div>
+      </div>
+
       <p className={styles.muted}>
-        Rigs with no handover, QC result or hardware update for more than {NO_ACTIVITY_DAYS} days. Rigs with the
-        hardware team, dead, R&amp;D, lost or damaged are not counted. Click a rig to see its reports (who, where, why,
-        photo) or to add an audit report. Location, role, person, reason and photo are required.
+        Every QC result and hardware update that has been recorded, newest first. Times are IST.
+        {isEmptyFilter(filter) ? "" : " Filtered."} Record new results on a rig&apos;s own page from{" "}
+        <Link href="/rigs">Rig checks</Link>.
       </p>
 
-      {rig && (
-        <section id="report" style={{ ...card, display: "grid", gap: 14, scrollMarginTop: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8, alignItems: "baseline" }}>
-            <h2 style={{ margin: 0 }}>
-              Rig {rig.item_id}
-              {[rig.brand, rig.model].filter(Boolean).length > 0 && (
-                <span className={styles.muted} style={{ fontWeight: 400 }}> · {[rig.brand, rig.model].filter(Boolean).join(" ")}</span>
-              )}
-            </h2>
-            <Link href={`${keep({})}#list`}>Close</Link>
-          </div>
+      {/* Summary of whatever is currently filtered in. */}
+      <p className={styles.muted}>
+        <strong>{numberText(totals.entries)}</strong> entries ·{" "}
+        {numberText(totals.qc)} QC results ({numberText(totals.pass)} pass, {numberText(totals.fail)} fail) ·{" "}
+        {numberText(totals.hardware)} hardware updates · {numberText(totals.rigs)} rigs ·{" "}
+        {numberText(totals.people)} people
+      </p>
 
-          {one(sp.saved) === "1" && <p className={styles.ok}>Report saved.</p>}
-          {one(sp.error) && <p className={styles.error}>{one(sp.error)}</p>}
+      <form className={styles.row} method="get" aria-label="Filter the audit trail">
+        <label>
+          From
+          <input type="date" name="from" defaultValue={filter.from} />
+        </label>
 
-          <dl className={styles.facts}>
-            <dt>Status</dt>
-            <dd style={{ margin: 0 }}>{STATUS_LABELS[rig.status] ?? rig.status}</dd>
-            <dt>Last with</dt>
-            <dd style={{ margin: 0 }}>{displayName(people, rig.current_holder) || "—"}</dd>
-            <dt>Hub · City</dt>
-            <dd style={{ margin: 0 }}>
-              {hubName.get(rig.current_hub) ?? (rig.current_hub || "—")} · {hubCity.get(rig.current_hub) ?? "—"}
-            </dd>
-            <dt>Last activity</dt>
-            <dd style={{ margin: 0 }}>
-              {rigUnknown ? `${formatIst(rigUnknown.lastActivity)} · ${rigUnknown.days} days ago` : "Recent (not unknown now)"}
-            </dd>
-            <dt>Full history</dt>
-            <dd style={{ margin: 0 }}>
-              <Link href={`/inventory/${encodeURIComponent(rig.item_id)}`}>Open in Inventory</Link>
-            </dd>
-          </dl>
+        <label>
+          To
+          <input type="date" name="to" defaultValue={filter.to} />
+        </label>
 
-          <div>
-            <h3 style={{ margin: "4px 0 8px" }}>Reports ({rigReports.length})</h3>
-            {rigReports.length === 0 ? (
-              <p className={styles.muted}>No reports yet. Add the first one below.</p>
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
-                {rigReports.map((r) => (
-                  <article
-                    key={r.report_id}
-                    style={{ display: "flex", gap: 14, flexWrap: "wrap", border: "1px solid #eef0f3", borderRadius: 10, padding: 12 }}
-                  >
-                    {r.photo.startsWith("data:image/") ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={r.photo}
-                        alt={`Photo of rig ${rig.item_id}`}
-                        style={{ width: 180, maxWidth: "100%", height: "auto", borderRadius: 8, border: "1px solid #e5e7eb", objectFit: "cover" }}
-                      />
-                    ) : (
-                      /*
-                       * Two different reasons for no picture, kept apart so it is clear which one it is:
-                       * the photo was never saved, or something is stored but it is not a usable image
-                       * (for example a photo cut short when the data was moved to Supabase).
-                       */
-                      <div
-                        style={{ width: 180, minHeight: 120, borderRadius: 8, background: "#f3f4f6", display: "grid", placeItems: "center", color: "#6b7280", fontSize: "0.8rem", textAlign: "center", padding: 10, lineHeight: 1.35 }}
-                      >
-                        {r.photo
-                          ? "Photo is damaged and cannot be shown. It may still be in the Google Sheet."
-                          : "No photo saved with this report."}
-                      </div>
-                    )}
-                    <dl className={styles.facts} style={{ flex: "1 1 260px", alignContent: "start" }}>
-                      <dt>Login person</dt>
-                      <dd style={{ margin: 0 }}>
-                        <b>{r.recorded_by_name || r.recorded_by}</b>
-                        {r.recorded_by_name && r.recorded_by && r.recorded_by_name !== r.recorded_by ? (
-                          <span className={styles.muted}> · {r.recorded_by}</span>
-                        ) : null}
-                      </dd>
-                      <dt>Location</dt>
-                      <dd style={{ margin: 0 }}>
-                        {r.location || "—"}
-                        {r.hub_id && hubCity.get(r.hub_id) && hubCity.get(r.hub_id) !== r.location ? ` · ${hubCity.get(r.hub_id)}` : ""}
-                      </dd>
-                      <dt>With (person)</dt>
-                      <dd style={{ margin: 0 }}>
-                        {r.person_name || "—"}
-                        {r.role ? <span className={styles.muted}> · {ROLE_LABELS[r.role as keyof typeof ROLE_LABELS] ?? r.role}</span> : null}
-                      </dd>
-                      <dt>Reason</dt>
-                      <dd style={{ margin: 0, whiteSpace: "pre-wrap" }}>{r.reason || "—"}</dd>
-                      <dt>When</dt>
-                      <dd style={{ margin: 0 }}>{formatIst(r.recorded_at)}</dd>
-                    </dl>
-                  </article>
+        <label>
+          Type
+          <select name="kind" defaultValue={filter.kind}>
+            <option value="">QC and hardware</option>
+            <option value="qc">QC results</option>
+            <option value="hardware">Hardware updates</option>
+          </select>
+        </label>
+
+        <label>
+          Result
+          <select name="result" defaultValue={filter.result}>
+            <option value="">Any result</option>
+            <optgroup label="QC">
+              {QC_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {QC_LABELS[status] ?? status}
+                </option>
+              ))}
+            </optgroup>
+            {updateTypes.length > 0 && (
+              <optgroup label="Hardware update">
+                {updateTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
                 ))}
-              </div>
+              </optgroup>
             )}
-          </div>
+          </select>
+        </label>
 
-          <div>
-            <h3 style={{ margin: "4px 0 8px" }}>Add an audit report</h3>
-            <ReportForm
-              rig={rig.item_id}
-              who={me}
-              defaultHub={rig.current_hub}
-              hubs={hubs
-                .filter((h) => h.active !== "false")
-                .sort((a, b) => a.name.localeCompare(b.name))
-                .map((h) => ({ id: h.hub_id, name: h.name, city: (h.city || "").trim() }))}
-              people={people
-                .filter((p) => p.active !== "false")
-                .sort((a, b) => a.name.localeCompare(b.name))
-                .map((p) => ({ id: p.person_id, name: p.name, role: p.role, hub: p.hub }))}
-            />
-          </div>
-        </section>
-      )}
-      {rigId && !rig && <p className={styles.error}>Rig {rigId} was not found.</p>}
+        <label>
+          Person
+          <SearchableSelect
+            name="person"
+            ariaLabel="Person"
+            allLabel="Anyone"
+            defaultValue={filter.person}
+            options={people.map((p) => ({ value: p.key, label: `${p.name} (${numberText(p.count)})` }))}
+          />
+        </label>
 
-      <form className={styles.row} method="get" id="list">
-        <input name="q" defaultValue={one(sp.q)} placeholder="Search rig, person, hub or city" aria-label="Search rigs to audit" />
-        <button type="submit">Search</button>
-        {q && <Link href="/rigs/unknown">Clear</Link>}
+        <input
+          name="q"
+          defaultValue={filter.q}
+          placeholder="Rig ID, prism no., brand or model"
+          aria-label="Search rigs"
+        />
+
+        <button type="submit">Apply</button>
+
+        {!isEmptyFilter(filter) && (
+          <Link href="/rigs/audit" className={styles.back}>
+            Clear
+          </Link>
+        )}
       </form>
 
       {shown.length === 0 ? (
-        <p className={styles.muted}>{unknown.length ? "No rigs match." : "No rigs need an audit right now."}</p>
+        <p className={styles.muted}>
+          {all.length === 0
+            ? "Nothing has been recorded yet. QC results and hardware updates appear here as soon as they are saved."
+            : "No entries match these filters."}
+        </p>
       ) : (
-        <div role="region" aria-label="Rig audit" tabIndex={0} style={{ overflowX: "auto" }}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Rig</th>
-                <th>Status</th>
-                <th>Last with</th>
-                <th>City</th>
-                <th>Last activity</th>
-                <th>No activity for</th>
-                <th>Reports</th>
-                <th>Latest report</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((u) => {
-                const r = byId.get(u.item_id);
-                const list = reportsOf(u.item_id);
-                const latest = list[0];
-                return (
-                  <tr key={u.item_id} style={u.item_id === rigId ? { background: "#eff6ff" } : undefined}>
+        <>
+          <p className={styles.muted}>
+            Showing {numberText((page - 1) * PAGE_SIZE + 1)}–
+            {numberText((page - 1) * PAGE_SIZE + pageRows.length)} of {numberText(shown.length)}.
+          </p>
+
+          <div role="region" aria-label="Audit trail" tabIndex={0} style={{ overflowX: "auto" }}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th scope="col">Recorded at (IST)</th>
+                  <th scope="col">Type</th>
+                  <th scope="col">Rig</th>
+                  <th scope="col">Prism no.</th>
+                  <th scope="col">Brand / Model</th>
+                  <th scope="col">Result</th>
+                  <th scope="col">Comment</th>
+                  <th scope="col">Recorded by</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {pageRows.map((entry) => (
+                  <tr key={`${entry.kind}-${entry.id}`}>
+                    <td>{entry.at ? formatIst(entry.at) : "—"}</td>
+                    <td>{entry.kind === "qc" ? "QC result" : "Hardware update"}</td>
+
                     <td>
-                      <Link href={`${keep({ rig: u.item_id })}#report`} style={{ fontWeight: 600 }}>
-                        {u.item_id}
-                      </Link>
+                      <Link href={`/inventory/${encodeURIComponent(entry.itemId)}`}>{entry.itemId}</Link>
                     </td>
-                    <td>{STATUS_LABELS[u.status as keyof typeof STATUS_LABELS] ?? u.status}</td>
-                    <td>{displayName(people, u.holder) || hubName.get(r?.current_hub ?? "") || "—"}</td>
-                    <td>{hubCity.get(r?.current_hub ?? "") ?? "—"}</td>
-                    <td>
-                      {formatIst(u.lastActivity)}
-                      {u.lastWasReport && <span className={styles.muted}> · audit report</span>}
+
+                    <td>{entry.prism || "—"}</td>
+                    <td>{[entry.brand, entry.model].filter(Boolean).join(" ") || "—"}</td>
+
+                    <td
+                      style={
+                        entry.kind === "qc"
+                          ? { color: QC_COLOR[entry.result], fontWeight: 600 }
+                          : undefined
+                      }
+                    >
+                      {resultLabel(entry)}
                     </td>
-                    <td>{u.days} days</td>
-                    <td>{list.length || "—"}</td>
-                    <td>
-                      {latest ? (
-                        <>
-                          {latest.location}
-                          {latest.person_name ? ` · with ${latest.person_name}` : ""} · by {latest.recorded_by_name || latest.recorded_by}
-                          {latest.photo ? " · 📷" : ""}
-                        </>
-                      ) : (
-                        <span className={styles.muted}>None yet</span>
-                      )}
-                    </td>
+
+                    <td style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>{entry.comment || "—"}</td>
+                    <td style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>{entry.byName}</td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {totalPages > 1 && (
+            <div className={styles.row}>
+              {page > 1 && <Link href={pageHref(page - 1)}>← Previous</Link>}
+              <span className={styles.muted}>
+                Page {page} of {totalPages}
+              </span>
+              {page < totalPages && <Link href={pageHref(page + 1)}>Next →</Link>}
+            </div>
+          )}
+        </>
       )}
     </main>
   );
