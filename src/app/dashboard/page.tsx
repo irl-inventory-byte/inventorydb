@@ -656,9 +656,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       label: "Duplicate cards",
       value: duplicateValue,
       hint: share(duplicateValue),
-      // The inventory search has no "duplicate family" filter yet, so this opens the SD card list —
-      // narrow it further by typing the base serial (e.g. "SD-5381D1CDE0AL") into the search box.
-      href: inventory({ type: "sd_card" }),
+      href: inventory({ type: "sd_card", dup: "1" }),
       icon: "layers",
       color: "var(--series-7)",
       defn: "SD cards split into two or more tagged pieces (e.g. …-D1, …-D2) — every piece counts here.",
@@ -1566,7 +1564,12 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             The main hub is at the top with the hubs under it. Each box shows the items the hub holds, including the
             hubs under it.
           </p>
-          <HubOrgChart roots={tree} showEmpty={showEmpty} />
+          <HubOrgChart
+            roots={tree}
+            showEmpty={showEmpty}
+            internalCount={s.with_internal}
+            internalHref={inventory({ status: "with_internal" })}
+          />
           {hiddenEmpty > 0 && !showEmpty && (
             <p className={styles.muted}>
               {hiddenEmpty} hub{hiddenEmpty === 1 ? "" : "s"} with no items {hiddenEmpty === 1 ? "is" : "are"} hidden.{" "}

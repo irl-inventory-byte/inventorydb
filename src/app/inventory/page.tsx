@@ -198,6 +198,7 @@ export default async function InventoryPage({
 
   const holder = one(sp.holder);
   const lateOnly = one(sp.late) === "1";
+  const dupOnly = one(sp.dup) === "1";
   const requestedPage = Number(one(sp.page));
 
   const validPage =
@@ -266,8 +267,25 @@ export default async function InventoryPage({
     return Number.isNaN(t) ? "" : istDate(new Date(t));
   };
 
+  // "Duplicate cards" tile on the dashboard links here with dup=1. Same rule as there: an SD card
+  // whose serial shares its base ("…-D1"/"…-D2" etc.) with another SD card item, any status.
+  const baseSerial = (id: string) => id.replace(/-D\d+$/i, "");
+  const dupFamilySize = new Map<string, number>();
+  for (const i of items) {
+    if (i.item_type !== "sd_card") continue;
+    const base = baseSerial(i.item_id);
+    if (base === i.item_id) continue;
+    dupFamilySize.set(base, (dupFamilySize.get(base) ?? 0) + 1);
+  }
+  const isDuplicate = (item: (typeof items)[number]) => {
+    if (item.item_type !== "sd_card") return false;
+    const base = baseSerial(item.item_id);
+    return base !== item.item_id && (dupFamilySize.get(base) ?? 0) > 1;
+  };
+
   const matches = items.filter(
     (item) =>
+      (!dupOnly || isDuplicate(item)) &&
       (!from || (lastDay(item) !== "" && lastDay(item) >= from)) &&
       (!to || (lastDay(item) !== "" && lastDay(item) <= to)) &&
       (!lateOnly || isLate(item)) &&
@@ -330,6 +348,7 @@ export default async function InventoryPage({
       ...(to && { to }),
       ...(holder && { holder }),
       ...(lateOnly && { late: "1" }),
+      ...(dupOnly && { dup: "1" }),
       ...(type && { type }),
       page: String(p),
     });
@@ -693,7 +712,7 @@ export default async function InventoryPage({
         role={user.role}
         current={type}
         path="/inventory"
-        params={{ q: one(sp.q), status, hub, city, from, to, holder, late: lateOnly ? "1" : "" }}
+        params={{ q: one(sp.q), status, hub, city, from, to, holder, late: lateOnly ? "1" : "", dup: dupOnly ? "1" : "" }}
       />
 
       {one(sp.done) && (
@@ -916,6 +935,16 @@ export default async function InventoryPage({
             <span className={styles.muted}>
               Late items only (over {LATE_AFTER_HOURS} hours) ·{" "}
               <Link href="/inventory">clear</Link>
+            </span>
+          </>
+        )}
+
+        {dupOnly && (
+          <>
+            <input type="hidden" name="dup" value="1" />
+            <span className={styles.muted}>
+              Duplicate cards only (split into two or more tagged pieces, e.g. …-D1 / …-D2) ·{" "}
+              <Link href="/inventory?type=sd_card">clear</Link>
             </span>
           </>
         )}

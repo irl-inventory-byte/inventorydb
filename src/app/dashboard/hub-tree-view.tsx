@@ -73,6 +73,28 @@ function Box({ node }: { node: HubNode }) {
   );
 }
 
+/**
+ * A box styled like a hub box, for items with an Internal person — shown alongside the hub tree since
+ * "Internal" isn't a real location (see dashboard/page.tsx's isInternalTeamHub), so it can't be a node
+ * in the tree itself. Links to the Internal items list instead of a hub page.
+ */
+export function InternalBox({ count, href }: { count: number; href: string }) {
+  return (
+    <Link href={href} className={styles.orgBox}>
+      <span className={styles.orgName}>Internal</span>
+      <span className={styles.orgCount}>
+        {n(count)} <small>{count === 1 ? "item" : "items"}</small>
+      </span>
+      {count > 0 && (
+        <span className={styles.orgBar} role="img" aria-label={`${n(count)} with an Internal person`}>
+          <i className={styles.segOut} style={{ flexGrow: 1 }} />
+        </span>
+      )}
+      <span className={styles.orgMeta}>{n(count)} with an Internal person</span>
+    </Link>
+  );
+}
+
 function Level({ nodes, showEmpty }: { nodes: HubNode[]; showEmpty: boolean }) {
   const shown = nodes.filter((node) => isVisible(node, showEmpty));
   if (shown.length === 0) return null;
@@ -96,12 +118,29 @@ const LEGEND = [
 ];
 
 /** The hub hierarchy as a tree chart: the main hub at the top, the hubs under it below, joined by lines. */
-export function HubOrgChart({ roots, showEmpty }: { roots: HubNode[]; showEmpty: boolean }) {
+export function HubOrgChart({
+  roots,
+  showEmpty,
+  internalCount,
+  internalHref,
+}: {
+  roots: HubNode[];
+  showEmpty: boolean;
+  // "Internal" isn't a hub, so it's shown as its own box alongside the tree rather than inside it.
+  // Omit both to leave it out.
+  internalCount?: number;
+  internalHref?: string;
+}) {
   return (
     <>
       <div className={styles.orgScroll}>
         <div className={styles.org}>
           <Level nodes={roots} showEmpty={showEmpty} />
+          {internalCount !== undefined && internalHref !== undefined && (
+            <div style={{ marginTop: 10 }}>
+              <InternalBox count={internalCount} href={internalHref} />
+            </div>
+          )}
         </div>
       </div>
       <div className={styles.legend} aria-label="Bar colors">
