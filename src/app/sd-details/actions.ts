@@ -95,7 +95,7 @@ export async function saveSdDetails(formData: FormData) {
   const forwarded = await forwardToScript(team, {
     "SD CARD DATE": cardDate,
     [team === "im" ? "IM" : "RIG TEAM NAME"]: teamMember,
-    ...(team === "rig" && { TEAM: subTeam === "productivity" ? "Productivity team" : "Rig team" }),
+    ...(team === "rig" && { TEAM: "Rig team" }),
     "FO / IFO": foIfo,
     "IC NAME": icName,
     CITY: city,

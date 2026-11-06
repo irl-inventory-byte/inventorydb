@@ -111,7 +111,11 @@ a {
   [style^="color:#222222" i],
   [style*=";color:#222222" i],
   [style^="color: rgb(34, 34, 34)"],
-  [style*="; color: rgb(34, 34, 34)"] {
+  [style*="; color: rgb(34, 34, 34)"],
+  [style^="color:#1e293b" i],
+  [style*=";color:#1e293b" i],
+  [style^="color: rgb(30, 41, 59)"],
+  [style*="; color: rgb(30, 41, 59)"] {
     color: var(--foreground) !important;
   }
   [style^="color:#6b7280" i],
@@ -133,7 +137,15 @@ a {
   [style^="color:#888888" i],
   [style*=";color:#888888" i],
   [style^="color: rgb(136, 136, 136)"],
-  [style*="; color: rgb(136, 136, 136)"] {
+  [style*="; color: rgb(136, 136, 136)"],
+  [style^="color:#64748b" i],
+  [style*=";color:#64748b" i],
+  [style^="color: rgb(100, 116, 139)"],
+  [style*="; color: rgb(100, 116, 139)"],
+  [style^="color:#94a3b8" i],
+  [style*=";color:#94a3b8" i],
+  [style^="color: rgb(148, 163, 184)"],
+  [style*="; color: rgb(148, 163, 184)"] {
     color: #a3a3a3 !important;
   }
   [style^="color:#b42318" i],
@@ -169,7 +181,11 @@ a {
   [style^="color:#1e6b2f" i],
   [style*=";color:#1e6b2f" i],
   [style^="color: rgb(30, 107, 47)"],
-  [style*="; color: rgb(30, 107, 47)"] {
+  [style*="; color: rgb(30, 107, 47)"],
+  [style^="color:#166534" i],
+  [style*=";color:#166534" i],
+  [style^="color: rgb(22, 101, 52)"],
+  [style*="; color: rgb(22, 101, 52)"] {
     color: #4ade80 !important;
   }
   [style^="color:#8a4b00" i],
@@ -179,7 +195,11 @@ a {
   [style^="color:#8a5a00" i],
   [style*=";color:#8a5a00" i],
   [style^="color: rgb(138, 90, 0)"],
-  [style*="; color: rgb(138, 90, 0)"] {
+  [style*="; color: rgb(138, 90, 0)"],
+  [style^="color:#854d0e" i],
+  [style*=";color:#854d0e" i],
+  [style^="color: rgb(133, 77, 14)"],
+  [style*="; color: rgb(133, 77, 14)"] {
     color: #fbbf24 !important;
   }
   [style^="color:#1d4ed8" i],
@@ -232,6 +252,18 @@ a {
   [style*=";background:#eef2ff" i],
   [style^="background: rgb(238, 242, 255)"],
   [style*="; background: rgb(238, 242, 255)"],
+  [style^="background:#f0fdf4" i],
+  [style*=";background:#f0fdf4" i],
+  [style^="background: rgb(240, 253, 244)"],
+  [style*="; background: rgb(240, 253, 244)"],
+  [style^="background:#fef9c3" i],
+  [style*=";background:#fef9c3" i],
+  [style^="background: rgb(254, 249, 195)"],
+  [style*="; background: rgb(254, 249, 195)"],
+  [style^="background:#eef2f6" i],
+  [style*=";background:#eef2f6" i],
+  [style^="background: rgb(238, 242, 246)"],
+  [style*="; background: rgb(238, 242, 246)"],
   [style^="background-color:#e5e7eb" i],
   [style*=";background-color:#e5e7eb" i],
   [style^="background-color: rgb(229, 231, 235)"],
@@ -271,8 +303,37 @@ a {
   [style^="background-color:#eef2ff" i],
   [style*=";background-color:#eef2ff" i],
   [style^="background-color: rgb(238, 242, 255)"],
-  [style*="; background-color: rgb(238, 242, 255)"] {
+  [style*="; background-color: rgb(238, 242, 255)"],
+  [style^="background-color:#f0fdf4" i],
+  [style*=";background-color:#f0fdf4" i],
+  [style^="background-color: rgb(240, 253, 244)"],
+  [style*="; background-color: rgb(240, 253, 244)"],
+  [style^="background-color:#fef9c3" i],
+  [style*=";background-color:#fef9c3" i],
+  [style^="background-color: rgb(254, 249, 195)"],
+  [style*="; background-color: rgb(254, 249, 195)"],
+  [style^="background-color:#eef2f6" i],
+  [style*=";background-color:#eef2f6" i],
+  [style^="background-color: rgb(238, 242, 246)"],
+  [style*="; background-color: rgb(238, 242, 246)"] {
     background-color: #1a1a19 !important;
+  }
+
+  /* Border colours used across the app in light-only inline styles — darkened so a box's edge stays
+     visible against the dark page background instead of vanishing or clashing. */
+  [style*="#cbd5e1" i],
+  [style*="rgb(203, 213, 225)"],
+  [style*="#e2e8f0" i],
+  [style*="rgb(226, 232, 240)"],
+  [style*="#f1f5f9" i],
+  [style*="rgb(241, 245, 249)"],
+  [style*="#fecaca" i],
+  [style*="rgb(254, 202, 202)"],
+  [style*="#bbf7d0" i],
+  [style*="rgb(187, 247, 208)"],
+  [style*="#eab308" i],
+  [style*="rgb(234, 179, 8)"] {
+    border-color: #3a3a3a !important;
   }
   table,
   th,
