@@ -6,7 +6,6 @@ import { lostList } from "@/lib/lost";
 import { formatIst } from "@/lib/time";
 import styles from "../admin/admin.module.css";
 import ReportRetiredScan from "./ReportRetiredScan";
-import BackLink from "../BackLink";
 
 const TYPE_NAME: Record<string, string> = { sd_card: "SD card", rig: "Rig", mobile: "Mobile" };
 
@@ -15,7 +14,11 @@ const TYPE_NAME: Record<string, string> = { sd_card: "SD card", rig: "Rig", mobi
  * event / lostList() machinery as the Lost and Broken pages (see lib/lost.ts) — a retirement is just
  * a correction that sets status to "retired", so this page reads it the same way.
  */
-export default async function RetiredItemsPage({ searchParams }: PageProps<"/retired">) {
+export default async function RetiredItemsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await requireRole(...VIEW_ROLES);
   const canRetire = user.role === "admin" || user.role === "im";
   const sp = await searchParams;
@@ -48,7 +51,7 @@ export default async function RetiredItemsPage({ searchParams }: PageProps<"/ret
   return (
     <main className={styles.pageWide}>
       <p className={styles.back}>
-        <BackLink /> · <Link href="/dashboard">Dashboard</Link>
+        <Link href="/dashboard">Dashboard</Link>
       </p>
       <h1>Retired items ({all.length})</h1>
       <p className={styles.muted}>Taken out of service for good. Date and reason come from when the item was retired.</p>
