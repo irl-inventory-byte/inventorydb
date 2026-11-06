@@ -2,8 +2,8 @@ import Link from "next/link";
 import type { AckBucket } from "@/lib/ack-stats";
 
 /**
- * Handover-receipt acknowledgments (FO / IFO recipients only — see lib/ack-stats.ts), as a simple
- * stacked bar per bucket: Yes (green) / No (red) / Pending (grey). `by` toggles the grouping
+ * Handover-receipt acknowledgments (FO / IFO / internal recipients only — see lib/ack-stats.ts), as a
+ * simple stacked bar per bucket: Yes (green) / No (red) / Pending (grey). `by` toggles the grouping
  * (city or role) via a plain link, same pattern as the rest of the dashboard's filters.
  */
 export default function AckChart({
@@ -27,9 +27,9 @@ export default function AckChart({
   ackTo: string; // YYYY-MM-DD, "" = no upper bound
   hidden: Record<string, string>; // other dashboard filters + the current grouping, carried by the date form
   clearHref: string; // same page, with the date range removed
-  role: "" | "fo" | "ifo"; // "" = both
-  roleHref: (role: "" | "fo" | "ifo") => string;
-  cities: string[]; // every city with at least one FO/IFO, for the city filter dropdown
+  role: "" | "fo" | "ifo" | "internal"; // "" = all
+  roleHref: (role: "" | "fo" | "ifo" | "internal") => string;
+  cities: string[]; // every city with at least one FO/IFO/internal recipient, for the city filter dropdown
   city: string; // "" = all cities
   avgResponse: string; // e.g. "2h 15m", already formatted — "" when nothing answered yet to average
 }) {
@@ -60,21 +60,21 @@ export default function AckChart({
                 fontWeight: by === v ? 700 : 500,
               }}
             >
-              By {v === "city" ? "city" : v === "role" ? "FO / IFO" : v === "day" ? "day" : "hour"}
+              By {v === "city" ? "city" : v === "role" ? "recipient type" : v === "day" ? "day" : "hour"}
             </Link>
           ))}
         </nav>
       </div>
 
       <p style={{ margin: "0 0 10px", fontSize: "0.82rem", color: "#64748b" }}>
-        Handover receipts sent to FOs and IFOs: whether they acknowledged receiving the items.{" "}
+        Handover receipts sent to FOs, IFOs and the internal team: whether they acknowledged receiving the items.{" "}
         <span style={{ color: "#166534" }}>■</span> Yes{" "}
         <span style={{ color: "#b3261e" }}>■</span> No{" "}
         <span style={{ color: "#94a3b8" }}>■</span> Pending
       </p>
 
       <nav aria-label="Filter by recipient" style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-        {(["", "fo", "ifo"] as const).map((v) => (
+        {(["", "fo", "ifo", "internal"] as const).map((v) => (
           <Link
             key={v || "all"}
             href={roleHref(v)}
@@ -90,7 +90,7 @@ export default function AckChart({
               fontWeight: role === v ? 700 : 500,
             }}
           >
-            {v === "" ? "All" : v.toUpperCase()}
+            {v === "" ? "All" : v === "internal" ? "Internal" : v.toUpperCase()}
           </Link>
         ))}
       </nav>

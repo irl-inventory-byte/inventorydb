@@ -648,7 +648,7 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
 
     // Email the PDF to the person who now holds the items (sender on a send, receiver on a receive —
     // see lib/receipt-email.ts), with a one-click "Yes, I acknowledge" to confirm they received
-    // everything in good condition. The ask is only for FO / IFO / Internal recipients (the people
+    // everything in good condition. The ask is only for FO / IFO / internal recipients (the people
     // actually taking custody of physical kit) -- other roles (admin, IM, QC, hardware, rig) still
     // get the receipt, just without the acknowledgment block. Also skipped for corrections (no real
     // "To" person taking custody) and a return to stock (every item ends this batch back "In stock" --
@@ -662,9 +662,9 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
     const allReturned = summary.items.length > 0 && penalties.returnedCount === summary.items.length;
     const toRole = roleOf.get(summary.toId);
     const fromRole = roleOf.get(summary.fromId);
-    // Receipt emails (and the acknowledgment ask) only go to FO / IFO / Internal — the people actually
-    // taking custody of physical kit. Every other role (admin, IM, QC, hardware, rig) still
-    // gets the receipt archived (Drive + Sheets below), just no email. The receipt page itself
+    // Receipt emails (and the acknowledgment ask) only go to FO / IFO / internal — the people actually
+    // taking custody of physical kit. Every other role (admin, IM, QC, hardware, rig) still gets the
+    // receipt archived (Drive + Sheets below), just no email. The receipt page itself
     // (/handover/receipt/[batch]) is always viewable regardless of role.
     const toCanEmail = toRole === "fo" || toRole === "ifo" || toRole === "internal";
     const fromCanEmail = fromRole === "fo" || fromRole === "ifo" || fromRole === "internal";
@@ -704,7 +704,7 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
     // On a receive, the person who handed the items over gets the same receipt too — just as a copy
     // for their own records, with no acknowledgment ask (that's only for whoever is now holding the
     // items). Skipped if there's no "from" person on this batch, if they're the same person as "to"
-    // (nothing to copy them on), or if they're not FO/IFO/Internal either.
+    // (nothing to copy them on), or if they're not FO/IFO either.
     const sentTo = [...email.sentTo];
     const missing = [...email.missing];
     if (

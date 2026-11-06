@@ -993,7 +993,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const san = sanRaw === "yes" || sanRaw === "no" ? sanRaw : "";
   const sanKeep: Record<string, string> = { ...keepParams };
 
-  // Acknowledgements chart: grouped by city (default), by FO/IFO role, by day sent, or by hour of day.
+  // Acknowledgements chart: grouped by city (default), by FO/IFO/internal role, by day sent, or by hour of day.
   const ackByRaw = one(sp.ackBy);
   const ackBy = ackByRaw === "role" ? "role" : ackByRaw === "day" ? "day" : ackByRaw === "hour" ? "hour" : "city";
   const ackFrom = one(sp.ackFrom); // YYYY-MM-DD, inclusive
@@ -1012,8 +1012,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     if (ackCity && ackCityOf.get(ackPersonHub.get(a.to_id) ?? "") !== ackCity) return false;
     return true;
   });
-  // Narrows to just FO or just IFO recipients, on top of the date range, city and either grouping.
-  const ackRole = one(sp.ackRole) === "fo" || one(sp.ackRole) === "ifo" ? (one(sp.ackRole) as "fo" | "ifo") : "";
+  // Narrows to just FO, IFO or internal recipients, on top of the date range, city and either grouping.
+  const ackRole =
+    one(sp.ackRole) === "fo" || one(sp.ackRole) === "ifo" || one(sp.ackRole) === "internal"
+      ? (one(sp.ackRole) as "fo" | "ifo" | "internal")
+      : "";
   const ackBuckets =
     ackBy === "role"
       ? ackByRole(ackInRange, people, ackRole)
@@ -1028,7 +1031,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const ackBase = { ...keepParams, ...(ackFrom && { ackFrom }), ...(ackTo && { ackTo }), ...(ackCity && { ackCity }) }; // no ackBy/ackRole — each link below adds its own
   const ackParams = { ...ackBase, ...(ackRole && { ackRole }) };
   const ackHref = (by: "city" | "role" | "day" | "hour") => `/dashboard?${new URLSearchParams({ ...ackParams, ...(by !== "city" && { ackBy: by }) })}#acknowledgements`;
-  const ackRoleHref = (role: "" | "fo" | "ifo") =>
+  const ackRoleHref = (role: "" | "fo" | "ifo" | "internal") =>
     `/dashboard?${new URLSearchParams({ ...ackBase, ...(ackBy !== "city" && { ackBy }), ...(role && { ackRole: role }) })}#acknowledgements`;
   // Hidden fields the date-range filter form must carry so it doesn't lose the other dashboard filters or the current grouping/role.
   // ackCity is NOT included here — it's its own <select> inside that same form, not a hidden field.
