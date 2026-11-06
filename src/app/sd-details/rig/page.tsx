@@ -7,11 +7,7 @@ import SdDetailsForm from "../SdDetailsForm";
 import { saveSdDetails } from "../actions";
 
 /** Rig SD card details — admin and Rig team only. See src/app/sd-details/SdDetailsForm.tsx / actions.ts. */
-  export default async function RigSdDetailsPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+export default async function RigSdDetailsPage({ searchParams }: PageProps<"/sd-details/rig">) {
   const user = await requireRole("admin", "rig");
   const sp = await searchParams;
 
