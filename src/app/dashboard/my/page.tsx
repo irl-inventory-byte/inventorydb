@@ -5,6 +5,7 @@ import { OUT_STATUSES, type HardwareUpdate, type Item, type QcCheck, type Status
 import { MY_DASHBOARD_ROLES, RECEIVE_ROLES, storeFor } from "@/lib/access";
 import { formatIst } from "@/lib/time";
 import styles from "../dashboard.module.css";
+import BackLink from "../../BackLink";
 
 // Statuses in which an item is in someone's hands (QC and hardware hold rigs too).
 const HELD_STATUSES: readonly Status[] = [...OUT_STATUSES, "with_qc", "with_hardware"];
@@ -107,7 +108,7 @@ export default async function MyDashboardPage({
       <div className={styles.root}>
         <main className={styles.wrap}>
           <p className={styles.back}>
-            <Link href="/">← Home</Link>
+            <BackLink />
           </p>
 
           <h1>My dashboard</h1>
@@ -535,7 +536,7 @@ export default async function MyDashboardPage({
     <div className={styles.root}>
       <main className={styles.wrap}>
         <p className={styles.back}>
-          <Link href="/">← Home</Link>
+          <BackLink />
         </p>
 
         <div className={styles.top}>

@@ -1,1065 +1,2092 @@
 import Link from "next/link";
+import type { CSSProperties } from "react";
+import { displayName } from "@/lib/actors";
 import { requireRole } from "@/lib/authz";
-import { QC_LABELS, ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
-import { OUT_STATUSES, type HardwareUpdate, type Item, type QcCheck, type Status } from "@/lib/schema";
-import { MY_DASHBOARD_ROLES, RECEIVE_ROLES, storeFor } from "@/lib/access";
-import { formatIst } from "@/lib/time";
-import styles from "../dashboard.module.css";
-import BackLink from "../BackLink";
+import { LATE_AFTER_HOURS, computeDashboard } from "@/lib/dashboard";
+import { buildHubTree } from "@/lib/hub-tree";
+import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
+import type { Acknowledgment, AttentionNote, DelayNote, HardwareUpdate, QcCheck, Status } from "@/lib/schema";
+import { HANDLER_ROLES, INVENTORY_ROLES, allowedTypes, canSeeType, storeFor, storeForAll, typeParam } from "@/lib/access";
+import TypeSwitch from "../TypeSwitch";
+import RoleSwitch from "../RoleSwitch";
+import { BarList, n, type BarRow } from "./charts";
+import { DailyMoves, HourlyMoves } from "./daily-moves";
+import { FieldUsageCard } from "./field-usage";
+import { fieldUsage, usageFilterOptions } from "@/lib/field-usage";
+import { dailyMoves, hourlyMoves, manyValues, moveFilterOptions, pickRange } from "@/lib/daily-moves";
+import { formatIst, istDate } from "@/lib/time";
+import styles from "./dashboard.module.css";
+import { HubOrgChart, countHidden } from "./hub-tree-view";
+import AttentionFilter from "./attentionfilter";
+import { Icon, type IconName } from "./icons";
+import { addAttentionNote, addDelayNote, setAttentionNoteStatus, setBrokenStorageOverride, setRetiredBaseline } from "./actions";
+import { SummaryKpis } from "./summary-kpis";
+import { RIG_STATES, RIG_STATE_LABELS, rigState, type RigState } from "@/lib/rig-state";
+import { NO_ACTIVITY_DAYS, RigMetrics } from "./rig-metrics";
+import { ackAvgResponseMinutes, ackByCity, ackByDay, ackByHour, ackByRole, formatResponseMinutes } from "@/lib/ack-stats";
+import AckChart from "./AckChart";
+import { inactiveRigs } from "@/lib/rig-metrics";
+import { getStore } from "@/lib/store";
+import { MonthlyReportCard } from "./monthly-report";
+import { buildMonthlyReport, pickFilter } from "@/lib/monthly-report";
+import type { Item } from "@/lib/schema";
+import { rigTeamHub } from "@/lib/rig-hub";
 
-// Statuses in which an item is in someone's hands (QC and hardware hold rigs too).
-const HELD_STATUSES: readonly Status[] = [...OUT_STATUSES, "with_qc", "with_hardware"];
+const inventory = (params: Record<string, string>) => `/inventory?${new URLSearchParams(params)}`;
 
-const QC_COLOR: Record<string, string> = { pass: "#15803D", repaired: "#15803D", fail: "#B42318", qc_pending: "#8A4B00" };
+/** SD card capacity ("256 GB" / "512 GB" / "Unknown") from the saved "capacity" attribute, same normalization as the Inventory page. */
+function cardStorage(raw: string): string {
+  let attributes: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(raw || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) attributes = parsed as Record<string, unknown>;
+  } catch {
+    // Missing or invalid details count as "Unknown".
+  }
+  const rawCapacity = attributes.capacity;
+  const capacityText = typeof rawCapacity === "string" || typeof rawCapacity === "number" ? String(rawCapacity).trim() : "";
+  const normalized = capacityText.replace(/\s+/g, "").toUpperCase();
+  if (normalized === "512GB" || normalized === "512") return "512 GB";
+  if (normalized === "256GB" || normalized === "256") return "256 GB";
+  return capacityText || "Unknown";
+}
+const days = (d: number | null) => (d === null ? "—" : d === 0 ? "today" : `${d}d`);
 
-// Activity records displayed per page.
-const PAGE_SIZE = 50;
+/** A time as an IST date, e.g. "8 Oct 2026". */
+const istDay = (t: number) => new Date(t).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" });
 
-const ACTION_LABELS: Record<string, string> = {
-  check_out: "Sent",
-  check_in: "Checked in",
-  receive: "Received",
-  report_lost: "Reported lost",
-  report_damaged: "Reported damaged",
-  retire: "Retired",
-  reassign_home_hub: "Changed home hub",
-  correct: "Corrected",
-  import: "Imported",
+// One row in the "Needs attention" table.
+interface Attention {
+  key: string;
+  person: string;
+  role: string;
+  city: string; // city of the hub(s) where the items are, e.g. "Bangalore" or "Bangalore, Pune"
+  sentBy: string; // who handed these items over, e.g. "Ravi Kumar" or "Ravi Kumar (20), Anita (6)"
+  items: number;
+  hours: number | null; // how long the oldest item has been out, for sorting longest first; null for lost / damaged
+  outFor: string; // "14 hours", "3 days", "—"
+  issue: string;
+  href: string;
+  tone: "critical" | "warning" | "info";
+  late?: Item[]; // the delayed items behind this row (out for more than LATE_AFTER_HOURS), shown when the row is opened
+}
+const GLYPH = { critical: "✕", warning: "▲", info: "●" } as const;
+const TONE = { critical: styles.iconCritical, warning: styles.iconWarning, info: styles.iconMuted };
+
+const STATUS_ORDER: Status[] = ["in_stock", "with_fo", "traveling", "with_rig", "with_internal", "pending_qc", "with_qc", "pending_hardware", "with_hardware", "pending", "lost", "damaged", "retired", "rnd"];
+const HUB_BARS = 8;
+
+// Shared styles for dark sticky table headers / footers.
+const TH_STYLE: CSSProperties = { position: "sticky", top: 0, zIndex: 2, backgroundColor: "#1e293b", color: "#ffffff" };
+const TFOOT_STYLE: CSSProperties = {
+  position: "static",
+  borderTop: "2px solid #64748b",
+  backgroundColor: "#1e293b",
+  color: "#ffffff",
+  fontWeight: 700,
 };
 
+/* ------------------------------------------------------------------ */
+/* MOBILES: the parts only the Mobile dashboard has                     */
+/* ------------------------------------------------------------------ */
+
+const TOP = 8;
+
+/** A mobile's saved details (Asset Tag, Serial, Model No., Category, Storage). */
+function details(raw: string): Record<string, string> {
+  try {
+    const parsed: unknown = JSON.parse(raw || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return Object.fromEntries(Object.entries(parsed).map(([k, v]) => [k, String(v ?? "")]));
+    }
+  } catch {
+    // no details
+  }
+  return {};
+}
+
+const mobileList = (params: Record<string, string> = {}) => `/inventory?${new URLSearchParams({ type: "mobile", ...params })}`;
+
+/** Count mobiles by a label, biggest first; the rest are summed into one "other" bar. */
+function bars(items: Item[], labelOf: (i: Item) => string, what: string, href: (label: string) => string): BarRow[] {
+  const count = new Map<string, number>();
+  for (const i of items) {
+    const label = labelOf(i).trim() || "Not set";
+    count.set(label, (count.get(label) ?? 0) + 1);
+  }
+  const sorted = [...count.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const rows: BarRow[] = sorted.slice(0, TOP).map(([label, value]) => ({
+    key: label,
+    label,
+    value,
+    href: href(label),
+    tip: `${label}\n${n(value)} ${value === 1 ? "mobile" : "mobiles"}`,
+  }));
+  const rest = sorted.slice(TOP);
+  if (rest.length) {
+    const value = rest.reduce((s, [, v]) => s + v, 0);
+    rows.push({ key: "other", label: `${rest.length} other ${what}`, value, href: mobileList(), tip: `${rest.length} other ${what}\n${n(value)} mobiles` });
+  }
+  return rows;
+}
+
 /**
- * One line of a card's breakdown: the rig (IC number) and the details needed to
- * recognise it without opening the item page.
+ * Dashboard → Mobile, the charts only mobiles have: by category, manufacturer, model and storage. The rest of the
+ * page (status tiles, hub hierarchy, moved per day, needs attention, who has items) is the same as for SD cards.
  */
-interface DetailRow {
-  key: string;
-  itemId: string;
-  prism: string;
-  brand: string;
-  model: string;
-  status: string;
-  qc: string;
-  where: string;
-  when: string;
-  note: string;
-}
+function MobileCharts({ items }: { items: Item[] }) {
+  const byCategory = bars(items, (i) => details(i.attributes)["Category"] ?? "", "categories", (l) => mobileList({ q: l }));
+  const byMaker = bars(items, (i) => i.brand, "manufacturers", (l) => mobileList({ q: l }));
+  const byModel = bars(items, (i) => i.model, "models", (l) => mobileList({ q: l }));
+  const byStorage = bars(items, (i) => details(i.attributes)["Storage"] ?? "", "sizes", (l) => mobileList({ q: l }));
 
-/**
- * A summary card. `view` makes the card clickable: the rigs behind the number are
- * listed under the cards when ?view= matches.
- */
-interface Metric {
-  label: string;
-  value: string;
-  view?: string;
-  rows?: DetailRow[];
-  /** Heading for the breakdown, when the card label doesn't read well as one. */
-  rowsTitle?: string;
-  /** What `when` holds for this card, e.g. "Recorded at". */
-  whenLabel?: string;
-}
-
-function normalizeEmail(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-function numberText(value: number): string {
-  return value.toLocaleString("en-IN");
-}
-
-// Avoid displaying invalid dates.
-function displayTime(value: string): string {
-  if (!value || !Number.isFinite(Date.parse(value))) {
-    return "—";
-  }
-
-  return formatIst(value);
-}
-
-function eventTime(recordedAt: string, occurredAt: string): number {
-  const recorded = Date.parse(recordedAt);
-
-  if (Number.isFinite(recorded)) {
-    return recorded;
-  }
-
-  const occurred = Date.parse(occurredAt);
-  return Number.isFinite(occurred) ? occurred : 0;
-}
-
-export default async function MyDashboardPage({
-  searchParams,
-}: {
-  searchParams: Promise<{
-    page?: string | string[];
-    view?: string | string[];
-  }>;
-}) {
-  // Authenticate and authorize on the server.
-  const user = await requireRole(...MY_DASHBOARD_ROLES);
-  const isQc = user.role === "qc";
-  const isHardware = user.role === "hardware";
-  const canReceive = RECEIVE_ROLES.includes(user.role);
-  const email = normalizeEmail(user.email ?? "");
-
-  // Never match an empty login email to blank event records.
-  if (!email) {
-    return (
-      <div className={styles.root}>
-        <main className={styles.wrap}>
-          <p className={styles.back}>
-            <BackLink />
+  return (
+    <>
+      {items.length === 0 ? (
+        <section className={styles.card}>
+          <p className={styles.muted}>
+            No mobiles yet. An Admin or IM adds them in Inventory → Mobile → + Add a mobile, by scanning the phone&apos;s
+            QR code (IMEI).
           </p>
+        </section>
+      ) : (
+        <>
+          <div className={styles.chartRow}>
+            <section className={styles.card} aria-label="Mobiles by category">
+              <h2>By category</h2>
+              <BarList rows={byCategory} />
+            </section>
+            <section className={styles.card} aria-label="Mobiles by manufacturer">
+              <h2>By manufacturer</h2>
+              <BarList rows={byMaker} />
+            </section>
+          </div>
+          <div className={styles.chartRow}>
+            <section className={styles.card} aria-label="Mobiles by model">
+              <h2>By model</h2>
+              <BarList rows={byModel} />
+            </section>
+            <section className={styles.card} aria-label="Mobiles by storage">
+              <h2>By storage</h2>
+              <BarList rows={byStorage} />
+            </section>
+          </div>
+        </>
+      )}
 
-          <h1>My dashboard</h1>
+      <p className={styles.muted}>
+        <Link href={mobileList()} className={styles.link}>
+          See every mobile in Inventory
+        </Link>{" "}
+        — IMEI, Asset Tag, Serial, Model, Category, Storage and Cost.
+      </p>
+    </>
+  );
+}
+// Field usage (u…) and hourly chart (h…) filter settings, kept when another dashboard filter is applied.
+const EXTRA_KEYS = ["ufrom", "uto", "ucity", "uperson", "umodel", "uout", "htype", "hperson", "hcity", "hrole", "hfrom", "hto"];
+const HOURLY_KEYS = ["htype", "hperson", "hcity", "hrole", "hfrom", "hto"];
+const MOVE_KEYS = ["mtype", "mperson", "mcity", "mrole", "mfrom", "mto"];
+const TYPE_LABELS: Record<string, string> = { sd_card: "SD cards", rig: "Rigs", mobile: "Mobiles" };
 
-          <p className={styles.warn}>
-            Your login has no email address. Please sign out and
-            sign in again.
-          </p>
-        </main>
-      </div>
-    );
-  }
-
+export default async function DashboardPage({ searchParams }: PageProps<"/dashboard">) {
+  const user = await requireRole();
   const sp = await searchParams;
-  const store = storeFor(user.role);
-
-  const [events, items, people, hubs, users, qcChecks, hardwareUpdates] = await Promise.all([
-    store.list("events"),
+  // Filter values: a multi-select sends ?x=a&x=b, links carry "a,b"; both are read as a list.
+  const many = (k: string) => manyValues(sp[k] as string | string[] | undefined);
+  const val = (k: string) => many(k).join(",");
+  // Each login sees only its item types; IM/Admin/FO can switch SD cards / Rigs. There is no "All items"
+  // view on the dashboard: with no choice yet it opens on the first type this login can see (SD cards).
+  const type = typeParam(one(sp.type), user.role) || allowedTypes(user.role)[0] || "";
+  const store = storeFor(user.role, type);
+  // Rig view: the Rigs switch is on, or this login only sees rigs (QC, hardware).
+  const rigView = type === "rig" || !canSeeType(user.role, "sd_card");
+  // QC team performance shows whenever rigs are in view (All or Rigs).
+  // Mobile view: tiles and breakdowns only (mobiles are not sent or received).
+  const mobileView = type === "mobile";
+  const showQc = canSeeType(user.role, "rig") && type !== "sd_card" && !mobileView;
+  const showAck = user.role === "admin" || user.role === "im";
+  // Monthly report (all item types this login can see) needs its own full items/events read — fetched
+  // alongside everything else below (not after it) so the two round trips overlap instead of stacking.
+  const reportStore = storeForAll(user.role);
+  // Two Promise.all calls instead of one: TypeScript only keeps each array's individual item types
+  // (rather than collapsing them all into one shared type) for up to 10 elements — past that it widens
+  // everything to a single blended type, which is why this is split in two. Both are started here,
+  // before either is awaited, so they still run at the same time — this isn't a return to two round trips.
+  const mainFetch = Promise.all([
     store.list("items"),
+    store.list("events"),
     store.list("people"),
     store.list("hubs"),
-    store.list("users"),
-    isQc || isHardware ? store.list("qc_checks") : Promise.resolve([] as QcCheck[]),
-    isHardware ? store.list("hardware_updates") : Promise.resolve([] as HardwareUpdate[]),
+    showQc ? store.list("qc_checks") : Promise.resolve([] as QcCheck[]),
+    showQc ? store.list("hardware_updates") : Promise.resolve([] as HardwareUpdate[]),
+    store.list("settings"),
+    showAck ? store.list("acknowledgments") : Promise.resolve([] as Acknowledgment[]),
+    getStore().list("attention_notes").catch(() => [] as AttentionNote[]),
+    getStore().list("delay_notes").catch(() => [] as DelayNote[]),
   ]);
+  const reportFetch = Promise.all([
+    reportStore.list("items"),
+    reportStore.list("events"),
+    reportStore.list("qc_checks").catch(() => [] as QcCheck[]),
+    reportStore.list("hardware_updates").catch(() => [] as HardwareUpdate[]),
+  ]);
+  const [items, events, people, hubs, qcChecks, hardwareUpdates, settings, acknowledgments, attentionNotes, delayNotes] =
+    await mainFetch;
+  const [allItems, allEvents, allQc, allHw] = await reportFetch;
+  const now = new Date();
 
+  // Admin-set override for the Broken tile's storage breakdown (see dashboard/actions.ts) — used
+  // instead of the computed one when set, since broken cards often never had storage recorded.
+  let brokenStorageOverride: { gb256: number; gb512: number } | undefined;
+  try {
+    const raw = settings.find((s) => s.key === "broken_storage")?.value;
+    const parsed = raw ? JSON.parse(raw) : undefined;
+    if (parsed && Number.isFinite(parsed.gb256) && Number.isFinite(parsed.gb512)) brokenStorageOverride = parsed;
+  } catch {
+    // Malformed stored value — fall back to the computed breakdown.
+  }
+  // Total cards the baseline adds on top of what's actually tracked (see brokenValue below) — passed
+  // to the Fleet summary card so its Total / usable-vs-not split and SD card storage add up to the
+  // same numbers as the Broken tile, instead of silently disagreeing with it.
+  const brokenBaselineTotal = (brokenStorageOverride?.gb256 ?? 0) + (brokenStorageOverride?.gb512 ?? 0);
+
+  // Same idea as the Broken tile's baseline, for Retired: a one-time starting count for items
+  // retired before this system tracked them, added on top of the live retired count.
+  let retiredBaseline: number | undefined;
+  {
+    const raw = settings.find((s) => s.key === "retired_baseline")?.value;
+    const parsed = raw ? Number(raw) : undefined;
+    if (parsed !== undefined && Number.isFinite(parsed)) retiredBaseline = parsed;
+  }
+
+  // Rig view: unknown rigs (no activity for more than NO_ACTIVITY_DAYS days), city-wise, with their reports.
+  // Worked out twice on purpose: the first pass is free and tells us whether any rig is overdue at all, so
+  // the reports table is only downloaded when it can change something. The second pass lets an audit report
+  // count as activity, which takes a rig that has just been found off the list.
+  const overdue = rigView && showQc ? inactiveRigs(items, events, qcChecks, hardwareUpdates, now, NO_ACTIVITY_DAYS) : [];
+  const rigReports = overdue.length ? await getStore().list("rig_reports").catch(() => []) : [];
+  const unknownRigs = overdue.length
+    ? inactiveRigs(items, events, qcChecks, hardwareUpdates, now, NO_ACTIVITY_DAYS, rigReports)
+    : [];
+  const unknownHubCity = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
+  const unknownItem = new Map(items.map((i) => [i.item_id, i]));
+  const unknownRows = unknownRigs.map((u) => {
+    const it = unknownItem.get(u.item_id);
+    const reps = rigReports.filter((r) => r.item_id === u.item_id);
+    return {
+      ...u,
+      city: unknownHubCity.get(it?.current_hub ?? "") || it?.current_hub || "Not set",
+      hub: hubs.find((h) => h.hub_id === it?.current_hub)?.name ?? (it?.current_hub || "—"),
+      who: people.find((p) => p.person_id === u.holder)?.name ?? "",
+      reports: reps.length,
+      latest: reps.at(-1),
+    };
+  });
+  const unknownCities = [...unknownRows.reduce((m, r) => m.set(r.city, (m.get(r.city) ?? 0) + 1), new Map<string, number>())].sort(
+    (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+  );
+  const unknownCity = one(sp.ucity);
+  const unknownShown = unknownRows.filter((r) => !unknownCity || r.city === unknownCity);
+  const unknownHref = (city: string) => {
+    const q = new URLSearchParams({ type: "rig" });
+    if (city) q.set("ucity", city);
+    return `/dashboard?${q}#unknown`;
+  };
+
+  // Monthly report (all item types this login can see): ?rmonth=2026-10, default this month.
+  // allItems/allEvents/allQc/allHw were already fetched above, alongside the main dashboard data.
+  // Report filters: ?rfrom=2026-10-01&rto=2026-10-24&rperson=…&rcity=…&rtype=… (default: this month so far).
+  const monthly = buildMonthlyReport({
+    filter: pickFilter((k) => one(sp[`r${k}`]) || undefined, now),
+    items: allItems,
+    events: allEvents,
+    hubs,
+    people,
+    qcChecks: allQc,
+    hardwareUpdates: allHw,
+  });
+  const reportKeep: Record<string, string> = {};
+  for (const k of ["type", "empty", "acity", "arole"]) if (one(sp[k])) reportKeep[k] = one(sp[k]);
+
+  const d = computeDashboard(items, events, people, hubs, { hub: "", days: 14, now });
+  // "Internal team" isn't a real location — hide it from the Hub hierarchy chart specifically (the hub
+  // record and its items are untouched; it still works everywhere else a hub is picked).
+  const isInternalTeamHub = (h: (typeof hubs)[number]) =>
+    (h.name ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "") === "internalteam" ||
+    (h.hub_id ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "") === "internalteam";
+  const tree = buildHubTree(
+    hubs.filter((h) => !isInternalTeamHub(h)),
+    items,
+  );
+  const showEmpty = one(sp.empty) === "1";
+  const hiddenEmpty = countHidden(tree, false);
+  const canHandle = HANDLER_ROLES.includes(user.role);
+  // Only Abhishek Yadav may edit the Broken tile's "starting count" override (see dashboard/actions.ts;
+  // this is just the UI hide — that action also checks server-side). No login email was given, so this
+  // matches by name, the same way the action's own audit-log "byName" is computed.
+  const myDisplayName = displayName(people, user.personId ?? "") || user.name || "";
+  const canEditBrokenBaseline = myDisplayName.trim().toLowerCase() === "abhishek yadav";
+  const activeHubs = hubs.filter((h) => h.active !== "false").length;
+
+  const s = d.byStatus;
+  const share = (v: number) => (d.total ? `${Math.round((v / d.total) * 100)}% of all items` : "");
   // Latest QC result per rig (rows are oldest first, so the last one wins).
   const latestQc = new Map<string, string>();
-  const latestQcAt = new Map<string, number>();
-  for (const c of qcChecks) {
-    latestQc.set(c.item_id, c.qc_status);
-    const t = Date.parse(c.recorded_at);
-    if (Number.isFinite(t)) latestQcAt.set(c.item_id, t);
-  }
+  for (const c of qcChecks) latestQc.set(c.item_id, c.qc_status);
 
-  // QC results and hardware updates this login recorded, newest first.
-  const byMe = (v: string) => normalizeEmail(v ?? "") === email;
-  const myQc = qcChecks.filter((c) => byMe(c.recorded_by)).reverse();
-  const myHardware = hardwareUpdates.filter((h) => byMe(h.recorded_by)).reverse();
-
-  const hubNames = new Map(
-    hubs.map((hub) => [hub.hub_id, hub.name])
-  );
-
-  const personNames = new Map(
-    people.map((person) => [person.person_id, person.name])
-  );
-
-  const itemById = new Map(items.map((item) => [item.item_id, item]));
-
-  /*
-   * PERSONAL ACTIVITY
-   *
-   * Filter before rendering or paginating.
-   * recorded_by is expected to contain the recorder's login email.
-   * from_id and to_id are not used to identify the recorder.
-   */
-  const myEvents = events
-    .filter(
-      (event) =>
-        normalizeEmail(event.recorded_by ?? "") === email
-    )
-    .sort(
-      (a, b) =>
-        eventTime(b.recorded_at, b.occurred_at) -
-        eventTime(a.recorded_at, a.occurred_at)
-    );
-
-  /*
-   * PERSONAL HOLDINGS
-   *
-   * Resolve the person associated with the authenticated login.
-   * Check both users.person_id and people.linked_user.
-   * Conflicting links must be corrected rather than guessed.
-   */
-  const candidatePersonIds = new Set<string>();
-
-  for (const account of users) {
-    if (normalizeEmail(account.email ?? "") === email) {
-      const id = (account.person_id ?? "").trim();
-
-      if (id) {
-        candidatePersonIds.add(id);
-      }
+  type Kpi = {
+    label: string;
+    value: number;
+    hint: string;
+    href: string;
+    icon: IconName;
+    color: string;
+    cities?: { city: string; count: number; pct: number; href: string }[]; // city-wise list, opened from the tile
+    storage?: { storage: string; count: number; pct: number; href: string }[]; // SD card 256/512 GB breakdown, opened from the tile
+    hubs?: { hub: string; count: number; pct: number; href: string }[]; // hub-wise breakdown, opened from the tile
+    teams?: { label: string; count: number; pct: number; href: string }[]; // Rig team / Productivity team breakdown, opened from the tile
+    defn?: string; // one-line definition shown under the tile (e.g. what "Lost" vs "Broken" means)
+    storageOverrideKey?: string; // settings key for an admin-editable manual override of `storage` (see dashboard/actions.ts)
+    storageOverrideValue?: { gb256: number; gb512: number }; // current override, if any — prefills the edit form
+    baselineKey?: string; // settings key for a simple one-number starting-count baseline (see setRetiredBaseline)
+    baselineValue?: number; // current baseline, if any — prefills the edit form
+  };
+  // City-wise count of items with a status (city of the hub the item is at), biggest first.
+  const cityOfHub = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
+  // pct = share of that tile's items in the city (whole numbers, e.g. 42%).
+  // `excludeHubs`: used only for "In stock" (see inStockValue below) so it doesn't double-count items
+  // that are also shown under "With rig team" — those sit in_stock at the Rig/Productivity hub.
+  const citiesFor = (status: Status | Status[], onlyType?: string, excludeHubs?: Set<string>) => {
+    const wanted = new Set<string>(Array.isArray(status) ? status : [status]);
+    const count = new Map<string, number>();
+    for (const i of items) {
+      if (!wanted.has(i.status) || (onlyType && i.item_type !== onlyType) || excludeHubs?.has(i.current_hub)) continue;
+      const c = cityOfHub.get(i.current_hub) || i.current_hub || "Not set";
+      count.set(c, (count.get(c) ?? 0) + 1);
     }
-  }
-
-  for (const person of people) {
-    if (normalizeEmail(person.linked_user ?? "") === email) {
-      const id = (person.person_id ?? "").trim();
-
-      if (id) {
-        candidatePersonIds.add(id);
-      }
-    }
-  }
-
-  // The live link (works for an Admin acting as QC / hardware too); otherwise the single match found here.
-  const linkedPersonId =
-    user.personId ||
-    (candidatePersonIds.size === 1
-      ? Array.from(candidatePersonIds)[0]
-      : undefined);
-
-  const matchingPersonRecords = linkedPersonId
-    ? people.filter(
-        (person) => person.person_id === linkedPersonId
-      )
-    : [];
-
-  const linkedPerson =
-    matchingPersonRecords.length === 1
-      ? matchingPersonRecords[0]
-      : undefined;
-
-
-  // Holdings are current-state records, not historical activity.
-  const myItems = linkedPerson
-    ? items.filter(
-        (item) =>
-          item.current_holder === linkedPerson.person_id &&
-          HELD_STATUSES.includes(item.status)
-      )
-    : [];
-
-  /*
-   * Each count is an item-event count.
-   * Sending several cards in one batch may create several events.
-   */
-  const sentCount = myEvents.filter(
-    (event) => event.action === "check_out"
-  ).length;
-
-  const receivedCount = myEvents.filter(
-    (event) => event.action === "receive"
-  ).length;
-
-  /*
-   * Cards still with me: their latest event is a receive I recorded
-   * (I haven't sent them on since), plus any cards assigned to my
-   * person record in an out status.
-   */
-  const eventById = new Map(
-    events.map((event) => [event.event_id, event])
-  );
-
-  const withMeIds = new Set(myItems.map((item) => item.item_id));
-
-  const withMeItems = [
-    ...myItems,
-    ...items.filter((item) => {
-      if (withMeIds.has(item.item_id)) return false;
-      const last = eventById.get(item.last_event_id);
-      return (
-        last?.action === "receive" &&
-        normalizeEmail(last.recorded_by ?? "") === email
-      );
-    }),
-  ];
-
-  const correctionCount = myEvents.filter(
-    (event) =>
-      event.action === "correct" ||
-      event.action === "reassign_home_hub"
-  ).length;
-
-  // Pagination includes only this user's recorded events.
-  const requestedPage = Number(one(sp.page));
-
-  const totalPages = Math.max(
-    1,
-    Math.ceil(myEvents.length / PAGE_SIZE)
-  );
-
-  const page = Math.min(
-    totalPages,
-    Number.isSafeInteger(requestedPage) && requestedPage > 0
-      ? requestedPage
-      : 1
-  );
-
-  const shownEvents = myEvents.slice(
-    (page - 1) * PAGE_SIZE,
-    page * PAGE_SIZE
-  );
-
-  // Where this login sent rigs: to an IM (QC pass / repaired) or to the hardware team (QC fail).
-  const sentToImEvents = myEvents.filter((e) => e.action === "check_out" && e.status_after === "pending");
-  const sentToHardwareEvents = myEvents.filter((e) => e.action === "check_out" && e.status_after === "with_hardware");
-  const sentToIm = sentToImEvents.length;
-  const sentToHardware = sentToHardwareEvents.length;
-
-  // A rig with me is waiting for QC when no result was recorded since it reached me.
-  const waitingForQc = (item: (typeof items)[number]) => {
-    const arrived = Date.parse(eventById.get(item.last_event_id)?.occurred_at ?? item.updated_at ?? "");
-    const checked = latestQcAt.get(item.item_id);
-    return checked === undefined || (Number.isFinite(arrived) && checked < arrived);
+    return [...count.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([city, c], _, all) => {
+        const total = all.reduce((t, [, v]) => t + v, 0);
+        return {
+          city,
+          count: c,
+          pct: total ? Math.round((c / total) * 100) : 0,
+          href: inventory({ status: [...wanted].join(","), city: city.toLowerCase(), ...(onlyType && { type: onlyType }) }),
+        };
+      });
   };
 
-  // Rigs sent to my team that nobody has received yet (Receive items shows the same list). Anyone in the
-  // team can receive them, so the whole team's count is shown, with how many were sent to me by name.
-  const teamWaiting = items.filter((i) => i.status === (isQc ? "pending_qc" : "pending_hardware"));
-  const teamWaitingMine = linkedPerson ? teamWaiting.filter((i) => i.current_holder === linkedPerson.person_id) : [];
-  const toReceive = teamWaiting.length;
-  const toReceiveMine = teamWaitingMine.length;
-
-  /*
-   * BREAKDOWN ROWS
-   *
-   * Each card's number is turned into the rigs behind it, so clicking the card
-   * shows the IC numbers and their details without a trip to another page.
-   */
-
-  // Where a rig is right now: the person holding it, else its hub.
-  const whereOf = (item: Item | undefined) =>
-    (item && (personNames.get(item.current_holder) ?? hubNames.get(item.current_hub) ?? item.current_hub)) || "—";
-
-  const rowFromItem = (item: Item, extra?: { when?: string; note?: string }): DetailRow => ({
-    key: item.item_id,
-    itemId: item.item_id,
-    prism: item.prism_no || "",
-    brand: item.brand || "",
-    model: item.model || "",
-    status: STATUS_LABELS[item.status] ?? item.status,
-    qc: latestQc.get(item.item_id) || "qc_pending",
-    where: whereOf(item),
-    when: extra?.when ?? (eventById.get(item.last_event_id)?.occurred_at || item.updated_at || ""),
-    note: extra?.note ?? "",
-  });
-
-  // A row for a QC result or hardware update: the rig's details, plus when and what was written.
-  const rowFromRecord = (
-    id: string,
-    itemId: string,
-    when: string,
-    note: string,
-    qcOverride?: string,
-  ): DetailRow => {
-    const item = itemById.get(itemId);
-    return {
-      key: id,
-      itemId,
-      prism: item?.prism_no || "",
-      brand: item?.brand || "",
-      model: item?.model || "",
-      status: item ? STATUS_LABELS[item.status] ?? item.status : "—",
-      qc: qcOverride ?? latestQc.get(itemId) ?? "qc_pending",
-      where: whereOf(item),
-      when,
-      note,
-    };
+  // SD card 256/512 GB breakdown for items with a status, biggest first (only item_type "sd_card").
+  // `excludeHubs`: see citiesFor above — same reason.
+  const storageFor = (status: Status | Status[], excludeHubs?: Set<string>) => {
+    const wanted = new Set<string>(Array.isArray(status) ? status : [status]);
+    const count = new Map<string, number>();
+    for (const i of items) {
+      if (i.item_type !== "sd_card" || !wanted.has(i.status) || excludeHubs?.has(i.current_hub)) continue;
+      const storage = cardStorage(i.attributes);
+      count.set(storage, (count.get(storage) ?? 0) + 1);
+    }
+    return [...count.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([storage, c], _, all) => {
+        const total = all.reduce((t, [, v]) => t + v, 0);
+        return {
+          storage,
+          count: c,
+          pct: total ? Math.round((c / total) * 100) : 0,
+          href: inventory({ status: [...wanted].join(","), type: "sd_card", ...(storage !== "Unknown" && { storage }) }),
+        };
+      });
   };
 
-  const itemRows = (list: Item[]) => list.map((item) => rowFromItem(item));
+  // City-wise count of rigs in a given RIG STATE (in_stock, transit, …). A rig state can come from more
+  // than one raw status (e.g. "in_stock" = status in_stock not yet repaired, or status pending not yet QC
+  // passed), so this re-runs rigState() per item rather than matching a simple status set like citiesFor.
+  const citiesForRigState = (state: RigState, hrefStatuses: Status[]) => {
+    const count = new Map<string, number>();
+    for (const i of items) {
+      if (i.item_type !== "rig" || rigState(i.status, latestQc.get(i.item_id)) !== state) continue;
+      const c = cityOfHub.get(i.current_hub) || i.current_hub || "Not set";
+      count.set(c, (count.get(c) ?? 0) + 1);
+    }
+    return [...count.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([city, c], _, all) => {
+        const total = all.reduce((t, [, v]) => t + v, 0);
+        return {
+          city,
+          count: c,
+          pct: total ? Math.round((c / total) * 100) : 0,
+          href: inventory({ status: hrefStatuses.join(","), city: city.toLowerCase(), type: "rig" }),
+        };
+      });
+  };
 
-  // Rigs this login sent on: the event says when and to whom.
-  const sentRows = (list: typeof myEvents) =>
-    list.map((event) => {
-      const item = itemById.get(event.item_id);
-      return {
-        ...rowFromRecord(event.event_id, event.item_id, event.occurred_at || event.recorded_at, event.note || ""),
-        where: event.to_person || whereOf(item),
-      };
+  // RIGS: one tile per rig state (see RIG_STATES in lib/rig-state.ts). Each opens Rig checks filtered to it.
+  const rigCount = Object.fromEntries(RIG_STATES.map((k) => [k, 0])) as Record<RigState, number>;
+  // QC passed tile: who passed those rigs (the QC person on each rig's latest result).
+  const latestQcBy = new Map<string, string>();
+  for (const c of qcChecks) latestQcBy.set(c.item_id, c.recorded_by_name || c.recorded_by);
+  const passedBy = new Map<string, number>();
+  for (const i of items) {
+    if (i.item_type !== "rig") continue;
+    const st = rigState(i.status, latestQc.get(i.item_id));
+    rigCount[st] = (rigCount[st] ?? 0) + 1;
+    if (st === "qc_pass") {
+      const who = latestQcBy.get(i.item_id) || "QC team";
+      passedBy.set(who, (passedBy.get(who) ?? 0) + 1);
+    }
+  }
+  const passedFrom = [...passedBy.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const passedFromText = passedFrom.length
+    ? `From ${passedFrom.slice(0, 2).map(([who, c]) => `${who} (${c})`).join(", ")}${passedFrom.length > 2 ? ` +${passedFrom.length - 2} more` : ""}`
+    : "";
+  const rigTotal = items.filter((i) => i.item_type === "rig").length;
+  const rigShare = (v: number) => (rigTotal ? `${Math.round((v / rigTotal) * 100)}% of all rigs` : "");
+  const RIG_TILE: Record<(typeof RIG_STATES)[number], { icon: IconName; color: string; hint?: string }> = {
+    in_stock: { icon: "check", color: "var(--series-3)", hint: "With the IM" },
+    hardware: { icon: "wrench", color: "var(--series-1)", hint: "Received by hardware" },
+    internal: { icon: "user", color: "var(--series-7)", hint: "Checked out to internal people" },
+    fo: { icon: "user", color: "var(--series-2)", hint: "Checked out to an FO" },
+    transit: { icon: "truck", color: "var(--series-4)", hint: "Sent by the IM to an IFO" },
+    qc_pending: { icon: "shield", color: "var(--series-7)", hint: "Received by QC" },
+    qc_pass: { icon: "check", color: "var(--series-3)", hint: "Passed by QC, sent to IM, not received yet" },
+    qc_fail: { icon: "alert", color: "var(--warning)", hint: "Hardware has not received it yet" },
+    rtd: { icon: "send", color: "var(--series-3)", hint: "Repaired by hardware — sent to IM, whether or not received yet" },
+    dead: { icon: "archive", color: "var(--text-muted)", hint: "Declared dead by hardware" },
+    rnd: { icon: "wrench", color: "var(--series-7)", hint: "Moved to R&D by hardware" },
+  };
+  const rigKpis: Kpi[] = RIG_STATES.map((k) => ({
+    label: RIG_STATE_LABELS[k],
+    value: rigCount[k],
+    hint: k === "qc_pass" && passedFromText ? passedFromText : rigCount[k] ? rigShare(rigCount[k]) : (RIG_TILE[k].hint ?? ""),
+    href: `/rigs?state=${k}`,
+    icon: RIG_TILE[k].icon,
+    color: RIG_TILE[k].color,
+    // Rigs with field officers: city-wise list too, like SD cards and mobiles.
+    ...(k === "fo" && { cities: citiesFor("with_fo", "rig") }),
+    // In stock, and in transit to an IFO: city-wise too.
+    ...(k === "in_stock" && { cities: citiesForRigState("in_stock", ["in_stock", "pending"]) }),
+    ...(k === "transit" && { cities: citiesForRigState("transit", ["traveling"]) }),
+  }));
+  // Admin only: every rig sent and not received yet (to IMs, QC or hardware).
+  // ("Hardware team (all)" and "Sanitization" tiles removed — replace with a new metric here if wanted.)
+  if (user.role === "admin") {
+    const rigsOnly = items.filter((i) => i.item_type === "rig");
+    const toIm = rigsOnly.filter((i) => i.status === "pending").length;
+    const toQc = rigsOnly.filter((i) => i.status === "pending_qc").length;
+    const toHw = rigsOnly.filter((i) => i.status === "pending_hardware").length;
+    rigKpis.push({
+      label: "To be received",
+      value: toIm + toQc + toHw,
+      hint: `${toIm} to IMs · ${toQc} to QC · ${toHw} to hardware`,
+      href: inventory({ type: "rig", status: "pending,pending_qc,pending_hardware" }),
+      icon: "inbox",
+      color: "var(--series-4)",
     });
+  }
 
-  const qcRows = (list: QcCheck[]) =>
-    list.map((c) => rowFromRecord(c.check_id, c.item_id, c.recorded_at, c.comment || "", c.qc_status));
+  // "With rig team": one tile, total of Rig team + Productivity team, with a dropdown breaking the two
+  // out. The Rig team and the Productivity team are the same role and work out of the same hub — so
+  // which one an item belongs to is decided by what was chosen on the SEND form each time (item.sub_team,
+  // see lib/handover.ts's planSend), not by the person or the hub: the same person can send to either
+  // team on different days, and both sub-teams receive items with status "with_rig" at the same hub.
+  const rigHubObj = rigTeamHub(hubs);
+  const teamItemsFor = (which: "rig" | "productivity") =>
+    items.filter((i) => {
+      if (i.status === "with_rig") return (i.sub_team || "rig") === which;
+      // In-stock items at the shared rig hub are pooled stock, sorted into one pool or the other via
+      // the "Correct status / location" panel on Inventory (Team: Rig team / Productivity team) —
+      // never sent to anyone, so this is the only way an in-stock card gets a sub_team. Unsorted stock
+      // (sub_team still blank) defaults to Rig team.
+      if (i.status !== "in_stock" || !rigHubObj || i.current_hub !== rigHubObj.hub_id) return false;
+      return (i.sub_team || "rig") === which;
+    });
+  const rigTeamItemsList = teamItemsFor("rig");
+  const prodTeamItemsList = teamItemsFor("productivity");
+  const rigTeamCount = rigTeamItemsList.length;
+  const prodTeamCount = prodTeamItemsList.length;
+  const teamTotal = rigTeamCount + prodTeamCount;
+  // Items in_stock at the rig team's own hub are already counted under "With rig team" (teamItemsFor
+  // above) — exclude them from "In stock" so the tiles don't double-count and sum to the true total.
+  const teamHubIds = new Set<string>([rigHubObj?.hub_id].filter((h): h is string => !!h));
+  const inStockValue = items.filter((i) => i.status === "in_stock" && !teamHubIds.has(i.current_hub)).length;
+  // There's only one physical hub, so the link can't filter by sub-team the way it filters by hub — it
+  // shows both sub-teams together; the dropdown rows below link to the same place for now.
+  const teamHref = rigHubObj
+    ? inventory({ status: "with_rig,in_stock", hub: rigHubObj.hub_id })
+    : inventory({ status: "with_rig" });
+  const teamBreakdown = [
+    { label: "Rig team", count: rigTeamCount, pct: teamTotal ? Math.round((rigTeamCount / teamTotal) * 100) : 0, href: teamHref },
+    { label: "Productivity team", count: prodTeamCount, pct: teamTotal ? Math.round((prodTeamCount / teamTotal) * 100) : 0, href: teamHref },
+  ];
 
-  const hardwareRows = (list: HardwareUpdate[]) =>
-    list.map((h) =>
-      rowFromRecord(h.update_id, h.item_id, h.recorded_at, [h.update_type, h.comment].filter(Boolean).join(": ")),
-    );
+  // The Broken tile's storage breakdown combines the admin's manual baseline (already-broken cards
+  // that predate storage tracking, or were never scanned into the system) with the LIVE counts of
+  // items actually recorded as broken (item_type sd_card, status damaged) — so scanning a card as
+  // broken bumps the 256/512 numbers automatically, on top of the baseline, with no re-entry needed.
+  const brokenReal = storageFor("damaged"); // real tracked sd_card items, by capacity (includes "Not set")
+  const brokenReal256 = brokenReal.find((r) => r.storage === "256 GB")?.count ?? 0;
+  const brokenReal512 = brokenReal.find((r) => r.storage === "512 GB")?.count ?? 0;
+  const brokenRealOther = brokenReal.filter((r) => r.storage !== "256 GB" && r.storage !== "512 GB");
+  const brokenBase256 = brokenStorageOverride?.gb256 ?? 0;
+  const brokenBase512 = brokenStorageOverride?.gb512 ?? 0;
+  const brokenCombined256 = brokenBase256 + brokenReal256;
+  const brokenCombined512 = brokenBase512 + brokenReal512;
+  const brokenCombinedTotal = brokenCombined256 + brokenCombined512 + brokenRealOther.reduce((t, r) => t + r.count, 0);
+  const brokenStorageMerged = [
+    {
+      storage: "256 GB",
+      count: brokenCombined256,
+      pct: brokenCombinedTotal ? Math.round((brokenCombined256 / brokenCombinedTotal) * 100) : 0,
+      href: inventory({ status: "damaged", type: "sd_card" }),
+    },
+    {
+      storage: "512 GB",
+      count: brokenCombined512,
+      pct: brokenCombinedTotal ? Math.round((brokenCombined512 / brokenCombinedTotal) * 100) : 0,
+      href: inventory({ status: "damaged", type: "sd_card" }),
+    },
+    ...brokenRealOther.map((r) => ({ ...r, pct: brokenCombinedTotal ? Math.round((r.count / brokenCombinedTotal) * 100) : 0 })),
+  ].sort((a, b) => b.count - a.count);
+  // Broken counts SD cards only (storageFor already excludes rigs) — not s.damaged, which would
+  // also include any rig marked damaged. Once a baseline has been set, add it on top of the live count.
+  const brokenSdOnly = brokenReal.reduce((t, r) => t + r.count, 0);
+  const brokenValue = brokenStorageOverride ? brokenCombinedTotal : brokenSdOnly;
+  const retiredValue = retiredBaseline !== undefined ? retiredBaseline + s.retired : s.retired;
 
-  const qcMetrics: Metric[] = [
+  // "Duplicate cards": SD cards split into two or more physically tagged pieces that share one base
+  // serial — e.g. "SD-5381D1CDE0AL-D1" and "SD-5381D1CDE0AL-D2" are both pieces of "SD-5381D1CDE0AL".
+  // A card counts here when ANOTHER sd_card item (any status) shares its base serial; both pieces of a
+  // pair count, so a two-piece card adds 2 to this tile. See also ScanBox.tsx, which flags the same
+  // thing ("In stock (duplicate)") when both pieces are scanned together on the Send/Receive page.
+  const baseSerial = (id: string) => id.replace(/-D\d+$/i, "");
+  const dupFamilySize = new Map<string, number>();
+  for (const i of items) {
+    if (i.item_type !== "sd_card") continue;
+    const base = baseSerial(i.item_id);
+    if (base === i.item_id) continue; // no "-D<number>" suffix — not part of a split family
+    dupFamilySize.set(base, (dupFamilySize.get(base) ?? 0) + 1);
+  }
+  const duplicateValue = items.filter((i) => {
+    if (i.item_type !== "sd_card") return false;
+    const base = baseSerial(i.item_id);
+    return base !== i.item_id && (dupFamilySize.get(base) ?? 0) > 1;
+  }).length;
+
+  // SD CARDS (and the "All" view): unchanged.
+  const sdKpis: Kpi[] = [
     {
-      label: "Waiting for the QC team to receive",
-      value: numberText(toReceive),
-      view: "to_receive",
-      rows: itemRows(teamWaiting),
-      rowsTitle: "Rigs sent to the QC team, not received yet",
-      whenLabel: "Sent at",
+      label: "In stock",
+      value: inStockValue,
+      hint: share(inStockValue),
+      href: inventory({ status: "in_stock" }),
+      icon: "check",
+      color: "var(--series-3)",
+      cities: citiesFor("in_stock", undefined, teamHubIds),
+      storage: storageFor("in_stock", teamHubIds),
     },
     {
-      label: "Of these, sent to me",
-      value: numberText(toReceiveMine),
-      view: "to_receive_mine",
-      rows: itemRows(teamWaitingMine),
-      rowsTitle: "Rigs sent to me, not received yet",
-      whenLabel: "Sent at",
+      label: "With field officers",
+      value: s.with_fo,
+      hint: share(s.with_fo),
+      href: inventory({ status: "with_fo" }),
+      icon: "user",
+      color: "var(--series-2)",
+      cities: citiesFor("with_fo"),
+      storage: storageFor("with_fo"),
     },
     {
-      label: "Rigs with me",
-      value: numberText(withMeItems.length),
-      view: "with_me",
-      rows: itemRows(withMeItems),
-      rowsTitle: "Rigs currently with me",
-      whenLabel: "Since",
+      label: "With rig team",
+      value: teamTotal,
+      hint: share(teamTotal),
+      href: teamHref,
+      icon: "database",
+      color: "var(--series-7)",
+      teams: teamBreakdown,
+    },
+    { label: "Internal", value: s.with_internal, hint: share(s.with_internal), href: inventory({ status: "with_internal" }), icon: "user", color: "var(--series-1)" },
+    {
+      label: "In transit",
+      value: s.traveling + s.pending,
+      hint: share(s.traveling + s.pending),
+      href: "/transit",
+      icon: "truck",
+      color: "var(--series-4)",
+      cities: citiesFor(["traveling", "pending"]),
+      storage: storageFor(["traveling", "pending"]),
     },
     {
-      label: "Waiting for my QC result",
-      value: numberText(withMeItems.filter(waitingForQc).length),
-      view: "awaiting_qc",
-      rows: itemRows(withMeItems.filter(waitingForQc)),
-      rowsTitle: "Rigs with me that still need a QC result",
-      whenLabel: "Since",
+      label: "Lost",
+      value: s.lost,
+      hint: share(s.lost),
+      href: "/lost?status=lost",
+      icon: "alert",
+      color: "var(--critical)",
+      cities: citiesFor("lost"),
+      storage: storageFor("lost"),
+      defn: "Can't be found — not with any person or hub, and location is unknown.",
     },
     {
-      label: "QC pass recorded",
-      value: numberText(myQc.filter((c) => c.qc_status === "pass").length),
-      view: "qc_pass",
-      rows: qcRows(myQc.filter((c) => c.qc_status === "pass")),
-      rowsTitle: "Rigs I passed",
-      whenLabel: "Recorded at",
+      label: "Broken",
+      value: brokenValue,
+      hint: share(brokenValue),
+      href: "/lost?status=damaged",
+      icon: "alert",
+      color: "var(--critical)",
+      cities: citiesFor("damaged"),
+      storage: brokenStorageOverride ? brokenStorageMerged : brokenReal,
+      defn: "Physically damaged and unusable, but its location is known.",
+      storageOverrideKey: "broken_storage",
+      storageOverrideValue: brokenStorageOverride,
     },
     {
-      label: "QC fail recorded",
-      value: numberText(myQc.filter((c) => c.qc_status === "fail").length),
-      view: "qc_fail",
-      rows: qcRows(myQc.filter((c) => c.qc_status === "fail")),
-      rowsTitle: "Rigs I failed",
-      whenLabel: "Recorded at",
+      label: "Retired",
+      value: retiredValue,
+      hint: share(retiredValue),
+      href: "/retired",
+      icon: "archive",
+      color: "var(--text-muted)",
+      // No "starting count" edit box on this tile anymore (removed per request) — retiredValue still
+      // adds whatever baseline was set earlier (retiredBaseline, from settings), just not editable here.
     },
     {
-      label: "Sent to IM",
-      value: numberText(sentToIm),
-      view: "sent_im",
-      rows: sentRows(sentToImEvents),
-      rowsTitle: "Rigs I sent to an IM",
-      whenLabel: "Sent at",
-    },
-    {
-      label: "Sent to hardware team",
-      value: numberText(sentToHardware),
-      view: "sent_hardware",
-      rows: sentRows(sentToHardwareEvents),
-      rowsTitle: "Rigs I sent to the hardware team",
-      whenLabel: "Sent at",
+      label: "Duplicate cards",
+      value: duplicateValue,
+      hint: share(duplicateValue),
+      href: inventory({ type: "sd_card", dup: "1" }),
+      icon: "layers",
+      color: "var(--series-7)",
+      defn: "SD cards split into two or more tagged pieces (e.g. …-D1, …-D2) — every piece counts here.",
     },
   ];
 
-  const hardwareMetrics: Metric[] = [
+  // Mobiles: the SD card tiles, without the rig team and internal ones (mobiles go only to IMs, FOs and IFOs),
+  // and every tile opens the Mobile list.
+  // Six even tiles (3 + 3): Total, In stock, With field officers, In transit, Lost or damaged, Retired.
+  // Broken mobiles: computed separately from the SD card Broken tile, which combines the admin's
+  // SD-only "starting count" baseline with the live SD damaged count — neither of which has anything
+  // to do with mobiles. Mobiles just get their own live count of item_type "mobile" + status "damaged".
+  const mobileBrokenValue = items.filter((i) => i.item_type === "mobile" && i.status === "damaged").length;
+  const mobileKpis: Kpi[] = [
     {
-      label: "Waiting for the hardware team to receive",
-      value: numberText(toReceive),
-      view: "to_receive",
-      rows: itemRows(teamWaiting),
-      rowsTitle: "Rigs sent to the hardware team, not received yet",
-      whenLabel: "Sent at",
+      label: "Total mobiles",
+      value: d.total,
+      hint: `${n(d.outCount)} in use · ${n(d.usable)} usable`,
+      href: mobileList(),
+      icon: "layers",
+      color: "var(--series-1)",
     },
-    {
-      label: "Of these, sent to me",
-      value: numberText(toReceiveMine),
-      view: "to_receive_mine",
-      rows: itemRows(teamWaitingMine),
-      rowsTitle: "Rigs sent to me, not received yet",
-      whenLabel: "Sent at",
-    },
-    {
-      label: "Rigs with me",
-      value: numberText(withMeItems.length),
-      view: "with_me",
-      rows: itemRows(withMeItems),
-      rowsTitle: "Rigs currently with me",
-      whenLabel: "Since",
-    },
-    {
-      label: "Hardware updates logged",
-      value: numberText(myHardware.length),
-      view: "hw_updates",
-      rows: hardwareRows(myHardware),
-      rowsTitle: "Hardware updates I logged",
-      whenLabel: "Recorded at",
-    },
-    {
-      label: "Repaired and sent to IM",
-      value: numberText(sentToIm),
-      view: "sent_im",
-      rows: sentRows(sentToImEvents),
-      rowsTitle: "Rigs I repaired and sent to an IM",
-      whenLabel: "Sent at",
-    },
+    ...sdKpis
+      // "Duplicate cards" is an SD-card-only concept (split-card serials like "…-D1"/"…-D2"), so it's
+      // left off the mobile tab along with the SD-card-only "With rig team" and "Internal" tiles.
+      .filter((k) => k.label !== "With rig team" && k.label !== "Internal" && k.label !== "Duplicate cards")
+      .map((k) => {
+        const isBroken = k.label === "Broken";
+        return {
+          ...k,
+          href: `${k.href}&type=mobile`,
+          value: isBroken ? mobileBrokenValue : k.value,
+          hint: isBroken ? share(mobileBrokenValue) : k.hint.replace("of all items", "of all mobiles"),
+          cities: k.cities?.map((c) => ({ ...c, href: `${c.href}&type=mobile` })),
+          storage: undefined, // SD card capacity breakdown doesn't apply to mobiles
+          // The SD-only "starting count" override box doesn't apply to mobiles either.
+          storageOverrideKey: isBroken ? undefined : k.storageOverrideKey,
+          storageOverrideValue: isBroken ? undefined : k.storageOverrideValue,
+        };
+      }),
   ];
+  const kpis = rigView ? rigKpis : mobileView ? mobileKpis : sdKpis;
 
-  const handlerMetrics: Metric[] = [
-    {
-      label: "My recorded events",
-      value: numberText(myEvents.length),
-    },
-    {
-      label: "Sent events",
-      value: numberText(sentCount),
-    },
-    {
-      label: "Received events",
-      value: numberText(receivedCount),
-    },
-    {
-      label: "Correction events",
-      value: numberText(correctionCount),
-    },
-    {
-      label: "Items currently with me",
-      value: numberText(withMeItems.length),
-      view: "with_me",
-      rows: itemRows(withMeItems),
-      rowsTitle: "Items currently with me",
-      whenLabel: "Since",
-    },
-  ];
+  // Bars: one series, one colour. Every bar opens the matching list or hub.
+  const statusRows = STATUS_ORDER.filter((st) => s[st] > 0)
+    .sort((a, b) => s[b] - s[a])
+    .map((st) => ({
+      key: st,
+      label: STATUS_LABELS[st],
+      value: s[st],
+      href: inventory({ status: st, ...(mobileView && { type: "mobile" }) }),
+      tip: `${STATUS_LABELS[st]}\n${n(s[st])} items (${((s[st] / Math.max(1, d.total)) * 100).toFixed(1)}%)`,
+    }));
 
-  const metrics = isQc ? qcMetrics : isHardware ? hardwareMetrics : handlerMetrics;
-  const withMeTitle = isQc || isHardware ? "Rigs currently with me" : "Items currently with me";
+  const byHub = d.hubs.filter((h) => h.held > 0);
+  const hubRows = byHub.slice(0, HUB_BARS).map((h) => ({
+    key: h.hub_id,
+    label: h.name,
+    value: h.held,
+    href: `/dashboard/hub/${h.hub_id}`,
+    tip: `${h.name}\n${n(h.held)} items\n${n(h.byStatus.in_stock)} in stock`,
+  }));
+  const rest = byHub.slice(HUB_BARS);
+  if (rest.length) {
+    const total = rest.reduce((sum, h) => sum + h.held, 0);
+    hubRows.push({ key: "other", label: `${rest.length} other hubs`, value: total, href: "/inventory", tip: `${rest.length} other hubs\n${n(total)} items` });
+  }
 
-  // The card the breakdown is open on, from ?view=.
-  const requestedView = one(sp.view);
-  const openMetric = metrics.find((m) => m.view && m.view === requestedView);
-  const openRows = openMetric?.rows ?? [];
-  const showQcColumn = isQc || isHardware;
+  // Needs attention: one row per person (FO, IFO, rig team, IM) or hub holding items for more than
+  // LATE_AFTER_HOURS, oldest first, then lost / damaged items. Every name is listed.
+  const howLong = (hours: number) => (hours < 48 ? `${Math.floor(hours)} hours` : `${Math.floor(hours / 24)} days`);
+  const attention: Attention[] = [];
+  const seen = new Set<string>();
 
-  // Keeps the breakdown open while paging through the activity list below.
-  const pageHref = (n: number) =>
-    openMetric?.view ? `/dashboard/my?view=${openMetric.view}&page=${n}` : `/dashboard/my?page=${n}`;
+  // City of a hub (its City column, or its name when City is blank), and the cities where a person's items are.
+  const hubCity = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
+  const holderCities = new Map<string, Set<string>>();
+  for (const i of items) {
+    if (!i.current_holder || i.status === "in_stock") continue;
+    const set = holderCities.get(i.current_holder) ?? new Set<string>();
+    set.add(hubCity.get(i.current_hub) ?? i.current_hub);
+    holderCities.set(i.current_holder, set);
+  }
+  const personHub = new Map(people.map((p) => [p.person_id, p.hub]));
+
+  // Who sent the items: the sender on each item's latest handover. Several senders → the most items first.
+  const eventById = new Map(events.map((e) => [e.event_id, e]));
+  const personName = new Map(people.map((p) => [p.person_id, p.name]));
+  const senders = (list: typeof items) => {
+    const count = new Map<string, number>();
+    for (const i of list) {
+      const e = eventById.get(i.last_event_id);
+      const who = (e?.from_person || personName.get(e?.from_id ?? "") || e?.from_id || "").trim();
+      if (who) count.set(who, (count.get(who) ?? 0) + 1);
+    }
+    const sorted = [...count.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    if (sorted.length === 0) return "—";
+    if (sorted.length === 1) return sorted[0][0];
+    const shown = sorted.slice(0, 3).map(([who, c]) => `${who} (${c})`).join(", ");
+    return sorted.length > 3 ? `${shown} +${sorted.length - 3} more` : shown;
+  };
+  // Hours since each item's last movement (send, receive, correction), as in the LATE_AFTER_HOURS rule.
+  const lastMove = new Map<string, number>();
+  for (const e of events) {
+    const t = Date.parse(e.occurred_at);
+    if (!Number.isNaN(t) && t > (lastMove.get(e.item_id) ?? -Infinity)) lastMove.set(e.item_id, t);
+  }
+  const hoursOut = (i: (typeof items)[number]) => {
+    const t = lastMove.get(i.item_id) ?? Date.parse(i.updated_at);
+    return Number.isNaN(t) ? 0 : Math.max(0, (now.getTime() - t) / 3_600_000);
+  };
+  const isLate = (i: (typeof items)[number]) => hoursOut(i) > LATE_AFTER_HOURS;
+  // Only the LATE items of a person or hub (out for more than LATE_AFTER_HOURS): their senders and cities.
+  const lateWith = (id: string, status: Status) => items.filter((i) => i.current_holder === id && i.status === status && isLate(i));
+  const sentToPerson = (id: string, status: Status) => senders(lateWith(id, status));
+  const sentToHub = (hubId: string) => senders(items.filter((i) => i.status === "pending" && i.current_hub === hubId && isLate(i)));
+  const cityOfPerson = (id: string, status: Status) => {
+    const late = [...new Set(lateWith(id, status).map((i) => hubCity.get(i.current_hub) ?? i.current_hub))].filter(Boolean);
+    if (late.length) return late.sort().join(", ");
+    const set = holderCities.get(id);
+    if (set && set.size) return [...set].filter(Boolean).sort().join(", ");
+    const hub = personHub.get(id);
+    return hub ? (hubCity.get(hub) ?? hub) : "—";
+  };
+
+  for (const g of d.late) {
+    seen.add(g.key);
+    if (g.kind === "pending") {
+      attention.push({
+        key: `late-pending-${g.key}`,
+        person: g.label,
+        role: "Hub",
+        city: hubCity.get(g.key) ?? g.key,
+        sentBy: sentToHub(g.key),
+        items: g.count,
+        hours: g.oldestHours,
+        outFor: howLong(g.oldestHours),
+        issue: "Sent, not received",
+        href: `/handover/receive?${new URLSearchParams({ hub: g.key })}`,
+        tone: "warning",
+        late: items.filter((i) => i.status === "pending" && i.current_hub === g.key && isLate(i)),
+      });
+    } else {
+      attention.push({
+        key: `late-${g.kind}-${g.key}`,
+        person: g.label,
+        role: g.kind === "fo" ? "FO" : "IFO",
+        city: cityOfPerson(g.key, g.kind === "fo" ? "with_fo" : "traveling"),
+        sentBy: sentToPerson(g.key, g.kind === "fo" ? "with_fo" : "traveling"),
+        items: g.count,
+        hours: g.oldestHours,
+        outFor: howLong(g.oldestHours),
+        issue: g.kind === "fo" ? "Not returned" : "Not arrived",
+        href: inventory({ holder: g.key, status: g.kind === "fo" ? "with_fo" : "traveling" }),
+        tone: "warning",
+        late: lateWith(g.key, g.kind === "fo" ? "with_fo" : "traveling"),
+      });
+    }
+  }
+
+  // Rig team and internal team: items still with them for more than LATE_AFTER_HOURS since their last
+  // movement (same rule as FO / IFO). IMs are not listed here: items sent to an IM and not received yet are
+  // already the hub's "Sent, not received" row, and items in stock with an IM are not out.
+  const heldBy = new Map<string, { status: Status; count: number; hours: number }>();
+  for (const i of items) {
+    if (i.status !== "with_rig" && i.status !== "with_internal") continue;
+    if (!i.current_holder || seen.has(i.current_holder)) continue;
+    const hours = hoursOut(i);
+    if (hours <= LATE_AFTER_HOURS) continue;
+    const g = heldBy.get(i.current_holder) ?? { status: i.status, count: 0, hours: 0 };
+    g.count++;
+    g.hours = Math.max(g.hours, hours);
+    heldBy.set(i.current_holder, g);
+  }
+  for (const [personId, g] of heldBy) {
+    const person = people.find((p) => p.person_id === personId);
+    attention.push({
+      key: `late-held-${personId}`,
+      person: person?.name ?? personId,
+      role: person ? ROLE_LABELS[person.role] : g.status === "with_rig" ? "Rig team" : "Internal",
+      city: cityOfPerson(personId, g.status),
+      sentBy: sentToPerson(personId, g.status),
+      items: g.count,
+      hours: g.hours,
+      outFor: howLong(g.hours),
+      issue: "Not returned",
+      href: inventory({ holder: personId, status: g.status }),
+      tone: "warning",
+      late: lateWith(personId, g.status),
+    });
+  }
+
+  // Longest out first. Lost / damaged rows have no time, so they go last.
+  attention.sort((a, b) => (b.hours ?? -1) - (a.hours ?? -1) || b.items - a.items);
+
+  // One row per delayed card: every item out for more than LATE_AFTER_HOURS, oldest first.
+  const TYPE_NAME: Record<string, string> = { sd_card: "SD card", rig: "Rig", mobile: "Mobile" };
+  const delayed = attention
+    .flatMap((a) =>
+      (a.late ?? []).map((i) => {
+        const e = eventById.get(i.last_event_id);
+        const sentAt = lastMove.get(i.item_id) ?? Date.parse(i.updated_at);
+        return {
+          id: i.item_id,
+          type: TYPE_NAME[i.item_type] ?? i.item_type,
+          person: a.person,
+          role: a.role,
+          city: hubCity.get(i.current_hub) ?? i.current_hub,
+          sentBy: (e?.from_person || personName.get(e?.from_id ?? "") || e?.from_id || "—").trim() || "—",
+          sentOn: Number.isNaN(sentAt) ? "—" : istDay(sentAt),
+          sentAt: Number.isNaN(sentAt) ? "—" : formatIst(new Date(sentAt).toISOString()),
+          status: STATUS_LABELS[i.status] ?? i.status,
+          hours: hoursOut(i),
+          issue: a.issue,
+          href: a.href,
+        };
+      }),
+    )
+    .sort((x, y) => y.hours - x.hours || x.id.localeCompare(y.id));
+
+  // Filter by cities and roles (several allowed, comma separated: ?acity=Bangalore,Pune&arole=FO,IFO).
+  const cityOptions = [...new Set(delayed.map((r) => r.city).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const roleOptions = [...new Set(delayed.map((r) => r.role).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const listParam = (v: string) => v.split(",").map((x) => x.trim()).filter(Boolean);
+  const cityFilter = listParam(one(sp.acity));
+  const roleFilter = listParam(one(sp.arole));
+  // Same type, person, role, city, sender and send date → one row with a Count. Oldest first.
+  const groups = new Map<string, (typeof delayed)[number] & { count: number; key: string; items: (typeof delayed)[number][] }>();
+  for (const r of delayed) {
+    if (!((cityFilter.length === 0 || cityFilter.includes(r.city)) && (roleFilter.length === 0 || roleFilter.includes(r.role)))) continue;
+    const k = [r.type, r.person, r.role, r.city, r.sentBy, r.sentOn, r.issue].join("|");
+    const g = groups.get(k);
+    if (g) {
+      g.count++;
+      g.hours = Math.max(g.hours, r.hours);
+      g.items.push(r);
+    } else groups.set(k, { ...r, count: 1, key: k, items: [r] });
+  }
+  const shownDelayed = [...groups.values()].sort((x, y) => y.hours - x.hours || y.count - x.count);
+  // Click a row: only that row's delayed items, with their details (?adetail=<row>), shown under the table.
+  const detailKey = one(sp.adetail);
+  const detailRow = shownDelayed.find((g) => g.key === detailKey);
+  const attentionKeep: Record<string, string> = {};
+  for (const k of ["type", "empty", "acity", "arole", ...MOVE_KEYS, ...EXTRA_KEYS]) if (val(k)) attentionKeep[k] = val(k);
+  const detailHref = (key: string) => `/dashboard?${new URLSearchParams({ ...attentionKeep, adetail: key })}#delayed-items`;
+  const closeDetailHref = `/dashboard?${new URLSearchParams(attentionKeep)}#attention`;
+
+  // Manual notes under "Needs attention" (see dashboard/actions.ts addAttentionNote / setAttentionNoteStatus):
+  // open ones first, earliest "by when" first (no date = last); done ones kept but shown separately, newest first.
+  const attentionBack = `/dashboard?${new URLSearchParams(attentionKeep)}#attention-notes`;
+  const openNotes = attentionNotes
+    .filter((n) => n.status !== "done")
+    .slice()
+    .sort((a, b) => {
+      const ad = a.due_date ? Date.parse(a.due_date) : Infinity;
+      const bd = b.due_date ? Date.parse(b.due_date) : Infinity;
+      return ad - bd || Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0");
+    });
+  const doneNotes = attentionNotes
+    .filter((n) => n.status === "done")
+    .slice()
+    .sort((a, b) => Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0"));
+  const todayStr = istDate(now);
+
+  // Notes left against individual delayed cards (see dashboard/actions.ts addDelayNote), newest first.
+  const delayNoteLog = delayNotes.slice().sort((a, b) => Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0"));
+  // "Moved per day" and "Moved per hour of day": each has its own Items, Person, City and Role filters, and
+  // several values can be ticked in each (?mperson=a&mperson=b, kept in links as "a,b"). Items: empty = all
+  // the types this login can see. Default range: the last 14 days.
+  const typeOptions = allowedTypes(user.role).map((t) => ({ id: t as string, label: TYPE_LABELS[t] ?? t }));
+  const pickTypes = (k: string) => many(k).filter((t) => typeOptions.some((o) => o.id === t));
+  const eventsByTypes = new Map<string, Promise<typeof events>>();
+  const eventsFor = (chosen: string[]) => {
+    const list = chosen.length ? chosen : typeOptions.map((t) => t.id);
+    const key = [...list].sort().join(",");
+    if (list.length === 1 && list[0] === type) return Promise.resolve(events);
+    if (!eventsByTypes.has(key)) eventsByTypes.set(key, getStore().forTypes(list).list("events"));
+    return eventsByTypes.get(key)!;
+  };
+  const typesTitle = (chosen: string[]) =>
+    chosen.length === 0 || chosen.length === typeOptions.length
+      ? "All items"
+      : typeOptions.filter((t) => chosen.includes(t.id)).map((t) => t.label).join(" + ");
+
+  const moveTypes = pickTypes("mtype");
+  const movePerson = many("mperson");
+  const moveCity = many("mcity");
+  const moveRole = many("mrole");
+  const moveRange = pickRange(one(sp.mfrom), one(sp.mto), now, 14);
+
+  const hourTypes = pickTypes("htype");
+  const hourPerson = many("hperson");
+  const hourCity = many("hcity");
+  const hourRole = many("hrole");
+  const hourRange = pickRange(one(sp.hfrom), one(sp.hto), now, 14);
+
+  // Independent reads, fetched together instead of one after the other.
+  const [moveEvents, hourEvents] = await Promise.all([eventsFor(moveTypes), eventsFor(hourTypes)]);
+
+  const movedDays = dailyMoves(moveEvents, hubs, moveRange, { person: movePerson, city: moveCity, role: moveRole }, people);
+  const moveOptions = moveFilterOptions(moveEvents, hubs, people, moveRange);
+  const moveKeep: Record<string, string> = {};
+  for (const k of ["type", "acity", "arole", "empty", ...EXTRA_KEYS]) if (val(k)) moveKeep[k] = val(k);
+
+  // Field usage (most / least / never used on field): ?ufrom=&uto=&ucity=&uperson=&umodel=&uout=1. Default: last 30 days.
+  const usageRange = pickRange(one(sp.ufrom), one(sp.uto), now, 30, 366);
+  const usageCity = many("ucity");
+  const usagePerson = many("uperson");
+  const usageModel = many("umodel");
+  const usageOut = one(sp.uout) === "1";
+  const usage = fieldUsage(items, events, hubs, people, usageRange, { city: usageCity, person: usagePerson, model: usageModel, includeOut: usageOut }, now);
+  const usageOptions = usageFilterOptions(items, events, hubs, people);
+  const usageKeep: Record<string, string> = {};
+  for (const k of ["type", "empty", "acity", "arole", ...MOVE_KEYS, ...HOURLY_KEYS]) if (val(k)) usageKeep[k] = val(k);
+
+  const movedHours = hourlyMoves(hourEvents, hubs, hourRange, { person: hourPerson, city: hourCity, role: hourRole }, people);
+  const hourOptions = moveFilterOptions(hourEvents, hubs, people, hourRange);
+  const hourKeep: Record<string, string> = {};
+  for (const k of ["type", "empty", "acity", "arole", ...MOVE_KEYS, "ufrom", "uto", "ucity", "uperson", "umodel", "uout"])
+    if (val(k)) hourKeep[k] = val(k);
+
+  const keepParams: Record<string, string> = {};
+  if (one(sp.type)) keepParams.type = one(sp.type);
+  if (showEmpty) keepParams.empty = "1";
+  for (const k of [...MOVE_KEYS, ...EXTRA_KEYS]) if (val(k)) keepParams[k] = val(k);
+
+  // QC team leaderboard date filter (Rig dashboard): "" means no filter, show all-time.
+  const qcFrom = one(sp.qcfrom);
+  const qcTo = one(sp.qcto);
+  const qcKeep: Record<string, string> = { ...keepParams };
+
+  // Sanitization table filter (Rig dashboard): "" = all, "yes" or "no" narrows the table to that result.
+  const sanRaw = one(sp.san);
+  const san = sanRaw === "yes" || sanRaw === "no" ? sanRaw : "";
+  const sanKeep: Record<string, string> = { ...keepParams };
+
+  // Acknowledgements chart: grouped by city (default), by FO/IFO/internal role, by day sent, or by hour of day.
+  const ackByRaw = one(sp.ackBy);
+  const ackBy = ackByRaw === "role" ? "role" : ackByRaw === "day" ? "day" : ackByRaw === "hour" ? "hour" : "city";
+  const ackFrom = one(sp.ackFrom); // YYYY-MM-DD, inclusive
+  const ackTo = one(sp.ackTo); // YYYY-MM-DD, inclusive
+  const ackCity = one(sp.ackCity); // narrows to recipients in this one city, on top of everything else
+  const ackCityOf = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
+  const ackPersonHub = new Map(people.map((p) => [p.person_id, p.hub]));
+  const ackCities = [...new Set(people.map((p) => ackCityOf.get(ackPersonHub.get(p.person_id) ?? "")).filter((c): c is string => !!c))].sort((a, b) =>
+    a.localeCompare(b),
+  );
+  const ackInRange = acknowledgments.filter((a) => {
+    const t = Date.parse(a.created_at || "");
+    if (Number.isNaN(t)) return true; // keep undated rows rather than silently dropping them
+    if (ackFrom && t < Date.parse(`${ackFrom}T00:00:00+05:30`)) return false;
+    if (ackTo && t > Date.parse(`${ackTo}T23:59:59+05:30`)) return false;
+    if (ackCity && ackCityOf.get(ackPersonHub.get(a.to_id) ?? "") !== ackCity) return false;
+    return true;
+  });
+  // Narrows to just FO, IFO or internal recipients, on top of the date range, city and either grouping.
+  const ackRole =
+    one(sp.ackRole) === "fo" || one(sp.ackRole) === "ifo" || one(sp.ackRole) === "internal"
+      ? (one(sp.ackRole) as "fo" | "ifo" | "internal")
+      : "";
+  const ackBuckets =
+    ackBy === "role"
+      ? ackByRole(ackInRange, people, ackRole)
+      : ackBy === "day"
+        ? ackByDay(ackInRange, people, ackRole)
+        : ackBy === "hour"
+          ? ackByHour(ackInRange, people, ackRole)
+          : ackByCity(ackInRange, people, hubs, ackRole);
+  // Average time taken to acknowledge, over whatever's in range right now (same date/city/role filters
+  // as the chart above) — shown alongside the totals under the chart.
+  const ackAvgMinutes = ackAvgResponseMinutes(ackInRange, people, ackRole);
+  const ackBase = { ...keepParams, ...(ackFrom && { ackFrom }), ...(ackTo && { ackTo }), ...(ackCity && { ackCity }) }; // no ackBy/ackRole — each link below adds its own
+  const ackParams = { ...ackBase, ...(ackRole && { ackRole }) };
+  const ackHref = (by: "city" | "role" | "day" | "hour") => `/dashboard?${new URLSearchParams({ ...ackParams, ...(by !== "city" && { ackBy: by }) })}#acknowledgements`;
+  const ackRoleHref = (role: "" | "fo" | "ifo" | "internal") =>
+    `/dashboard?${new URLSearchParams({ ...ackBase, ...(ackBy !== "city" && { ackBy }), ...(role && { ackRole: role }) })}#acknowledgements`;
+  // Hidden fields the date-range filter form must carry so it doesn't lose the other dashboard filters or the current grouping/role.
+  // ackCity is NOT included here — it's its own <select> inside that same form, not a hidden field.
+  // "Clear filters" drops the date range AND the city together (role has its own "All" chip to reset).
+  const ackHidden = { ...keepParams, ...(ackBy !== "city" && { ackBy }), ...(ackRole && { ackRole }) };
+  const ackClearHref = `/dashboard?${new URLSearchParams(ackHidden)}#acknowledgements`;
+
+  // Who has items: longest out first, then most items.
+  const holdersSorted = [...d.holders].sort(
+    (a, b) => (b.oldestDays ?? -1) - (a.oldestDays ?? -1) || b.count - a.count || a.name.localeCompare(b.name),
+  );
+  const holdersTotal = d.holders.reduce((total, holder) => total + holder.count, 0);
 
   return (
     <div className={styles.root}>
       <main className={styles.wrap}>
-        <p className={styles.back}>
-          <BackLink />
-        </p>
-
         <div className={styles.top}>
-          <div>
-            <h1>My dashboard</h1>
-
-            <p className={styles.subtitle}>
-              {linkedPerson?.name
-                ? `${linkedPerson.name} · `
-                : ""}
-              {user.email} · {ROLE_LABELS[user.role]}
-            </p>
+          <div className={styles.brand}>
+            <span className={styles.brandIcon}>
+              <Icon name="layers" size={26} />
+            </span>
+            <div>
+              <h1>Inventory Dashboard</h1>
+              <p className={styles.subtitle}>
+                {n(d.total)} {mobileView ? "mobiles" : "items"} · {activeHubs} hubs · the latest known position of every item
+              </p>
+            </div>
           </div>
-
           <div className={styles.actions}>
-            <Link
-              href="/dashboard/my"
-              className={styles.btn}
-            >
-              Refresh
-            </Link>
-
-            <Link
-              href="/dashboard"
-              className={styles.btn}
-            >
-              Inventory Dashboard
-            </Link>
-
-            <Link
-              href="/handover/send"
-              className={styles.btn}
-            >
-              Send items
-            </Link>
-
-            {canReceive && (
-              <Link
-                href="/handover/receive"
-                className={styles.btn}
-              >
-                Receive items
-              </Link>
+            {/* Primary / secondary role switch, in the top bar. */}
+            <RoleSwitch role={user.role} primaryRole={user.primaryRole} secondaryRole={user.secondaryRole} back="/dashboard" />
+            {canHandle && (
+              <>
+                <Link href="/handover/send" className={`${styles.btn} ${styles.btnPrimary}`}>
+                  <Icon name="send" size={16} /> Send items
+                </Link>
+                <Link href="/handover/receive" className={styles.btn}>
+                  <Icon name="inbox" size={16} /> Receive items
+                </Link>
+              </>
             )}
-
-            {(isQc || isHardware) && (
-              <Link href="/rigs" className={styles.btn}>
-                Rig checks
-              </Link>
-            )}
-
-            {(isQc || isHardware) && (
-              <Link href="/rigs/audit" className={styles.btn}>
-                Audit trail
-              </Link>
-            )}
+            <Link href="/dashboard" className={styles.btn} title="Reload the latest numbers">
+              <Icon name="refresh" size={16} /> Refresh
+            </Link>
           </div>
         </div>
 
-        {!isQc && !isHardware && (
-          <p className={styles.muted}>
-            All available history recorded by your login. Counts
-            represent item-event records, not unique cards or
-            handover batches. Current holdings are shown separately.
-          </p>
+        <nav className={styles.tabs} aria-label="Sections">
+          <span className={`${styles.tab} ${styles.tabOn}`} aria-current="page">
+            Overview
+          </span>
+          <Link href="/dashboard/analytics" className={styles.tab}>
+            Analytics
+          </Link>
+          {INVENTORY_ROLES.includes(user.role) && (
+            <Link href="/inventory" className={styles.tab}>
+              Inventory
+            </Link>
+          )}
+          <Link href="/handover/receipts" className={styles.tab}>
+            Receipts
+          </Link>
+          {(user.role === "admin" || user.role === "im" || user.role === "rig") && (
+            <Link href="/sd-details" className={styles.tab}>
+              SD card details
+            </Link>
+          )}
+          {user.role === "admin" && (
+            <Link href="/admin/hubs" className={styles.tab}>
+              Hubs
+            </Link>
+          )}
+          <Link href="/" className={styles.tab}>
+            Home
+          </Link>
+        </nav>
+
+        <form action="/inventory" method="get" role="search" className={styles.search}>
+          <Icon name="search" size={18} />
+          <input name="q" placeholder="Find an item by serial, prism no., brand or model" aria-label="Find an item" />
+        </form>
+
+        <TypeSwitch role={user.role} current={type} path="/dashboard" includeAll={false} />
+
+        {/* Mobiles: no SD card storage / colour summary; the tiles below start with the total. */}
+        {!mobileView && (
+          <SummaryKpis
+            d={d}
+            items={items}
+            rigView={rigView}
+            attentionHref={`/dashboard${rigView ? "?type=rig" : ""}#attention`}
+            baselineTotal={rigView ? undefined : brokenBaselineTotal + (retiredBaseline ?? 0)}
+            baselineStorage={rigView ? undefined : brokenStorageOverride}
+            brokenCount={rigView ? undefined : brokenValue}
+            retiredCount={rigView ? undefined : retiredValue}
+          />
         )}
 
-        {/* Personal summary cards. A card with a breakdown opens it below when clicked. */}
+        {/* Mobile tiles: an even 3-column grid (3 + 3 on a laptop, 2 per row on a tablet, 1 on a phone). */}
+        {mobileView && (
+          <style>{`
+.kpi-mob.kpi-mob{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.kpi-mob.kpi-mob > * span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:820px){.kpi-mob.kpi-mob{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:480px){.kpi-mob.kpi-mob{grid-template-columns:1fr}}
+`}</style>
+        )}
+        {/* SD card tiles: rows that always fill the full width (4 + 3 on a laptop), labels on one line. */}
+        {!rigView && !mobileView && (
+          <style>{`
+.kpi-sd.kpi-sd{display:flex;flex-wrap:wrap;gap:12px}
+.kpi-sd.kpi-sd > *{flex:1 1 230px;min-width:0}
+.kpi-sd.kpi-sd > * span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+`}</style>
+        )}
         <section
-          aria-label="My activity summary"
-          style={{
-            display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(min(100%, 180px), 1fr))",
-            gap: 16,
-            marginBottom: 24,
-          }}
+          className={rigView ? `${styles.kpiGrid} ${styles.kpiGridRig}` : mobileView ? `${styles.kpiGrid} kpi-mob` : `${styles.kpiGrid} kpi-sd`}
+          aria-label="Overview"
         >
-          {metrics.map((metric) => {
-            const open = Boolean(metric.view) && metric.view === openMetric?.view;
-
-            const body = (
-              <>
-                <span className={styles.summaryLabel}>
-                  {metric.label}
+          <style>{`
+.kpi-city{position:relative;margin-top:4px;font-size:.82rem}
+.kpi-city > summary{cursor:pointer;color:#1d4ed8;list-style:none;display:inline-block;padding:2px 0}
+.kpi-city > summary::-webkit-details-marker{display:none}
+.kpi-city[open] > summary{font-weight:600}
+.kpi-city > div{position:absolute;left:0;top:100%;z-index:30;min-width:220px;max-height:300px;overflow:auto;background:#fff;border:1px solid #d1d5db;border-radius:10px;box-shadow:0 10px 30px rgba(15,23,42,.15);padding:6px}
+.kpi-city a{display:flex;justify-content:space-between;gap:16px;padding:6px 8px;border-radius:6px;color:#0f172a;text-decoration:none;white-space:nowrap}
+.kpi-city a:hover{background:#f1f5f9}
+.kpi-city a span{color:#0f172a}
+.kpi-tile{display:flex}
+.kpi-tile > a{flex:1;min-width:0}
+`}</style>
+          {kpis.map((k) =>
+            k.cities || k.storage || k.hubs || k.teams || k.baselineKey ? (
+              <div key={k.label} className={styles.kpi} style={{ "--kpi": k.color, overflow: "visible" } as CSSProperties}>
+                <span className={styles.kpiIcon}>
+                  <Icon name={k.icon} size={22} />
                 </span>
-
-                <span className={styles.summaryValue}>
-                  {metric.value}
+                <span className={styles.kpiBody} style={{ overflow: "visible" }}>
+                  <Link href={k.href} style={{ color: "inherit", textDecoration: "none", display: "contents" }}>
+                    <span className={styles.kpiLabel}>{k.label}</span>
+                    <span className={styles.kpiValue}>{n(k.value)}</span>
+                    {k.hint && <span className={styles.kpiHint}>{k.hint}</span>}
+                  </Link>
+                  {k.defn && (
+                    <span style={{ display: "block", fontSize: "0.76rem", color: "#94a3b8", fontStyle: "italic", marginTop: 2 }}>{k.defn}</span>
+                  )}
+                  {k.cities && k.cities.length > 0 && (
+                    <details className="kpi-city" name="kpi-dropdown">
+                      <summary>City wise ({k.cities.length}) ▾</summary>
+                      <div>
+                        {k.cities.map((c) => (
+                          <Link key={c.city} href={c.href}>
+                            <span>{c.city}</span>
+                            <span style={{ display: "inline-flex", gap: 10, alignItems: "baseline" }}>
+                              <b>{n(c.count)}</b>
+                              <span style={{ minWidth: 38, textAlign: "right", color: "#64748b", fontSize: "0.8rem" }}>{c.pct}%</span>
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                  {k.storage && k.storage.length > 0 && (
+                    <details className="kpi-city" name="kpi-dropdown">
+                      <summary>Storage wise ({k.storage.length}) ▾</summary>
+                      <div>
+                        {k.storage.map((st) => (
+                          <Link key={st.storage} href={st.href}>
+                            <span>{st.storage}</span>
+                            <span style={{ display: "inline-flex", gap: 10, alignItems: "baseline" }}>
+                              <b>{n(st.count)}</b>
+                              <span style={{ minWidth: 38, textAlign: "right", color: "#64748b", fontSize: "0.8rem" }}>{st.pct}%</span>
+                            </span>
+                          </Link>
+                        ))}
+                        <span
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 16,
+                            padding: "6px 8px",
+                            marginTop: 4,
+                            borderTop: "1px solid #e2e8f0",
+                            fontWeight: 700,
+                          }}
+                        >
+                          <span>Total</span>
+                          <b>{n(k.value)}</b>
+                        </span>
+                      </div>
+                    </details>
+                  )}
+                  {k.storageOverrideKey && user.role === "admin" && canEditBrokenBaseline && (
+                    <form
+                      action={setBrokenStorageOverride}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 6,
+                        marginTop: 10,
+                        padding: "8px 10px",
+                        maxWidth: 220,
+                        border: "1px solid #dbe2ea",
+                        borderRadius: 10,
+                        background: "linear-gradient(180deg,#f8fafc,#f1f5f9)",
+                      }}
+                    >
+                      <input type="hidden" name="back" value={`/dashboard?${new URLSearchParams(keepParams)}`} />
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          fontSize: "0.68rem",
+                          fontWeight: 700,
+                          color: "#64748b",
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: "50%",
+                            background: k.storageOverrideValue ? "#1d4ed8" : "#cbd5e1",
+                            display: "inline-block",
+                            flexShrink: 0,
+                          }}
+                        />
+                        Broken starting count{k.storageOverrideValue ? " · active" : ""}
+                      </span>
+                      <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+                        <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                          <span style={{ fontSize: "0.68rem", color: "#94a3b8" }}>256 GB</span>
+                          <input
+                            type="number"
+                            name="gb256"
+                            min={0}
+                            placeholder="0"
+                            defaultValue={k.storageOverrideValue?.gb256 ?? ""}
+                            style={{ width: 72, fontSize: "0.82rem", padding: "5px 8px", borderRadius: 6, border: "1px solid #cbd5e1", background: "#fff" }}
+                          />
+                        </label>
+                        <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                          <span style={{ fontSize: "0.68rem", color: "#94a3b8" }}>512 GB</span>
+                          <input
+                            type="number"
+                            name="gb512"
+                            min={0}
+                            placeholder="0"
+                            defaultValue={k.storageOverrideValue?.gb512 ?? ""}
+                            style={{ width: 72, fontSize: "0.82rem", padding: "5px 8px", borderRadius: 6, border: "1px solid #cbd5e1", background: "#fff" }}
+                          />
+                        </label>
+                        <button
+                          type="submit"
+                          style={{
+                            fontSize: "0.78rem",
+                            fontWeight: 600,
+                            padding: "6px 16px",
+                            borderRadius: 6,
+                            border: "1px solid #1e293b",
+                            background: "#1e293b",
+                            color: "#fff",
+                            cursor: "pointer",
+                          }}
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                  {k.baselineKey && user.role === "admin" && (
+                    <form
+                      action={setRetiredBaseline}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 6,
+                        marginTop: 10,
+                        padding: "8px 10px",
+                        maxWidth: 220,
+                        border: "1px solid #dbe2ea",
+                        borderRadius: 10,
+                        background: "linear-gradient(180deg,#f8fafc,#f1f5f9)",
+                      }}
+                    >
+                      <input type="hidden" name="back" value={`/dashboard?${new URLSearchParams(keepParams)}`} />
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          fontSize: "0.68rem",
+                          fontWeight: 700,
+                          color: "#64748b",
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: "50%",
+                            background: k.baselineValue !== undefined ? "#1d4ed8" : "#cbd5e1",
+                            display: "inline-block",
+                            flexShrink: 0,
+                          }}
+                        />
+                        Retired starting count{k.baselineValue !== undefined ? " · active" : ""}
+                      </span>
+                      <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+                        <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                          <span style={{ fontSize: "0.68rem", color: "#94a3b8" }}>Already retired</span>
+                          <input
+                            type="number"
+                            name="count"
+                            min={0}
+                            placeholder="0"
+                            defaultValue={k.baselineValue ?? ""}
+                            style={{ width: 72, fontSize: "0.82rem", padding: "5px 8px", borderRadius: 6, border: "1px solid #cbd5e1", background: "#fff" }}
+                          />
+                        </label>
+                        <button
+                          type="submit"
+                          style={{
+                            fontSize: "0.78rem",
+                            fontWeight: 600,
+                            padding: "6px 16px",
+                            borderRadius: 6,
+                            border: "1px solid #1e293b",
+                            background: "#1e293b",
+                            color: "#fff",
+                            cursor: "pointer",
+                          }}
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                  {k.hubs && k.hubs.length > 0 && (
+                    <details className="kpi-city" name="kpi-dropdown">
+                      <summary>Hub wise ({k.hubs.length}) ▾</summary>
+                      <div>
+                        {k.hubs.map((h) => (
+                          <Link key={h.hub} href={h.href}>
+                            <span>{h.hub}</span>
+                            <span style={{ display: "inline-flex", gap: 10, alignItems: "baseline" }}>
+                              <b>{n(h.count)}</b>
+                              <span style={{ minWidth: 38, textAlign: "right", color: "#64748b", fontSize: "0.8rem" }}>{h.pct}%</span>
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                  {k.teams && k.teams.length > 0 && (
+                    <details className="kpi-city" name="kpi-dropdown">
+                      <summary>Rig / Productivity ({k.teams.length}) ▾</summary>
+                      <div>
+                        {k.teams.map((t) => (
+                          <Link key={t.label} href={t.href}>
+                            <span>{t.label}</span>
+                            <span style={{ display: "inline-flex", gap: 10, alignItems: "baseline" }}>
+                              <b>{n(t.count)}</b>
+                              <span style={{ minWidth: 38, textAlign: "right", color: "#64748b", fontSize: "0.8rem" }}>{t.pct}%</span>
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
+                    </details>
+                  )}
                 </span>
-
-                {metric.view && (
-                  <span className={styles.summaryNote}>
-                    {open ? "Hide details" : "Show details"}
-                  </span>
-                )}
-              </>
-            );
-
-            // Cards without a breakdown stay plain text, so nothing looks clickable for no reason.
-            if (!metric.view) {
-              return (
-                <div key={metric.label} className={styles.summary}>
-                  {body}
-                </div>
-              );
-            }
-
-            return (
-              <Link
-                key={metric.label}
-                href={open ? "/dashboard/my" : `/dashboard/my?view=${metric.view}`}
-                className={styles.summary}
-                aria-current={open ? "true" : undefined}
-                scroll={false}
-                style={
-                  open
-                    ? { borderColor: "var(--text-primary)", boxShadow: "0 4px 14px rgba(11, 11, 11, 0.1)" }
-                    : undefined
-                }
-              >
-                {body}
-              </Link>
-            );
-          })}
+              </div>
+            ) : (
+            <Link
+              key={k.label}
+              href={k.href}
+              className={styles.kpi}
+              // "Duplicate cards" often lands alone on the last row (it's excluded from the mobile/rig
+              // sets, so the row above it doesn't divide evenly) — flex:1 1 230px from kpi-sd would then
+              // stretch it to fill the whole row width. Keep it at its natural size instead.
+              style={{ "--kpi": k.color, ...(k.label === "Duplicate cards" && { flex: "0 1 230px" }) } as CSSProperties}
+            >
+              <span className={styles.kpiIcon}>
+                <Icon name={k.icon} size={22} />
+              </span>
+              <span className={styles.kpiBody}>
+                <span className={styles.kpiLabel}>{k.label}</span>
+                <span className={styles.kpiValue}>{n(k.value)}</span>
+                {k.hint && <span className={styles.kpiHint}>{k.hint}</span>}
+              </span>
+            </Link>
+            ),
+          )}
         </section>
 
-        {/* The rigs behind the card that was clicked: IC number first, then the details. */}
-        {openMetric && (
-          <section className={styles.card} aria-label={openMetric.rowsTitle ?? openMetric.label} style={{ marginBottom: 24 }}>
-            <div className={styles.top}>
-              <h2>{openMetric.rowsTitle ?? openMetric.label}</h2>
+        <MonthlyReportCard
+          report={monthly}
+          keep={reportKeep}
+          people={people
+            .filter((p) => p.active !== "false")
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map((p) => ({ id: p.person_id, label: `${p.name} (${ROLE_LABELS[p.role] ?? p.role})` }))}
+          cities={[...new Set(hubs.map((h) => (h.city || h.name || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b))}
+          types={[...allowedTypes(user.role)]}
+        />
 
-              <div className={styles.actions}>
-                <Link href="/dashboard/my" className={styles.btn}>
-                  Close
-                </Link>
-              </div>
+        {rigView && showQc && (
+          <section className={styles.card} id="unknown" aria-label="Rig audit" style={{ minWidth: 0, scrollMarginTop: 16 }}>
+            <div className={styles.sectionHead}>
+              <h2>Rig Audit ({unknownRows.length})</h2>
+              <Link href="/rigs/unknown" className={styles.link}>
+                Open Rig Audit
+              </Link>
             </div>
+            <p className={styles.muted}>
+              Rigs with no handover, QC result or hardware update for more than {NO_ACTIVITY_DAYS} days (not with
+              hardware, dead, R&amp;D, lost or damaged). City = city of the hub the rig is at. Click a rig for its reports.
+            </p>
+            {unknownRows.length === 0 ? (
+              <p className={styles.ok}>No rigs need an audit right now.</p>
+            ) : (
+              <>
+                <nav aria-label="Rig audit by city" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "4px 0 12px" }}>
+                  {[["", unknownRows.length] as [string, number], ...unknownCities].map(([city, count]) => {
+                    const on = city === unknownCity;
+                    return (
+                      <Link
+                        key={city || "all"}
+                        href={unknownHref(city)}
+                        aria-current={on ? "true" : undefined}
+                        style={{
+                          padding: "6px 14px",
+                          borderRadius: 999,
+                          border: "1px solid #cbd5e1",
+                          background: on ? "#1e293b" : "#ffffff",
+                          color: on ? "#ffffff" : "#334155",
+                          textDecoration: "none",
+                          fontWeight: on ? 700 : 500,
+                          fontSize: "0.9rem",
+                        }}
+                      >
+                        {city || "All cities"} · {count}
+                      </Link>
+                    );
+                  })}
+                </nav>
+                <div
+                  className={styles.tableScroll}
+                  role="region"
+                  aria-label="Rig audit — scrollable table"
+                  tabIndex={0}
+                  style={{ maxHeight: "460px", maxWidth: "100%", overflowY: "auto", overflowX: "auto" }}
+                >
+                  <table className={styles.table} style={{ width: "100%", minWidth: "860px", borderCollapse: "separate", borderSpacing: 0 }}>
+                    <thead>
+                      <tr>
+                        {["Rig", "City", "Hub", "Last with", "Status", "Last activity", "No activity for", "Reports"].map((h) => (
+                          <th key={h} scope="col" style={TH_STYLE}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {unknownShown.map((r) => (
+                        <tr key={r.item_id}>
+                          <td>
+                            <Link href={`/rigs/unknown?${new URLSearchParams({ rig: r.item_id })}#report`} className={styles.link}>
+                              {r.item_id}
+                            </Link>
+                          </td>
+                          <td>{r.city}</td>
+                          <td>{r.hub}</td>
+                          <td>{r.who || "—"}</td>
+                          <td>{STATUS_LABELS[r.status as Status] ?? r.status}</td>
+                          <td>{istDay(Date.parse(r.lastActivity))}</td>
+                          <td>{r.days} days</td>
+                          <td style={{ whiteSpace: "normal" }}>
+                            {r.latest ? `${r.reports} · ${r.latest.location}` : <span className={styles.muted}>None yet</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot style={{ position: "static" }}>
+                      <tr>
+                        <th scope="row" colSpan={7} style={{ ...TFOOT_STYLE, textAlign: "left" }}>
+                          {unknownCity ? `Rigs to audit in ${unknownCity}` : "All rigs to audit"}
+                        </th>
+                        <td style={TFOOT_STYLE}>{n(unknownShown.length)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </>
+            )}
+          </section>
+        )}
 
-            {openRows.length === 0 ? (
-              <p className={styles.muted}>Nothing to show here right now.</p>
+        {showQc && (
+          <RigMetrics
+            items={items}
+            events={events}
+            people={people}
+            hubs={hubs}
+            qcChecks={qcChecks}
+            hardwareUpdates={hardwareUpdates}
+            now={now}
+            qcFrom={qcFrom}
+            qcTo={qcTo}
+            qcKeep={qcKeep}
+            sanKeep={sanKeep}
+          />
+        )}
+
+        {showAck && (
+          <section className={styles.card} id="acknowledgements" aria-label="Acknowledgements section">
+            <AckChart
+              by={ackBy}
+              buckets={ackBuckets}
+              href={ackHref}
+              ackFrom={ackFrom}
+              ackTo={ackTo}
+              hidden={ackHidden}
+              clearHref={ackClearHref}
+              role={ackRole}
+              roleHref={ackRoleHref}
+              cities={ackCities}
+              city={ackCity}
+              avgResponse={ackAvgMinutes === null ? "" : formatResponseMinutes(ackAvgMinutes)}
+            />
+          </section>
+        )}
+
+        <section className={styles.card} aria-label="Hub hierarchy">
+          <div className={styles.sectionHead}>
+            <h2>Hub hierarchy</h2>
+            <span className={styles.muted}>Click a hub for everything about it</span>
+          </div>
+          <p className={styles.muted}>
+            The main hub is at the top with the hubs under it. Each box shows the items the hub holds, including the
+            hubs under it.
+          </p>
+          <HubOrgChart
+            roots={tree}
+            showEmpty={showEmpty}
+            internalCount={s.with_internal}
+            internalHref={inventory({ status: "with_internal" })}
+          />
+          {hiddenEmpty > 0 && !showEmpty && (
+            <p className={styles.muted}>
+              {hiddenEmpty} hub{hiddenEmpty === 1 ? "" : "s"} with no items {hiddenEmpty === 1 ? "is" : "are"} hidden.{" "}
+              <Link href="/dashboard?empty=1" className={styles.link}>
+                Show {hiddenEmpty === 1 ? "it" : "them"}
+              </Link>
+            </p>
+          )}
+          {showEmpty && (
+            <p className={styles.muted}>
+              <Link href="/dashboard" className={styles.link}>
+                Hide hubs with no items
+              </Link>
+            </p>
+          )}
+        </section>
+
+        <div className={styles.chartRow}>
+          <section className={styles.card} aria-label="Items by status">
+            <h2>Items by status</h2>
+            {statusRows.length ? <BarList rows={statusRows} /> : <p className={styles.muted}>No items.</p>}
+          </section>
+          <section className={styles.card} aria-label="Items by hub">
+            <h2>Items by hub</h2>
+            {hubRows.length ? <BarList rows={hubRows} /> : <p className={styles.muted}>No items at any hub.</p>}
+          </section>
+        </div>
+
+        {mobileView && <MobileCharts items={items} />}
+
+        <DailyMoves
+          title={`${typesTitle(moveTypes)} moved per day`}
+          unit={typesTitle(moveTypes).toLowerCase()}
+          days={movedDays}
+          types={typeOptions}
+          itemTypes={moveTypes}
+          people={moveOptions.people}
+          cities={moveOptions.cities}
+          roles={moveOptions.roles}
+          person={movePerson}
+          city={moveCity}
+          role={moveRole}
+          from={moveRange.from}
+          to={moveRange.to}
+          today={istDate(now)}
+          datesChosen={!!(one(sp.mfrom) || one(sp.mto))}
+          cut={moveRange.cut}
+          keep={moveKeep}
+        />
+
+        <HourlyMoves
+          hours={movedHours}
+          itemType={hourTypes}
+          types={typeOptions}
+          people={hourOptions.people}
+          cities={hourOptions.cities}
+          roles={hourOptions.roles}
+          person={hourPerson}
+          city={hourCity}
+          role={hourRole}
+          from={hourRange.from}
+          to={hourRange.to}
+          today={istDate(now)}
+          days={hourRange.days}
+          filtered={!!(hourTypes.length || hourPerson.length || hourCity.length || hourRole.length || one(sp.hfrom) || one(sp.hto))}
+          keep={hourKeep}
+        />
+
+        <FieldUsageCard
+          unit={rigView ? "rigs" : mobileView ? "mobiles" : "SD cards"}
+          usage={usage}
+          from={usageRange.from}
+          to={usageRange.to}
+          today={istDate(now)}
+          city={usageCity}
+          person={usagePerson}
+          model={usageModel}
+          includeOut={usageOut}
+          cities={usageOptions.cities}
+          fos={usageOptions.fos}
+          models={usageOptions.models}
+          names={new Map(people.map((p) => [p.person_id, p.name]))}
+          hubNames={new Map(hubs.map((h) => [h.hub_id, h.name]))}
+          keep={usageKeep}
+          now={now}
+        />
+
+        <div style={{ display: "grid", gap: 20 }}>
+          {/* NEEDS ATTENTION — table (full width, so every column shows) */}
+          <section className={styles.card} id="attention" aria-label="Needs attention" style={{ minWidth: 0 }}>
+            <h2>Needs attention</h2>
+            <p className={styles.muted}>
+              Only delayed cards: each item an FO, IFO, rig team or internal person has held, or that was sent to a hub
+              and not received, for more than {LATE_AFTER_HOURS} hours since its last send or receive. Cards with the same
+              person, sender and send date are one row; Count = how many. Oldest first. Click a name or the Count to see
+              only those delayed items.
+            </p>
+
+            {delayed.length > 0 && (
+              <AttentionFilter cities={cityOptions} roles={roleOptions} city={cityFilter} role={roleFilter} keep={keepParams} />
+            )}
+
+            {delayed.length > 0 && shownDelayed.length === 0 ? (
+              <p className={styles.muted}>Nothing matches this filter.</p>
+            ) : delayed.length === 0 ? (
+              <p className={styles.ok}>
+                <span className={`${styles.icon} ${styles.iconGood}`} aria-hidden>
+                  ✓
+                </span>{" "}
+                No delayed cards right now.
+              </p>
             ) : (
               <div
                 className={styles.tableScroll}
                 role="region"
-                aria-label={openMetric.rowsTitle ?? openMetric.label}
+                aria-label="Delayed cards — scrollable table"
                 tabIndex={0}
-                style={{ maxHeight: "500px", overflow: "auto" }}
+                style={{ maxHeight: "560px", maxWidth: "100%", overflowY: "auto", overflowX: "auto" }}
               >
-                <table className={styles.table}>
+                <table className={styles.table} style={{ width: "100%", minWidth: "900px", borderCollapse: "separate", borderSpacing: 0 }}>
                   <thead>
                     <tr>
-                      <th scope="col">IC number</th>
-                      <th scope="col">Prism no.</th>
-                      <th scope="col">Brand</th>
-                      <th scope="col">Model</th>
-                      <th scope="col">Status</th>
-                      {showQcColumn && <th scope="col">QC</th>}
-                      <th scope="col">Where</th>
-                      <th scope="col">{openMetric.whenLabel ?? "When"} (IST)</th>
-                      <th scope="col">Note</th>
+                      {["Type", "Person", "Role", "City", "Sent by", "Sent on", "Count", "Out for", "Issue"].map((h) => (
+                        <th key={h} scope="col" style={TH_STYLE}>
+                          {h}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
-
                   <tbody>
-                    {openRows.map((row) => (
-                      <tr key={row.key}>
-                        <td>
-                          <Link href={`/inventory/${encodeURIComponent(row.itemId)}`}>{row.itemId}</Link>
+                    {shownDelayed.map((r) => (
+                      <tr key={r.key} style={r.key === detailKey ? { background: "#eff6ff" } : undefined}>
+                        <td>{r.type}</td>
+                        <td style={{ whiteSpace: "normal" }}>
+                          <Link href={detailHref(r.key)} title="Show only these delayed items">
+                            {r.person}
+                          </Link>
                         </td>
-
-                        <td>{row.prism || "—"}</td>
-                        <td>{row.brand || "—"}</td>
-                        <td>{row.model || "—"}</td>
-                        <td>{row.status}</td>
-
-                        {showQcColumn && (
-                          <td style={{ fontWeight: 600, color: QC_COLOR[row.qc] }}>
-                            {QC_LABELS[row.qc] ?? row.qc}
-                          </td>
-                        )}
-
-                        <td style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>{row.where || "—"}</td>
-                        <td>{displayTime(row.when)}</td>
-                        <td style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>{row.note || "—"}</td>
+                        <td>{r.role}</td>
+                        <td>{r.city}</td>
+                        <td style={{ whiteSpace: "normal" }}>{r.sentBy}</td>
+                        <td>{r.sentOn}</td>
+                        <td className={styles.num}>
+                          <Link href={detailHref(r.key)} className={styles.link} title="Show only these delayed items">
+                            {n(r.count)}
+                          </Link>
+                        </td>
+                        <td>{howLong(r.hours)}</td>
+                        <td>
+                          <span className={`${styles.icon} ${TONE.warning}`} aria-hidden>
+                            {GLYPH.warning}
+                          </span>{" "}
+                          {r.issue}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
-
-                  <tfoot>
+                  <tfoot style={{ position: "static" }}>
                     <tr>
-                      <th scope="row">Total</th>
-                      <td colSpan={showQcColumn ? 8 : 7}>
-                        <strong>{numberText(openRows.length)}</strong>
+                      <th scope="row" colSpan={6} style={{ ...TFOOT_STYLE, textAlign: "left" }}>
+                        Total delayed cards
+                      </th>
+                      <td className={styles.num} style={TFOOT_STYLE}>
+                        {n(shownDelayed.reduce((t, r) => t + r.count, 0))}
+                      </td>
+                      <td colSpan={2} style={TFOOT_STYLE}>
+                        {n(shownDelayed.length)} row{shownDelayed.length === 1 ? "" : "s"}
                       </td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
             )}
+
+            {detailRow && (
+              <div id="delayed-items" style={{ marginTop: 20, scrollMarginTop: 80 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                  <h3 style={{ margin: 0 }}>
+                    Delayed items — {detailRow.person} ({detailRow.role}) · sent by {detailRow.sentBy} on {detailRow.sentOn} ·{" "}
+                    {n(detailRow.items.length)}
+                  </h3>
+                  <Link href={closeDetailHref} className={styles.link}>
+                    Close
+                  </Link>
+                </div>
+                <p className={styles.muted} style={{ margin: "4px 0 10px" }}>
+                  Only these items: out for more than {LATE_AFTER_HOURS} hours since their last send or receive. Oldest first.
+                </p>
+                <div
+                  className={styles.tableScroll}
+                  role="region"
+                  aria-label="Delayed items — scrollable table"
+                  tabIndex={0}
+                  style={{ maxHeight: "420px", maxWidth: "100%", overflowY: "auto", overflowX: "auto" }}
+                >
+                  <table className={styles.table} style={{ width: "100%", minWidth: "980px", borderCollapse: "separate", borderSpacing: 0 }}>
+                    <thead>
+                      <tr>
+                        {["Item ID", "Type", "City", "Sent by", "Sent at", "Out for", "Status", "Note"].map((h) => (
+                          <th key={h} scope="col" style={TH_STYLE}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detailRow.items.map((it) => (
+                        <tr key={it.id}>
+                          <td>
+                            <Link href={`/inventory/${encodeURIComponent(it.id)}`} className={styles.link}>
+                              {it.id}
+                            </Link>
+                          </td>
+                          <td>{it.type}</td>
+                          <td>{it.city}</td>
+                          <td>{it.sentBy}</td>
+                          <td>{it.sentAt}</td>
+                          <td>{howLong(it.hours)}</td>
+                          <td>{it.status}</td>
+                          <td style={{ minWidth: 220 }}>
+                            <form action={addDelayNote} style={{ display: "flex", gap: 6 }}>
+                              <input type="hidden" name="back" value={attentionBack} />
+                              <input type="hidden" name="item_id" value={it.id} />
+                              <input type="hidden" name="item_type" value={it.type} />
+                              <input type="hidden" name="person" value={detailRow.person} />
+                              <input type="hidden" name="sent_by" value={it.sentBy} />
+                              <input
+                                name="note"
+                                required
+                                placeholder="Add a note…"
+                                style={{
+                                  flex: 1,
+                                  minWidth: 0,
+                                  padding: "4px 8px",
+                                  border: "1px solid var(--border)",
+                                  borderRadius: 6,
+                                  background: "var(--surface-1)",
+                                  color: "var(--text-primary)",
+                                  fontSize: "0.85rem",
+                                }}
+                              />
+                              <button type="submit" style={{ padding: "4px 10px", fontSize: "0.85rem" }}>
+                                Save
+                              </button>
+                            </form>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* DELAY NOTES LOG — every note saved above (against an individual delayed item), in its own
+                table: Date, Item type, Item ID, Person, With whom, Note. Newest first. */}
+            {delayNoteLog.length > 0 && (
+              <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid var(--border)" }}>
+                <h3 style={{ margin: "0 0 10px" }}>Delay notes ({delayNoteLog.length})</h3>
+                <div
+                  className={styles.tableScroll}
+                  role="region"
+                  aria-label="Delay notes — scrollable table"
+                  tabIndex={0}
+                  style={{ maxHeight: "360px", maxWidth: "100%", overflowY: "auto", overflowX: "auto" }}
+                >
+                  <table className={styles.table} style={{ width: "100%", minWidth: "760px", borderCollapse: "separate", borderSpacing: 0 }}>
+                    <thead>
+                      <tr>
+                        {["Date", "Item", "Item ID", "Person", "With whom", "Note"].map((h) => (
+                          <th key={h} scope="col" style={TH_STYLE}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {delayNoteLog.map((note) => (
+                        <tr key={note.note_id}>
+                          <td>{note.recorded_at ? formatIst(note.recorded_at) : "—"}</td>
+                          <td>{note.item_type || "—"}</td>
+                          <td>
+                            <Link href={`/inventory/${encodeURIComponent(note.item_id)}`} className={styles.link}>
+                              {note.item_id}
+                            </Link>
+                          </td>
+                          <td>{note.person || "—"}</td>
+                          <td>{note.sent_by || "—"}</td>
+                          <td style={{ whiteSpace: "normal" }}>{note.note}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* MANUAL NOTES — anyone viewing the dashboard can raise a free-text flag here, with an
+                optional "by when" date; shown under the automatic delayed-card table above. */}
+            <div id="attention-notes" style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid var(--border)", scrollMarginTop: 80 }}>
+              <h3 style={{ margin: "0 0 4px" }}>Notes</h3>
+              <p className={styles.muted} style={{ margin: "0 0 12px" }}>
+                Anything else that needs a look — add a note, an optional date it's needed by, and who's flagging it
+                is recorded automatically.
+              </p>
+
+              <form
+                action={addAttentionNote}
+                style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-end", marginBottom: 16 }}
+              >
+                <input type="hidden" name="back" value={attentionBack} />
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 320px", fontSize: "0.85rem" }}>
+                  Note
+                  <input
+                    name="note"
+                    required
+                    placeholder="e.g. Chase Pune hub about 3 missing cards"
+                    style={{ padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface-1)", color: "var(--text-primary)" }}
+                  />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.85rem" }}>
+                  By when (optional)
+                  <input
+                    type="date"
+                    name="due_date"
+                    min={todayStr}
+                    style={{ padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface-1)", color: "var(--text-primary)" }}
+                  />
+                </label>
+                <button type="submit" style={{ padding: "8px 16px" }}>
+                  Add note
+                </button>
+              </form>
+
+              {openNotes.length === 0 ? (
+                <p className={styles.ok}>
+                  <span className={`${styles.icon} ${styles.iconGood}`} aria-hidden>
+                    ✓
+                  </span>{" "}
+                  No open notes right now.
+                </p>
+              ) : (
+                <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 8 }}>
+                  {openNotes.map((note) => {
+                    const overdue = note.due_date && note.due_date < todayStr;
+                    return (
+                      <li
+                        key={note.note_id}
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          justifyContent: "space-between",
+                          alignItems: "flex-start",
+                          gap: 10,
+                          padding: "10px 12px",
+                          border: `1px solid ${overdue ? "var(--critical)" : "var(--border)"}`,
+                          borderRadius: 8,
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ whiteSpace: "normal" }}>{note.note}</div>
+                          <div className={styles.muted} style={{ fontSize: "0.8rem", marginTop: 2 }}>
+                            {note.due_date && (
+                              <span style={overdue ? { color: "var(--critical)", fontWeight: 600 } : undefined}>
+                                By {note.due_date}
+                                {overdue ? " — overdue" : ""} ·{" "}
+                              </span>
+                            )}
+                            Raised by {note.recorded_by_name || note.recorded_by || "—"}
+                            {note.recorded_at && <> · {formatIst(note.recorded_at)}</>}
+                          </div>
+                        </div>
+                        <form action={setAttentionNoteStatus}>
+                          <input type="hidden" name="back" value={attentionBack} />
+                          <input type="hidden" name="note_id" value={note.note_id} />
+                          <input type="hidden" name="status" value="done" />
+                          <button type="submit" className={styles.link} style={{ whiteSpace: "nowrap" }}>
+                            Mark done
+                          </button>
+                        </form>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+
+              {doneNotes.length > 0 && (
+                <details style={{ marginTop: 12 }}>
+                  <summary className={styles.muted} style={{ cursor: "pointer" }}>
+                    Done ({doneNotes.length})
+                  </summary>
+                  <ul style={{ listStyle: "none", margin: "8px 0 0", padding: 0, display: "grid", gap: 6 }}>
+                    {doneNotes.map((note) => (
+                      <li key={note.note_id} style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 10, padding: "6px 2px" }}>
+                        <span className={styles.muted} style={{ textDecoration: "line-through" }}>
+                          {note.note}
+                        </span>
+                        <form action={setAttentionNoteStatus}>
+                          <input type="hidden" name="back" value={attentionBack} />
+                          <input type="hidden" name="note_id" value={note.note_id} />
+                          <input type="hidden" name="status" value="open" />
+                          <button type="submit" className={styles.link} style={{ whiteSpace: "nowrap" }}>
+                            Reopen
+                          </button>
+                        </form>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </div>
           </section>
-        )}
 
-        {/* Items assigned to the person linked to this login. */}
-        <section
-          className={styles.card}
-          aria-label={withMeTitle}
-        >
-          <h2>{withMeTitle}</h2>
+          {/* WHO HAS ITEMS */}
+          <section className={styles.card} aria-label="Who has items" style={{ minWidth: 0 }}>
+            <h2>Who has items</h2>
 
-          {/* The items still with me; the box above shows the same count. */}
-          {(
             <div
               className={styles.tableScroll}
               role="region"
-              aria-label="My assigned items"
+              aria-label="Who has items — scrollable table"
               tabIndex={0}
-              style={{
-                maxHeight: "400px",
-                overflow: "auto",
-              }}
+              style={{ maxHeight: "560px", maxWidth: "100%", overflowY: "auto", overflowX: "auto" }}
             >
-              <table className={styles.table}>
+              <table
+                className={styles.table}
+                style={{ width: "100%", minWidth: "420px", borderCollapse: "separate", borderSpacing: 0 }}
+              >
                 <thead>
                   <tr>
-                    <th scope="col">Serial</th>
-                    <th scope="col">Brand</th>
-                    <th scope="col">Model</th>
-                    <th scope="col">Status</th>
-                    {(isQc || isHardware) && <th scope="col">QC</th>}
-                    <th scope="col">Current hub</th>
+                    <th scope="col" style={TH_STYLE}>
+                      Person
+                    </th>
+                    <th scope="col" className={styles.num} style={TH_STYLE}>
+                      Items
+                    </th>
+                    <th scope="col" className={styles.num} style={TH_STYLE}>
+                      Longest
+                    </th>
                   </tr>
                 </thead>
 
                 <tbody>
-                  {withMeItems.length === 0 ? (
+                  {d.holders.length === 0 ? (
                     <tr>
-                      <td
-                        colSpan={isQc || isHardware ? 6 : 5}
-                        className={styles.muted}
-                      >
-                        No items are currently with you.
+                      <td colSpan={3} className={styles.muted}>
+                        Nothing is out right now.
                       </td>
                     </tr>
                   ) : (
-                    withMeItems.map((item) => (
-                      <tr key={item.item_id}>
-                        <td>
+                    holdersSorted.map((h) => (
+                      <tr key={h.person_id}>
+                        <td style={{ whiteSpace: "normal", overflow: "visible", overflowWrap: "anywhere" }}>
                           <Link
-                            href={`/inventory/${item.item_id}`}
-                          >
-                            {item.item_id}
-                          </Link>
-                        </td>
-
-                        <td>{item.brand || "—"}</td>
-                        <td>{item.model || "—"}</td>
-
-                        <td>
-                          {STATUS_LABELS[item.status] ??
-                            item.status}
-                        </td>
-
-                        {(isQc || isHardware) && (
-                          <td
+                            href={inventory({ holder: h.person_id })}
                             style={{
-                              fontWeight: 600,
-                              color: QC_COLOR[latestQc.get(item.item_id) || "qc_pending"],
+                              display: "block",
+                              whiteSpace: "normal",
+                              overflow: "visible",
+                              textOverflow: "clip",
+                              overflowWrap: "anywhere",
+                              maxWidth: "none",
                             }}
                           >
-                            {QC_LABELS[latestQc.get(item.item_id) || "qc_pending"]}
-                          </td>
-                        )}
+                            {h.name}
+                          </Link>
 
-                        <td>
-                          {hubNames.get(item.current_hub) ??
-                            (item.current_hub || "—")}
+                          {h.role && (
+                            <span className={styles.muted} style={{ display: "block", marginTop: 4 }}>
+                              {ROLE_LABELS[h.role]}
+                            </span>
+                          )}
                         </td>
+
+                        <td className={styles.num}>{n(h.count)}</td>
+
+                        <td className={styles.num}>{days(h.oldestDays)}</td>
                       </tr>
                     ))
                   )}
                 </tbody>
 
-                {/* Total appears after the full list. */}
-                <tfoot>
+                <tfoot style={{ position: "static" }}>
                   <tr>
-                    <th scope="row">Grand total</th>
-                    <td colSpan={isQc || isHardware ? 5 : 4}>
-                      <strong>
-                        {numberText(withMeItems.length)}
-                      </strong>
+                    <th scope="row" style={{ ...TFOOT_STYLE, textAlign: "left" }}>
+                      Grand total
+                    </th>
+                    <td className={styles.num} style={TFOOT_STYLE}>
+                      {n(holdersTotal)}
+                    </td>
+                    <td className={styles.num} style={TFOOT_STYLE}>
+                      —
                     </td>
                   </tr>
                 </tfoot>
               </table>
             </div>
-          )}
-        </section>
-
-        {/* QC team: every QC result this login recorded. */}
-        {isQc && (
-          <section className={styles.card} aria-label="My QC results" style={{ marginTop: 24 }}>
-            <h2>My QC results</h2>
-            {myQc.length === 0 ? (
-              <p className={styles.muted}>No QC results recorded yet. Open a rig from Rig checks to record Pass or Fail.</p>
-            ) : (
-              <div className={styles.tableScroll} role="region" aria-label="My QC results" tabIndex={0} style={{ maxHeight: "400px", overflow: "auto" }}>
-                <table className={styles.table}>
-                  <thead>
-                    <tr>
-                      <th scope="col">Recorded at (IST)</th>
-                      <th scope="col">Rig</th>
-                      <th scope="col">Result</th>
-                      <th scope="col">Comment</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {myQc.map((c) => (
-                      <tr key={c.check_id}>
-                        <td>{displayTime(c.recorded_at)}</td>
-                        <td>
-                          <Link href={`/inventory/${encodeURIComponent(c.item_id)}`}>{c.item_id}</Link>
-                        </td>
-                        <td style={{ fontWeight: 600, color: QC_COLOR[c.qc_status] }}>{QC_LABELS[c.qc_status] ?? c.qc_status}</td>
-                        <td style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>{c.comment || "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
           </section>
-        )}
+        </div>
 
-        {/* Hardware team: every repair update this login recorded. */}
-        {isHardware && (
-          <section className={styles.card} aria-label="My hardware updates" style={{ marginTop: 24 }}>
-            <h2>My hardware updates</h2>
-            {myHardware.length === 0 ? (
-              <p className={styles.muted}>No hardware updates recorded yet. Open a rig from Rig checks to add one.</p>
-            ) : (
-              <div className={styles.tableScroll} role="region" aria-label="My hardware updates" tabIndex={0} style={{ maxHeight: "400px", overflow: "auto" }}>
-                <table className={styles.table}>
-                  <thead>
-                    <tr>
-                      <th scope="col">Recorded at (IST)</th>
-                      <th scope="col">Rig</th>
-                      <th scope="col">Update</th>
-                      <th scope="col">Comment</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {myHardware.map((h) => (
-                      <tr key={h.update_id}>
-                        <td>{displayTime(h.recorded_at)}</td>
-                        <td>
-                          <Link href={`/inventory/${encodeURIComponent(h.item_id)}`}>{h.item_id}</Link>
-                        </td>
-                        <td>{h.update_type || "—"}</td>
-                        <td style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>{h.comment || "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* History recorded by the authenticated login email. */}
-        <section
-          className={styles.card}
-          aria-label="My recorded activity"
-          style={{ marginTop: 24 }}
-        >
-          <h2>My recorded activity</h2>
-
-          {myEvents.length === 0 ? (
-            <p className={styles.muted}>
-              No events have recorded_by matching your login email.
-              A handover involving you may have been recorded by
-              another user. Older records without your email in
-              recorded_by will not appear here.
-            </p>
-          ) : (
-            <>
-              <p className={styles.muted}>
-                Showing{" "}
-                {numberText((page - 1) * PAGE_SIZE + 1)}–
-                {numberText(
-                  (page - 1) * PAGE_SIZE + shownEvents.length
-                )}{" "}
-                of {numberText(myEvents.length)} events.
-                Times are IST.
-              </p>
-
-              <div
-                className={styles.tableScroll}
-                role="region"
-                aria-label="My activity history"
-                tabIndex={0}
-                style={{
-                  maxHeight: "500px",
-                  overflow: "auto",
-                }}
-              >
-                <table className={styles.table}>
-                  <thead>
-                    <tr>
-                      <th scope="col">Recorded at (IST)</th>
-                      <th scope="col">Occurred at (IST)</th>
-                      <th scope="col">Action</th>
-                      <th scope="col">Serial</th>
-                      <th scope="col">From</th>
-                      <th scope="col">To</th>
-                      <th scope="col">Hub</th>
-                      <th scope="col">Status after</th>
-                      <th scope="col">Batch ID</th>
-                      <th scope="col">Note</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {shownEvents.map((event) => (
-                      <tr key={event.event_id}>
-                        <td>
-                          {displayTime(event.recorded_at)}
-                        </td>
-
-                        <td>
-                          {displayTime(event.occurred_at)}
-                        </td>
-
-                        <td>
-                          {ACTION_LABELS[event.action] ??
-                            event.action}
-                        </td>
-
-                        <td>
-                          <Link
-                            href={`/inventory/${event.item_id}`}
-                          >
-                            {event.item_id}
-                          </Link>
-                        </td>
-
-                        <td
-                          style={{
-                            whiteSpace: "normal",
-                            overflowWrap: "anywhere",
-                          }}
-                        >
-                          {event.from_person || "—"}
-                        </td>
-
-                        <td
-                          style={{
-                            whiteSpace: "normal",
-                            overflowWrap: "anywhere",
-                          }}
-                        >
-                          {event.to_person || "—"}
-                        </td>
-
-                        <td>
-                          {hubNames.get(event.hub) ??
-                            (event.hub || "—")}
-                        </td>
-
-                        <td>
-                          {STATUS_LABELS[event.status_after] ??
-                            event.status_after}
-                        </td>
-
-                        <td>{event.batch_id || "—"}</td>
-
-                        <td
-                          style={{
-                            whiteSpace: "normal",
-                            overflowWrap: "anywhere",
-                          }}
-                        >
-                          {event.note || "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div
-                className={styles.actions}
-                style={{
-                  marginTop: 16,
-                  flexWrap: "wrap",
-                }}
-              >
-                {page > 1 && (
-                  <Link
-                    href={pageHref(page - 1)}
-                    className={styles.btn}
-                  >
-                    ← Previous
-                  </Link>
-                )}
-
-                <span className={styles.muted}>
-                  Page {page} of {totalPages}
-                </span>
-
-                {page < totalPages && (
-                  <Link
-                    href={pageHref(page + 1)}
-                    className={styles.btn}
-                  >
-                    Next →
-                  </Link>
-                )}
-              </div>
-            </>
-          )}
-        </section>
+        <p className={styles.muted}>
+          <Link href="/dashboard/analytics" className={styles.link}>
+            More analytics
+          </Link>{" "}
+          — hub owned vs held, longest out, data health.
+        </p>
       </main>
     </div>
   );
