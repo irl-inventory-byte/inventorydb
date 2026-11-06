@@ -34,7 +34,7 @@ export default function SdDetailsForm({
   const [icName, setIcName] = useState("");
   const [icNumber, setIcNumber] = useState("");
   const [city, setCity] = useState("");
-  const [duration, setDuration] = useState("");
+  const [duration, setDuration] = useState("0:00:00");
   const [rawClips, setRawClips] = useState("");
   const [autofillStatus, setAutofillStatus] = useState<"" | "looking" | "filled" | "none">("");
   // So the SD card date field can trigger the same lookup as the serial field — see its onBlur below.
@@ -216,7 +216,14 @@ export default function SdDetailsForm({
         {team === "rig" && (
           <label style={field}>
             Failed hours (HH:MM:SS)
-            <input type="text" name="failed_hours" pattern="\d{1,2}:\d{2}:\d{2}" placeholder="HH:MM:SS, leave blank if none" style={input} />
+            <input
+              type="text"
+              name="failed_hours"
+              pattern="\d{1,2}:\d{2}:\d{2}"
+              placeholder="HH:MM:SS, leave blank if none"
+              style={input}
+              defaultValue="0:00:00"
+            />
           </label>
         )}
         {team === "rig" && (
