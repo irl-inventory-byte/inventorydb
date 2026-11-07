@@ -866,6 +866,48 @@ export default async function InventoryPage({
         {type && <input type="hidden" name="type" value={type} />}
         <SearchBox defaultValue={one(sp.q)} />
 
+        {/* FO / IFO role, then a name dropdown narrowed to that role (or all FO/IFO if no role chosen).
+            Picking a name sets `holder` and shows every item of every type that person currently has —
+            picking just a role with no name shows every item held by anyone with that role. */}
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <strong style={{ fontWeight: 600 }}>Role</strong>
+          <select name="foRole" defaultValue={foRole} aria-label="FO / IFO role">
+            <option value="">All FO/IFO</option>
+            <option value="fo">FO</option>
+            <option value="ifo">IFO</option>
+          </select>
+        </label>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <strong style={{ fontWeight: 600 }}>Name</strong>
+          <select name="holder" defaultValue={holder} aria-label="FO / IFO name">
+            <option value="">All names</option>
+            {foOptions.map((p) => (
+              <option key={p.person_id} value={p.person_id}>
+                {p.name} ({ROLE_LABELS[p.role] ?? p.role})
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <MultiSelect
+          name="city"
+          label="City"
+          allLabel="All cities"
+          options={cityOptions}
+          selected={cities}
+          group="inventory-filters"
+        />
+
+        {/* Date range on each item's last movement (IST). */}
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <strong style={{ fontWeight: 600 }}>From</strong>
+          <input type="date" name="from" defaultValue={from} max={to || undefined} aria-label="From date" />
+        </label>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <strong style={{ fontWeight: 600 }}>To</strong>
+          <input type="date" name="to" defaultValue={to} min={from || undefined} aria-label="To date" />
+        </label>
+
         <MultiSelect
           name="status"
           label="Status"
@@ -890,15 +932,6 @@ export default async function InventoryPage({
         )}
 
         <MultiSelect
-          name="city"
-          label="City"
-          allLabel="All cities"
-          options={cityOptions}
-          selected={cities}
-          group="inventory-filters"
-        />
-
-        <MultiSelect
           name="hub"
           label="Hub"
           allLabel="All hubs"
@@ -906,39 +939,6 @@ export default async function InventoryPage({
           selected={hubIds}
           group="inventory-filters"
         />
-
-        {/* FO / IFO role, then a name dropdown narrowed to that role (or all FO/IFO if no role chosen).
-            Picking a name sets `holder` and shows every item of every type that person currently has —
-            picking just a role with no name shows every item held by anyone with that role. */}
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <strong style={{ fontWeight: 600 }}>Role</strong>
-          <select name="foRole" defaultValue={foRole} aria-label="FO / IFO role">
-            <option value="">All FO/IFO</option>
-            <option value="fo">FO</option>
-            <option value="ifo">IFO</option>
-          </select>
-        </label>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <strong style={{ fontWeight: 600 }}>Name</strong>
-          <select name="holder" defaultValue={holder} aria-label="FO / IFO name">
-            <option value="">All names</option>
-            {foOptions.map((p) => (
-              <option key={p.person_id} value={p.person_id}>
-                {p.name} ({ROLE_LABELS[p.role] ?? p.role})
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {/* Date range on each item's last movement (IST). */}
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <strong style={{ fontWeight: 600 }}>From</strong>
-          <input type="date" name="from" defaultValue={from} max={to || undefined} aria-label="From date" />
-        </label>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <strong style={{ fontWeight: 600 }}>To</strong>
-          <input type="date" name="to" defaultValue={to} min={from || undefined} aria-label="To date" />
-        </label>
 
         {lateOnly && (
           <>
