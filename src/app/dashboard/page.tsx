@@ -378,6 +378,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     storageOverrideValue?: { gb256: number; gb512: number }; // current override, if any — prefills the edit form
     baselineKey?: string; // settings key for a simple one-number starting-count baseline (see setRetiredBaseline)
     baselineValue?: number; // current baseline, if any — prefills the edit form
+    dupes?: { label: string; count: number; pct: number; href: string }[]; // "Unique" / "Duplicate" breakdown, opened from the tile
   };
   // City-wise count of items with a status (city of the hub the item is at), biggest first.
   const cityOfHub = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
@@ -608,6 +609,24 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const brokenSdOnly = brokenReal.reduce((t, r) => t + r.count, 0);
   const brokenValue = brokenStorageOverride ? brokenCombinedTotal : brokenSdOnly;
   const retiredValue = retiredBaseline !== undefined ? retiredBaseline + s.retired : s.retired;
+  // Manually set: 11 unique + 3 duplicate = 14 total retired cards.
+  const retiredUniqueCount = 11;
+  const retiredDuplicateCount = 3;
+  const retiredDupesTotal = retiredUniqueCount + retiredDuplicateCount;
+  const retiredDupes = [
+    {
+      label: "Unique",
+      count: retiredUniqueCount,
+      pct: Math.round((retiredUniqueCount / retiredDupesTotal) * 100),
+      href: "/retired",
+    },
+    {
+      label: "Duplicate",
+      count: retiredDuplicateCount,
+      pct: Math.round((retiredDuplicateCount / retiredDupesTotal) * 100),
+      href: "/retired",
+    },
+  ];
 
   // SD CARDS (and the "All" view): unchanged.
   const sdKpis: Kpi[] = [
@@ -684,6 +703,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       color: "var(--text-muted)",
       // No "starting count" edit box on this tile anymore (removed per request) — retiredValue still
       // adds whatever baseline was set earlier (retiredBaseline, from settings), just not editable here.
+      dupes: retiredDupes,
     },
   ];
 
@@ -1178,7 +1198,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 .kpi-tile > a{flex:1;min-width:0}
 `}</style>
           {kpis.map((k) =>
-            k.cities || k.storage || k.hubs || k.teams || k.baselineKey ? (
+            k.cities || k.storage || k.hubs || k.teams || k.baselineKey || k.dupes ? (
               <div key={k.label} className={styles.kpi} style={{ "--kpi": k.color, overflow: "visible" } as CSSProperties}>
                 <span className={styles.kpiIcon}>
                   <Icon name={k.icon} size={22} />
@@ -1384,6 +1404,22 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                         </button>
                       </div>
                     </form>
+                  )}
+                  {k.dupes && k.dupes.length > 0 && (
+                    <details className="kpi-city" name="kpi-dropdown">
+                      <summary>Unique / Duplicate ({k.dupes.length}) ▾</summary>
+                      <div>
+                        {k.dupes.map((dd) => (
+                          <Link key={dd.label} href={dd.href}>
+                            <span>{dd.label}</span>
+                            <span style={{ display: "inline-flex", gap: 10, alignItems: "baseline" }}>
+                              <b>{n(dd.count)}</b>
+                              <span style={{ minWidth: 38, textAlign: "right", color: "#64748b", fontSize: "0.8rem" }}>{dd.pct}%</span>
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
+                    </details>
                   )}
                   {k.hubs && k.hubs.length > 0 && (
                     <details className="kpi-city" name="kpi-dropdown">
