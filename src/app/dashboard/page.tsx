@@ -1753,7 +1753,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                 <table className={styles.table} style={{ width: "100%", minWidth: "900px", borderCollapse: "separate", borderSpacing: 0 }}>
                   <thead>
                     <tr>
-                      {["Type", "Person", "Role", "City", "Sent by", "Sent on", "Count", "Out for", "Note", "Issue"].map((h) => (
+                      {["Type", "Person", "Role", "City", "Sent by", "Sent on", "Count", "Out for", "Note", "Issue", "Action"].map((h) => (
                         <th key={h} scope="col" style={TH_STYLE}>
                           {h}
                         </th>
@@ -1761,7 +1761,16 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                     </tr>
                   </thead>
                   <tbody>
-                    {shownDelayed.map((r) => (
+                    {shownDelayed.map((r) => {
+                      // Representative item for this row: whichever item already has the latest
+                      // note, or the first item in the group if none does yet — new notes on this
+                      // row always attach to that same item, so re-saving edits it in place.
+                      // Also drives the Action column: a saved note (any non-empty value) means
+                      // someone has acted on this row; no note yet means it's still pending.
+                      const existing = r.items.map((it) => latestNoteByItem.get(it.id)).find(Boolean);
+                      const forItem = existing?.item_id ?? r.items[0]?.id;
+                      const actionTaken = !!(existing?.note ?? "").trim();
+                      return (
                       <tr key={r.key} style={r.key === detailKey ? { background: "#eff6ff" } : undefined}>
                         <td>{r.type}</td>
                         <td style={{ whiteSpace: "normal" }}>
@@ -1780,41 +1789,35 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                         </td>
                         <td>{howLong(r.hours)}</td>
                         <td style={{ minWidth: 180 }}>
-                          {(() => {
-                            // Representative item for this row: whichever item already has the latest
-                            // note, or the first item in the group if none does yet — new notes on this
-                            // row always attach to that same item, so re-saving edits it in place.
-                            const existing = r.items.map((it) => latestNoteByItem.get(it.id)).find(Boolean);
-                            const forItem = existing?.item_id ?? r.items[0]?.id;
-                            if (!forItem) return <span className={styles.muted}>—</span>;
-                            return (
-                              <form action={addDelayNote} style={{ display: "flex", gap: 4 }}>
-                                <input type="hidden" name="back" value={attentionBack} />
-                                <input type="hidden" name="item_id" value={forItem} />
-                                <input type="hidden" name="item_type" value={r.type} />
-                                <input type="hidden" name="person" value={r.person} />
-                                <input type="hidden" name="sent_by" value={r.sentBy} />
-                                <input
-                                  name="note"
-                                  defaultValue={existing?.note ?? ""}
-                                  placeholder="Add a note…"
-                                  style={{
-                                    flex: 1,
-                                    minWidth: 0,
-                                    padding: "3px 6px",
-                                    border: "1px solid var(--border)",
-                                    borderRadius: 6,
-                                    background: "var(--surface-1)",
-                                    color: "var(--text-primary)",
-                                    fontSize: "0.8rem",
-                                  }}
-                                />
-                                <button type="submit" style={{ padding: "3px 8px", fontSize: "0.78rem" }}>
-                                  Save
-                                </button>
-                              </form>
-                            );
-                          })()}
+                          {!forItem ? (
+                            <span className={styles.muted}>—</span>
+                          ) : (
+                            <form action={addDelayNote} style={{ display: "flex", gap: 4 }}>
+                              <input type="hidden" name="back" value={attentionBack} />
+                              <input type="hidden" name="item_id" value={forItem} />
+                              <input type="hidden" name="item_type" value={r.type} />
+                              <input type="hidden" name="person" value={r.person} />
+                              <input type="hidden" name="sent_by" value={r.sentBy} />
+                              <input
+                                name="note"
+                                defaultValue={existing?.note ?? ""}
+                                placeholder="Add a note…"
+                                style={{
+                                  flex: 1,
+                                  minWidth: 0,
+                                  padding: "3px 6px",
+                                  border: "1px solid var(--border)",
+                                  borderRadius: 6,
+                                  background: "var(--surface-1)",
+                                  color: "var(--text-primary)",
+                                  fontSize: "0.8rem",
+                                }}
+                              />
+                              <button type="submit" style={{ padding: "3px 8px", fontSize: "0.78rem" }}>
+                                Save
+                              </button>
+                            </form>
+                          )}
                         </td>
                         <td>
                           <span className={`${styles.icon} ${TONE.warning}`} aria-hidden>
@@ -1822,8 +1825,16 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                           </span>{" "}
                           {r.issue}
                         </td>
+                        <td>
+                          {actionTaken ? (
+                            <span style={{ color: "#16a34a", fontWeight: 600 }}>Action taken</span>
+                          ) : (
+                            <span style={{ color: "#dc2626", fontWeight: 600 }}>Action pending</span>
+                          )}
+                        </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                   <tfoot style={{ position: "static" }}>
                     <tr>
@@ -1833,7 +1844,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                       <td className={styles.num} style={TFOOT_STYLE}>
                         {n(shownDelayed.reduce((t, r) => t + r.count, 0))}
                       </td>
-                      <td colSpan={3} style={TFOOT_STYLE}>
+                      <td colSpan={4} style={TFOOT_STYLE}>
                         {n(shownDelayed.length)} row{shownDelayed.length === 1 ? "" : "s"}
                       </td>
                     </tr>
