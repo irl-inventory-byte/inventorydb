@@ -3,7 +3,7 @@ import Link from "next/link";
 import { formatAttributes } from "@/lib/attributes";
 import { requireRole } from "@/lib/authz";
 import { LATE_AFTER_HOURS } from "@/lib/dashboard";
-import { QC_LABELS, STATUS_LABELS, one } from "@/lib/labels";
+import { QC_LABELS, ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
 import { STATUSES, type QcCheck } from "@/lib/schema";
 import { ADD_ROLES, MOBILE_ADD_ROLES, canSeeType, storeFor, storeForAll, typeParam } from "@/lib/access";
 import { formatIst, istDate } from "@/lib/time";
@@ -21,7 +21,6 @@ import BulkAddForm from "./BulkAddForm";
 import { applyCorrection } from "./actions";
 import CorrectionPanel from "./CorrectionPanel";
 import SearchBox from "./SearchBox";
-import BackLink from "../BackLink";
 
 const PAGE_SIZE = 100;
 
@@ -198,8 +197,10 @@ export default async function InventoryPage({
   const to = isDay(one(sp.to)) ? one(sp.to) : "";
 
   const holder = one(sp.holder);
+  // Narrows to items currently held by an FO or an IFO (any of them, or one specific person via
+  // the name dropdown below, which sets `holder` directly and takes priority over this).
+  const foRole = one(sp.foRole) === "fo" || one(sp.foRole) === "ifo" ? one(sp.foRole) : "";
   const lateOnly = one(sp.late) === "1";
-  const dupOnly = one(sp.dup) === "1";
   const requestedPage = Number(one(sp.page));
 
   const validPage =
@@ -246,6 +247,13 @@ export default async function InventoryPage({
   const personName = new Map(
     people.map((p) => [p.person_id, p.name])
   );
+  const personRole = new Map(people.map((p) => [p.person_id, p.role]));
+
+  // FO / IFO name dropdown: narrowed to the chosen role, if any, sorted by name.
+  const foOptions = people
+    .filter((p) => p.role === "fo" || p.role === "ifo")
+    .filter((p) => !foRole || p.role === foRole)
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   // Late = with an FO, traveling, or sent and not received, for more than LATE_AFTER_HOURS
   // since its last movement. Same rule as the "Late items" tile on the dashboard.
@@ -268,25 +276,8 @@ export default async function InventoryPage({
     return Number.isNaN(t) ? "" : istDate(new Date(t));
   };
 
-  // "Duplicate cards" tile on the dashboard links here with dup=1. Same rule as there: an SD card
-  // whose serial shares its base ("…-D1"/"…-D2" etc.) with another SD card item, any status.
-  const baseSerial = (id: string) => id.replace(/-D\d+$/i, "");
-  const dupFamilySize = new Map<string, number>();
-  for (const i of items) {
-    if (i.item_type !== "sd_card") continue;
-    const base = baseSerial(i.item_id);
-    if (base === i.item_id) continue;
-    dupFamilySize.set(base, (dupFamilySize.get(base) ?? 0) + 1);
-  }
-  const isDuplicate = (item: (typeof items)[number]) => {
-    if (item.item_type !== "sd_card") return false;
-    const base = baseSerial(item.item_id);
-    return base !== item.item_id && (dupFamilySize.get(base) ?? 0) > 1;
-  };
-
   const matches = items.filter(
     (item) =>
-      (!dupOnly || isDuplicate(item)) &&
       (!from || (lastDay(item) !== "" && lastDay(item) >= from)) &&
       (!to || (lastDay(item) !== "" && lastDay(item) <= to)) &&
       (!lateOnly || isLate(item)) &&
@@ -295,6 +286,7 @@ export default async function InventoryPage({
       (!hubIds.length || hubIds.includes(item.current_hub)) &&
       (!cities.length || cities.includes(hubCity.get(item.current_hub) ?? "")) &&
       (!holder || item.current_holder === holder) &&
+      (holder || !foRole || personRole.get(item.current_holder) === foRole) &&
       (!terms.length ||
         terms.some(
           (t) =>
@@ -349,7 +341,6 @@ export default async function InventoryPage({
       ...(to && { to }),
       ...(holder && { holder }),
       ...(lateOnly && { late: "1" }),
-      ...(dupOnly && { dup: "1" }),
       ...(type && { type }),
       page: String(p),
     });
@@ -701,7 +692,7 @@ export default async function InventoryPage({
   return (
     <main className={styles.pageWide}>
       <p className={styles.back}>
-        <BackLink />
+        <Link href="/">← Home</Link>
       </p>
 
       {/* No logo on Inventory. Keep the logo in the receipt page only. */}
@@ -713,7 +704,7 @@ export default async function InventoryPage({
         role={user.role}
         current={type}
         path="/inventory"
-        params={{ q: one(sp.q), status, hub, city, from, to, holder, late: lateOnly ? "1" : "", dup: dupOnly ? "1" : "" }}
+        params={{ q: one(sp.q), status, hub, city, from, to, holder, late: lateOnly ? "1" : "" }}
       />
 
       {one(sp.done) && (
@@ -916,6 +907,29 @@ export default async function InventoryPage({
           group="inventory-filters"
         />
 
+        {/* FO / IFO role, then a name dropdown narrowed to that role (or all FO/IFO if no role chosen).
+            Picking a name sets `holder` and shows every item of every type that person currently has —
+            picking just a role with no name shows every item held by anyone with that role. */}
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <strong style={{ fontWeight: 600 }}>Role</strong>
+          <select name="foRole" defaultValue={foRole} aria-label="FO / IFO role">
+            <option value="">All FO/IFO</option>
+            <option value="fo">FO</option>
+            <option value="ifo">IFO</option>
+          </select>
+        </label>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <strong style={{ fontWeight: 600 }}>Name</strong>
+          <select name="holder" defaultValue={holder} aria-label="FO / IFO name">
+            <option value="">All names</option>
+            {foOptions.map((p) => (
+              <option key={p.person_id} value={p.person_id}>
+                {p.name} ({ROLE_LABELS[p.role] ?? p.role})
+              </option>
+            ))}
+          </select>
+        </label>
+
         {/* Date range on each item's last movement (IST). */}
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <strong style={{ fontWeight: 600 }}>From</strong>
@@ -925,10 +939,6 @@ export default async function InventoryPage({
           <strong style={{ fontWeight: 600 }}>To</strong>
           <input type="date" name="to" defaultValue={to} min={from || undefined} aria-label="To date" />
         </label>
-
-        {holder && (
-          <input type="hidden" name="holder" value={holder} />
-        )}
 
         {lateOnly && (
           <>
@@ -940,19 +950,9 @@ export default async function InventoryPage({
           </>
         )}
 
-        {dupOnly && (
-          <>
-            <input type="hidden" name="dup" value="1" />
-            <span className={styles.muted}>
-              Duplicate cards only (split into two or more tagged pieces, e.g. …-D1 / …-D2) ·{" "}
-              <Link href="/inventory?type=sd_card">clear</Link>
-            </span>
-          </>
-        )}
-
         <button type="submit">Filter</button>
 
-        {(statuses.length > 0 || storages.length > 0 || cities.length > 0 || hubIds.length > 0 || from || to || q) && (
+        {(statuses.length > 0 || storages.length > 0 || cities.length > 0 || hubIds.length > 0 || from || to || q || holder || foRole) && (
           <Link href={type ? `/inventory?type=${type}` : "/inventory"}>Clear filters</Link>
         )}
 

@@ -7,7 +7,7 @@ import { buildHubTree, type HubNode } from "@/lib/hub-tree";
 import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
 import { STATUSES } from "@/lib/schema";
 import type { Acknowledgment, AppUser, DelayNote, HardwareUpdate, QcCheck, Status } from "@/lib/schema";
-import { HANDLER_ROLES, INVENTORY_ROLES, allowedTypes, canSeeType, itemType, storeFor, storeForAll, typeParam } from "@/lib/access";
+import { HANDLER_ROLES, INVENTORY_ROLES, allowedTypes, canSeeType, storeFor, storeForAll, typeParam } from "@/lib/access";
 import TypeSwitch from "../TypeSwitch";
 import RoleSwitch from "../RoleSwitch";
 import { BarList, n, type BarRow } from "./charts";
@@ -237,34 +237,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     await mainFetch;
   const [allItems, allEvents, allQc, allHw] = await reportFetch;
   const now = new Date();
-
-  // "Search by FO" — look an FO/IFO up by name and show every Rig, SD card and Phone currently
-  // assigned to them in one place, across all item types (not just whichever type tab is open), so
-  // nobody has to check Rigs, SD cards and Phones separately or already know a Rig ID to find them.
-  const foQuery = (one(sp.fo) || "").trim();
-  const foPid = one(sp.pid) || "";
-  const foHubName = new Map(hubs.map((h) => [h.hub_id, h.name]));
-  const foCandidates = people.filter((p) => p.role === "fo" || p.role === "ifo");
-  const foMatches = foPid
-    ? foCandidates.filter((p) => p.person_id === foPid)
-    : foQuery
-    ? foCandidates.filter((p) => p.name.trim().toLowerCase() === foQuery.toLowerCase())
-    : [];
-  const selectedFo = foMatches.length === 1 ? foMatches[0] : null;
-  const foHeldItems = selectedFo ? allItems.filter((i) => i.current_holder === selectedFo.person_id) : [];
-  const foByType = {
-    rig: foHeldItems.filter((i) => itemType(i) === "rig"),
-    sd_card: foHeldItems.filter((i) => itemType(i) === "sd_card"),
-    mobile: foHeldItems.filter((i) => itemType(i) === "mobile"),
-  };
-  // Typed a name that matches more than one FO/IFO (or several partial matches when nothing matched
-  // exactly) — shown so the person can click through to the right one via &pid=.
-  const foAmbiguous =
-    !selectedFo && foQuery
-      ? foMatches.length > 1
-        ? foMatches
-        : foCandidates.filter((p) => p.name.toLowerCase().includes(foQuery.toLowerCase()))
-      : [];
 
   // Admin-set override for the Broken tile's storage breakdown (see dashboard/actions.ts) — used
   // instead of the computed one when set, since broken cards often never had storage recorded.
@@ -1155,108 +1127,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           <Icon name="search" size={18} />
           <input name="q" placeholder="Find an item by serial, prism no., brand or model" aria-label="Find an item" />
         </form>
-
-        <form action="/dashboard" method="get" role="search" className={styles.search} aria-label="Search by FO name">
-          <Icon name="search" size={18} />
-          <input
-            name="fo"
-            list="fo-names"
-            defaultValue={foQuery}
-            placeholder="Search by FO name — see all their Rigs, SD cards and Phones"
-            aria-label="Search by FO name"
-          />
-          <datalist id="fo-names">
-            {foCandidates.map((p) => (
-              <option key={p.person_id} value={p.name} />
-            ))}
-          </datalist>
-          <button type="submit" className={styles.btn}>
-            Search
-          </button>
-        </form>
-
-        {(foQuery || foPid) && (
-          <section className={styles.card} aria-label="FO assets" style={{ marginBottom: 16 }}>
-            {selectedFo ? (
-              <>
-                <h2>
-                  {selectedFo.name}&apos;s items{" "}
-                  <span className={styles.muted} style={{ fontWeight: 400, fontSize: "0.85rem" }}>
-                    ({ROLE_LABELS[selectedFo.role] ?? selectedFo.role}
-                    {foHubName.get(selectedFo.hub) ? ` · ${foHubName.get(selectedFo.hub)}` : ""}) · {n(foHeldItems.length)}{" "}
-                    item
-                    {foHeldItems.length === 1 ? "" : "s"}
-                  </span>
-                </h2>
-                {foHeldItems.length === 0 ? (
-                  <p className={styles.muted}>Nothing is currently assigned to {selectedFo.name}.</p>
-                ) : (
-                  (
-                    [
-                      ["Rigs", foByType.rig],
-                      ["SD cards", foByType.sd_card],
-                      ["Phones", foByType.mobile],
-                    ] as const
-                  ).map(([label, list]) =>
-                    list.length === 0 ? null : (
-                      <div key={label} style={{ marginBottom: 14 }}>
-                        <h3 style={{ fontSize: "0.9rem", margin: "0 0 6px" }}>
-                          {label} ({n(list.length)})
-                        </h3>
-                        <div className={styles.tableScroll}>
-                          <table className={`${styles.table} ${styles.tableCompact}`}>
-                            <thead>
-                              <tr>
-                                <th>Serial</th>
-                                <th>Model</th>
-                                <th>Status</th>
-                                <th>Current hub</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {list
-                                .sort((a, b) => a.item_id.localeCompare(b.item_id))
-                                .map((i) => (
-                                  <tr key={i.item_id}>
-                                    <td>
-                                      <Link href={`/inventory/${i.item_id}`}>{i.item_id}</Link>
-                                    </td>
-                                    <td>{i.model || i.prism_no}</td>
-                                    <td>{STATUS_LABELS[i.status] ?? i.status}</td>
-                                    <td>{foHubName.get(i.current_hub) ?? i.current_hub}</td>
-                                  </tr>
-                                ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )
-                  )
-                )}
-                <Link href="/dashboard" className={styles.link}>
-                  ← Clear search
-                </Link>
-              </>
-            ) : foAmbiguous.length > 0 ? (
-              <>
-                <h2>Which {foAmbiguous.length === 1 ? "FO" : "one"}?</h2>
-                <p className={styles.muted}>More than one match for &quot;{foQuery}&quot; — pick one:</p>
-                <ul style={{ margin: 0, paddingLeft: 18 }}>
-                  {foAmbiguous.map((p) => (
-                    <li key={p.person_id}>
-                      <Link href={`/dashboard?pid=${encodeURIComponent(p.person_id)}`}>
-                        {p.name} ({ROLE_LABELS[p.role] ?? p.role}
-                        {foHubName.get(p.hub) ? `, ${foHubName.get(p.hub)}` : ""})
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ) : (
-              <p className={styles.muted}>No FO or IFO found named &quot;{foQuery}&quot;.</p>
-            )}
-          </section>
-        )}
 
         <TypeSwitch role={user.role} current={type} path="/dashboard" includeAll={false} />
 
