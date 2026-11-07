@@ -866,9 +866,80 @@ export default async function InventoryPage({
         {type && <input type="hidden" name="type" value={type} />}
         <SearchBox defaultValue={one(sp.q)} />
 
-        {/* FO / IFO role, then a name dropdown narrowed to that role (or all FO/IFO if no role chosen).
-            Picking a name sets `holder` and shows every item of every type that person currently has —
-            picking just a role with no name shows every item held by anyone with that role. */}
+        <MultiSelect
+          name="status"
+          label="Status"
+          allLabel="All statuses"
+          options={STATUSES.map((st) => ({ value: st, label: STATUS_LABELS[st] }))}
+          selected={statuses}
+          group="inventory-filters"
+        />
+
+        {type === "sd_card" && (
+          <MultiSelect
+            name="storage"
+            label="Storage"
+            allLabel="All storage"
+            options={[
+              { value: "256 GB", label: "256 GB" },
+              { value: "512 GB", label: "512 GB" },
+            ]}
+            selected={storages}
+            group="inventory-filters"
+          />
+        )}
+
+        <MultiSelect
+          name="city"
+          label="City"
+          allLabel="All cities"
+          options={cityOptions}
+          selected={cities}
+          group="inventory-filters"
+        />
+
+        <MultiSelect
+          name="hub"
+          label="Hub"
+          allLabel="All hubs"
+          options={sortedHubs.map((h) => ({ value: h.hub_id, label: h.name }))}
+          selected={hubIds}
+          group="inventory-filters"
+        />
+
+        {/* Date range on each item's last movement (IST). */}
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <strong style={{ fontWeight: 600 }}>From</strong>
+          <input type="date" name="from" defaultValue={from} max={to || undefined} aria-label="From date" />
+        </label>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <strong style={{ fontWeight: 600 }}>To</strong>
+          <input type="date" name="to" defaultValue={to} min={from || undefined} aria-label="To date" />
+        </label>
+
+        {lateOnly && (
+          <>
+            <input type="hidden" name="late" value="1" />
+            <span className={styles.muted}>
+              Late items only (over {LATE_AFTER_HOURS} hours) ·{" "}
+              <Link href="/inventory">clear</Link>
+            </span>
+          </>
+        )}
+
+        <button type="submit">Filter</button>
+
+        {(statuses.length > 0 || storages.length > 0 || cities.length > 0 || hubIds.length > 0 || from || to || q) && (
+          <Link href={type ? `/inventory?type=${type}` : "/inventory"}>Clear filters</Link>
+        )}
+      </Form>
+
+      {/* A second, independent form: find everything an FO/IFO (optionally one specific person) currently
+          holds, across every item type. Its own City / From / To / Filter so it works on its own, separate
+          from the general filters above. */}
+      <Form action="/inventory" className={styles.row} scroll={false} data-progress="1">
+        {type && <input type="hidden" name="type" value={type} />}
+
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <strong style={{ fontWeight: 600 }}>Role</strong>
           <select name="foRole" defaultValue={foRole} aria-label="FO / IFO role">
@@ -895,10 +966,9 @@ export default async function InventoryPage({
           allLabel="All cities"
           options={cityOptions}
           selected={cities}
-          group="inventory-filters"
+          group="inventory-fo-filters"
         />
 
-        {/* Date range on each item's last movement (IST). */}
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <strong style={{ fontWeight: 600 }}>From</strong>
           <input type="date" name="from" defaultValue={from} max={to || undefined} aria-label="From date" />
@@ -908,51 +978,9 @@ export default async function InventoryPage({
           <input type="date" name="to" defaultValue={to} min={from || undefined} aria-label="To date" />
         </label>
 
-        <MultiSelect
-          name="status"
-          label="Status"
-          allLabel="All statuses"
-          options={STATUSES.map((st) => ({ value: st, label: STATUS_LABELS[st] }))}
-          selected={statuses}
-          group="inventory-filters"
-        />
-
-        {type === "sd_card" && (
-          <MultiSelect
-            name="storage"
-            label="Storage"
-            allLabel="All storage"
-            options={[
-              { value: "256 GB", label: "256 GB" },
-              { value: "512 GB", label: "512 GB" },
-            ]}
-            selected={storages}
-            group="inventory-filters"
-          />
-        )}
-
-        <MultiSelect
-          name="hub"
-          label="Hub"
-          allLabel="All hubs"
-          options={sortedHubs.map((h) => ({ value: h.hub_id, label: h.name }))}
-          selected={hubIds}
-          group="inventory-filters"
-        />
-
-        {lateOnly && (
-          <>
-            <input type="hidden" name="late" value="1" />
-            <span className={styles.muted}>
-              Late items only (over {LATE_AFTER_HOURS} hours) ·{" "}
-              <Link href="/inventory">clear</Link>
-            </span>
-          </>
-        )}
-
         <button type="submit">Filter</button>
 
-        {(statuses.length > 0 || storages.length > 0 || cities.length > 0 || hubIds.length > 0 || from || to || q || holder || foRole) && (
+        {(holder || foRole) && (
           <Link href={type ? `/inventory?type=${type}` : "/inventory"}>Clear filters</Link>
         )}
 
