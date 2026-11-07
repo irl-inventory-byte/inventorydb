@@ -608,11 +608,12 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // also include any rig marked damaged. Once a baseline has been set, add it on top of the live count.
   const brokenSdOnly = brokenReal.reduce((t, r) => t + r.count, 0);
   const brokenValue = brokenStorageOverride ? brokenCombinedTotal : brokenSdOnly;
-  const retiredValue = retiredBaseline !== undefined ? retiredBaseline + s.retired : s.retired;
-  // Manually set: 11 unique + 3 duplicate = 14 total retired cards.
+  // Manually set: 11 unique + 3 duplicate = 14 total retired cards. This now drives the tile's main
+  // number too (not just the dropdown), so the big "14" and the Unique/Duplicate rows always agree.
   const retiredUniqueCount = 11;
   const retiredDuplicateCount = 3;
-  const retiredDupesTotal = retiredUniqueCount + retiredDuplicateCount;
+  const retiredValue = retiredUniqueCount + retiredDuplicateCount;
+  const retiredDupesTotal = retiredValue;
   const retiredDupes = [
     {
       label: "Unique",
