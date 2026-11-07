@@ -17,7 +17,7 @@ import {
   topBy,
   type RigQcCount,
 } from "@/lib/rig-metrics";
-import type { HardwareUpdate, Hub, Item, ItemEvent, Person, QcCheck } from "@/lib/schema";
+import type { AppUser, HardwareUpdate, Hub, Item, ItemEvent, Person, QcCheck } from "@/lib/schema";
 import { n } from "./charts";
 import styles from "./dashboard.module.css";
 
@@ -101,6 +101,7 @@ export function RigMetrics({
   items,
   events,
   people,
+  users = [],
   hubs,
   qcChecks,
   hardwareUpdates,
@@ -114,6 +115,7 @@ export function RigMetrics({
   items: Item[];
   events: ItemEvent[];
   people: Person[];
+  users?: AppUser[]; // logins, to limit the QC team leaderboard to people whose role is actually QC
   hubs: Hub[];
   qcChecks: QcCheck[];
   hardwareUpdates: HardwareUpdate[];
@@ -151,8 +153,10 @@ export function RigMetrics({
   const failed = mostFailed(counts);
   const passed = mostPassed(counts);
 
-  // 3
-  const qcTeam = qcLeaderboard(qcChecksInRange, 2);
+  // 3 (QC role only; anyone else who happened to record a check — e.g. an admin — is left out,
+  // same idea as the FO/IFO filter on the field leaderboard below)
+  const qcRoleByEmail = new Map(users.map((u) => [u.email.toLowerCase(), u.role]));
+  const qcTeam = qcLeaderboard(qcChecksInRange, 2).filter((p) => qcRoleByEmail.get(p.key) === "qc");
   const mostDone = topBy(qcTeam, "rigs");
   const mostPass = topBy(qcTeam, "pass");
   const mostFail = topBy(qcTeam, "fail");
