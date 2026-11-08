@@ -10,7 +10,16 @@ import Link from "next/link";
 export default async function RigSdDetailsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string | string[]; error?: string | string[] }>;
+  searchParams: Promise<{
+    saved?: string | string[];
+    error?: string | string[];
+    from?: string | string[];
+    to?: string | string[];
+    member?: string | string[];
+    foIfo?: string | string[];
+    city?: string | string[];
+    ic?: string | string[];
+  }>;
 }) {
   const user = await requireRole("admin", "rig");
   const sp = await searchParams;
@@ -46,8 +55,22 @@ export default async function RigSdDetailsPage({
   // admin not listed on the Rig team is filling this in on someone else's behalf).
   const defaultMember = memberOptions.find((m) => m.id === user.personId)?.name ?? "";
 
+  // Recent-entries filter bar: date range (on card_date) + exact match on member/FO-IFO/city/IC.
+  const filterFrom = one(sp.from);
+  const filterTo = one(sp.to);
+  const filterMember = one(sp.member);
+  const filterFoIfo = one(sp.foIfo);
+  const filterCity = one(sp.city);
+  const filterIc = one(sp.ic);
+
   const recent = all
     .filter((r) => r.team === "rig")
+    .filter((r) => !filterFrom || r.card_date >= filterFrom)
+    .filter((r) => !filterTo || r.card_date <= filterTo)
+    .filter((r) => !filterMember || r.team_member === filterMember)
+    .filter((r) => !filterFoIfo || r.fo_ifo === filterFoIfo)
+    .filter((r) => !filterCity || r.city === filterCity)
+    .filter((r) => !filterIc || r.ic_name === filterIc)
     .sort((a, b) => Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0"))
     .slice(0, 50);
 
@@ -70,6 +93,14 @@ export default async function RigSdDetailsPage({
         error={one(sp.error)}
         recent={recent}
         defaultMember={defaultMember}
+        filters={{
+          from: filterFrom,
+          to: filterTo,
+          member: filterMember,
+          foIfo: filterFoIfo,
+          city: filterCity,
+          ic: filterIc,
+        }}
       />
     </main>
   );
