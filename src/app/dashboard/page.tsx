@@ -519,38 +519,37 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // "With rig team": one tile, total of Rig team + Productivity team, with a dropdown breaking the two
   // out. The Rig team and the Productivity team are the same role and work out of the same hub — so
   // which one an item belongs to is decided by what was chosen on the SEND form each time (item.sub_team,
-  // see lib/handover.ts's planSend), not by the person or the hub.
+  // see lib/handover.ts's planSend), not by the person or the hub: the same person can send to either
+  // team on different days, and both sub-teams receive items with status "with_rig" at the same hub.
+  // Uses allItems (every type this login can see), not the type-scoped `items` above — an SD card with
+  // status "with_rig" belongs to the rig/productivity team exactly like a rig does, and would otherwise
+  // be invisible here whenever the dashboard is on the Rig tab (where `items` holds only rigs).
   const rigHubObj = rigTeamHub(hubs);
-
-  // Normalise whatever was saved in item.sub_team ("Productivity team", "productivity_team", "Prod", "rig", "")
-  // to exactly "rig" or "productivity". Anything that isn't clearly productivity counts as rig.
-  const subTeamOf = (i: Item): "rig" | "productivity" =>
-    /prod/i.test(i.sub_team ?? "") ? "productivity" : "rig";
-
-  // Every SD card that is with the rig team shows under Rig team or Productivity team.
-  // Pooled in-stock cards at the shared rig hub have no sub_team of their own, so they stay under Rig team.
-  const isRigTeamCard = (i: Item) =>
-    i.item_type === "sd_card" &&
-    (i.status === "with_rig" || (!!rigHubObj && i.current_hub === rigHubObj.hub_id && i.status === "in_stock"));
-
-  const rigTeamCards = items.filter(isRigTeamCard);
-  const rigTeamItemsList = rigTeamCards.filter((i) => (i.status === "with_rig" ? subTeamOf(i) === "rig" : true));
-  const prodTeamItemsList = rigTeamCards.filter((i) => i.status === "with_rig" && subTeamOf(i) === "productivity");
+  const teamItemsFor = (which: "rig" | "productivity") =>
+    allItems.filter((i) => {
+      if (i.status === "with_rig") return (i.sub_team || "rig") === which;
+      // In-stock items at the shared rig hub have no sub_team of their own (nobody currently holds
+      // them to have chosen one) — they're pooled stock, counted under Rig team only.
+      return which === "rig" && rigHubObj && i.current_hub === rigHubObj.hub_id && i.status === "in_stock";
+    });
+  const rigTeamItemsList = teamItemsFor("rig");
+  const prodTeamItemsList = teamItemsFor("productivity");
   const rigTeamCount = rigTeamItemsList.length;
   const prodTeamCount = prodTeamItemsList.length;
-  const teamTotal = rigTeamCount + prodTeamCount; // always equals rigTeamCards.length
-
-  // Items in_stock at the rig team's own hub are already counted under "With rig team",
-  // so they are excluded from "In stock" to avoid double counting.
+  const teamTotal = rigTeamCount + prodTeamCount;
+  // Items in_stock at the rig team's own hub are already counted under "With rig team" (teamItemsFor
+  // above) — exclude them from "In stock" so the tiles don't double-count and sum to the true total.
   const teamHubIds = new Set<string>([rigHubObj?.hub_id].filter((h): h is string => !!h));
   const inStockValue = items.filter((i) => i.status === "in_stock" && !teamHubIds.has(i.current_hub)).length;
-
+  // There's only one physical hub, so the link can't filter by sub-team the way it filters by hub — it
+  // shows both sub-teams together; the dropdown rows below link to the same place for now.
   const teamHref = rigHubObj
-    ? inventory({ status: "with_rig,in_stock", hub: rigHubObj.hub_id, type: "sd_card" })
-    : inventory({ status: "with_rig", type: "sd_card" });
-
-  // Each team gets its own row with a total, split by city of the item's current_hub.
-  const byCity = (list: Item[]) => {
+    ? inventory({ status: "with_rig,in_stock", hub: rigHubObj.hub_id })
+    : inventory({ status: "with_rig" });
+  // Rig team and Productivity team each get their own row with a total, and each one further splits
+  // by city (the city of each item's current_hub — e.g. Bangalore). Every city count, under either
+  // team, sums up to that team's count, and both teams' counts sum to teamTotal (the tile's value).
+  const byCity = (list: typeof rigTeamItemsList) => {
     const count = new Map<string, number>();
     for (const i of list) {
       const c = cityOfHub.get(i.current_hub) || i.current_hub || "Not set";
@@ -560,9 +559,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   };
   const cityHref = (city: string) =>
     rigHubObj
-      ? inventory({ status: "with_rig,in_stock", hub: rigHubObj.hub_id, city: city.toLowerCase(), type: "sd_card" })
-      : inventory({ status: "with_rig", city: city.toLowerCase(), type: "sd_card" });
-
+      ? inventory({ status: "with_rig,in_stock", hub: rigHubObj.hub_id, city: city.toLowerCase() })
+      : inventory({ status: "with_rig", city: city.toLowerCase() });
   const teamBreakdown = (
     [
       ["Rig team", rigTeamCount, rigTeamItemsList],
@@ -573,7 +571,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     count,
     pct: teamTotal ? Math.round((count / teamTotal) * 100) : 0,
     href: teamHref,
-    cities: byCity(list as Item[]).map(([city, c]) => ({
+    cities: byCity(list).map(([city, c]) => ({
       city,
       count: c,
       pct: count ? Math.round((c / count) * 100) : 0,
