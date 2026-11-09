@@ -61,6 +61,7 @@ const READY_FOR_FIELD = new Set(["pass", "repaired"]);
  *   QC team → hardware team         only when QC is Fail
  *   QC team → another QC person     always (a transfer, no QC result)
  *   hardware team → IM              after repair (the rig is then "Repaired · Ready for field")
+ *   hardware team → QC team         always (e.g. send back for re-QC after repair)
  *   hardware team → hardware team   a transfer to another hardware person (no repair recorded)
  * Nothing else is allowed for a rig. Returns the error messages, if any.
  */
@@ -102,8 +103,8 @@ function rigRouteErrors(
   }
 
   if (senderRole === "hardware") {
-    if (to !== "im" && to !== "hardware") {
-      errors.push("The hardware team can send a rig only to an IM (repaired) or to another hardware person.");
+    if (to !== "im" && to !== "hardware" && to !== "qc") {
+      errors.push("The hardware team can send a rig only to an IM (repaired), to the QC team or to another hardware person.");
     }
     return errors;
   }
@@ -139,6 +140,9 @@ function eventBase(ctx: HandoverContext, note: string) {
  * Send in-stock cards to a person AT a location. Both are always required. The person decides the status
  * (IM = pending, IFO = traveling, FO = with FO, rig = with rig, a typed "Internal" name = with internal).
  * The location is where the cards are recorded, whichever hub the person normally belongs to.
+ *
+ * Hardware team is team-wide: any hardware person can send any rig that is "With hardware team",
+ * even if it was received under another hardware person's name (e.g. that person is absent).
  */
 export function planSend(targets: Item[], input: SendInput, ctx: HandoverContext): HandoverPlan {
   const plan: HandoverPlan = { events: [], items: [], errors: [] };
@@ -168,7 +172,7 @@ export function planSend(targets: Item[], input: SendInput, ctx: HandoverContext
     plan.errors.push("Choose Rig team or Productivity team.");
   }
   // QC and hardware teams always work at Bangalore: rigs sent to them go there, whatever was chosen.
-  // The same when the QC or hardware team is SENDING (to an IM or to hardware): it stays at Bangalore.
+  // The same when the QC or hardware team is SENDING (to an IM, to QC or to hardware): it stays at Bangalore.
   const senderAtBangalore = ctx.senderRole === "qc" || ctx.senderRole === "hardware";
   if (toRole === "qc" || toRole === "hardware" || senderAtBangalore) {
     const bangalore = rigHomeHub(ctx.hubs)?.hub_id;
@@ -178,15 +182,22 @@ export function planSend(targets: Item[], input: SendInput, ctx: HandoverContext
 
   const sender = ctx.senderRole ?? "im";
   const heldStatus = sender === "admin" ? undefined : HELD_BY[sender];
+  // Hardware is team-wide: any hardware person can send any rig that is With hardware team.
+  const teamWide = sender === "hardware";
 
   if (heldStatus) {
-    // QC / hardware team: only rigs they are holding right now.
+    // QC / hardware team: only rigs the sender is holding right now (hardware: any rig the team holds).
     if (internalName) plan.errors.push("Choose a person from the list.");
     const notHeld = targets.filter(
-      (t) => t.item_type !== "rig" || t.status !== heldStatus || t.current_holder !== ctx.actorPersonId,
+      (t) =>
+        t.item_type !== "rig" ||
+        t.status !== heldStatus ||
+        (!teamWide && t.current_holder !== ctx.actorPersonId),
     );
     if (notHeld.length) {
-      plan.errors.push(`You can only send rigs that are with you (receive them first on Receive items). Not with you: ${listOf(notHeld.map((t) => t.item_id))}.`);
+      plan.errors.push(
+        `You can only send rigs that are with ${teamWide ? "the hardware team" : "you"} (receive them first on Receive items). Not with ${teamWide ? "the team" : "you"}: ${listOf(notHeld.map((t) => t.item_id))}.`,
+      );
     }
   } else {
     if (!activeHub(input.fromHub)) {
@@ -217,8 +228,14 @@ export function planSend(targets: Item[], input: SendInput, ctx: HandoverContext
     const hub = input.toHub;
     // A rig checked out to an internal person (e.g. a demo rig) is "With internal", not waiting to be received.
     const status = item.item_type === "rig" && toRole === "internal" ? "with_internal" : sendStatus;
+    // When another team member sends a rig that was with someone else, keep a trace of whose it was.
+    const onBehalf =
+      heldStatus && item.current_holder && item.current_holder !== ctx.actorPersonId
+        ? `Sent on behalf of ${displayName(ctx.people, item.current_holder)}. `
+        : "";
     const event: ItemEvent = {
       ...base,
+      note: `${onBehalf}${base.note}`.trim(),
       event_id: ctx.newId("e"),
       item_id: item.item_id,
       action: "check_out",
@@ -359,10 +376,11 @@ export function planReceive(
 export type HardwareOutcome = "rnd" | "dead";
 
 /**
- * HARDWARE TEAM, on the Send page: instead of sending repaired rigs to an IM, mark the rigs they hold as
+ * HARDWARE TEAM, on the Send page: instead of sending repaired rigs to an IM, mark the rigs the team holds as
  *   R&D   → status "rnd" (stays with the hardware person who marked it, shown in the R&D tile)
  *   Dead  → status "retired" (no holder, shown in Dead / Retired), the same as "Declared dead" on a rig's page
- * A reason is required. Only rigs this person has received (With hardware team) can be marked.
+ * A reason is required. Hardware is team-wide: any hardware person can mark any rig that is
+ * With hardware team, even if it was received under another hardware person's name.
  */
 export function planHardwareOutcome(
   targets: Item[],
@@ -377,11 +395,9 @@ export function planHardwareOutcome(
   if (input.outcome !== "rnd" && input.outcome !== "dead") plan.errors.push("Choose Repaired, R&D or Dead.");
   const reason = input.reason.trim();
   if (!reason) plan.errors.push(input.outcome === "dead" ? "Write why the rig is dead." : "Write why the rig is going to R&D.");
-  const notHeld = targets.filter(
-    (t) => t.item_type !== "rig" || t.status !== "with_hardware" || t.current_holder !== ctx.actorPersonId,
-  );
+  const notHeld = targets.filter((t) => t.item_type !== "rig" || t.status !== "with_hardware");
   if (notHeld.length) {
-    plan.errors.push(`You can only mark rigs that are with you (receive them first on Receive items). Not with you: ${listOf(notHeld.map((t) => t.item_id))}.`);
+    plan.errors.push(`Only rigs that are with the hardware team can be marked. Not with the team: ${listOf(notHeld.map((t) => t.item_id))}.`);
   }
   if (plan.errors.length) return plan;
 
@@ -390,8 +406,14 @@ export function planHardwareOutcome(
   const holder = dead ? "" : ctx.actorPersonId;
   const base = eventBase(ctx, `${dead ? "Declared dead" : "Moved to R&D"}: ${reason}`);
   for (const item of targets) {
+    // Keep a trace of whose rig it was when another team member marks it.
+    const onBehalf =
+      item.current_holder && item.current_holder !== ctx.actorPersonId
+        ? ` (on behalf of ${displayName(ctx.people, item.current_holder)})`
+        : "";
     const event: ItemEvent = {
       ...base,
+      note: `${base.note}${onBehalf}`,
       event_id: ctx.newId("e"),
       item_id: item.item_id,
       action: dead ? "retire" : "rnd",
