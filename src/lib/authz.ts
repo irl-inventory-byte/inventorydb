@@ -16,14 +16,17 @@ async function currentRoles(
 ): Promise<{ role: Role; secondaryRole?: Role; personId?: string }> {
   try {
     const store = getStore();
-    const row = (await store.list("users")).find(
+    // "users" and "people" don't depend on each other, so fetch them together instead of one after the
+    // other — this runs on every page (via requireRole), so the two round trips used to stack serially
+    // on every single navigation.
+    const [users, people] = await Promise.all([store.list("users"), store.list("people")]);
+    const row = users.find(
       (u) => u.email.toLowerCase() === String(email ?? "").toLowerCase() && u.active !== "false",
     );
     const primary = normalizeRole(row?.role);
     if (!row || !primary) return atSignIn;
     const secondary = normalizeRole(row.secondary_role);
     // The linked person NOW too, so a link set on the Users page works without signing out.
-    const people = await store.list("people");
     // If there is no link for the primary role, the second role may find one by email
     // (e.g. an Admin who is also QC: the QC person in People whose email is this login).
     // The saved link is tried for both roles (e.g. a Rig login whose second role is QC, linked to a QC person).
