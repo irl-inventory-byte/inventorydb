@@ -358,6 +358,19 @@ export class SupabaseBackend implements TableBackend {
     }
   }
 
+  /**
+   * Delete one row from a tab by its key column (e.g. note_id for delay_notes). Clears any kept copy of
+   * that tab so the next read doesn't still show the deleted row.
+   */
+  async deleteRow(tab: TabName, id: string): Promise<void> {
+    const trimmed = id.trim();
+    if (!trimmed) return;
+    const key = TABS[tab][0];
+    await this.writing([tab], async () => {
+      await this.call("DELETE", tab, `${key}=eq.${encodeURIComponent(trimmed)}`, undefined, { Prefer: "return=minimal" });
+    });
+  }
+
   /** Permanent deletion of one item and its history. The calling server action checks it is an admin. */
   async deleteItemAndHistory(itemId: string): Promise<DeleteItemResult> {
     if (!itemId.trim()) throw new Error("An item ID is required.");

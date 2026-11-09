@@ -32,10 +32,21 @@ export class CachedBackend implements TableBackend {
     if (inner.getEventsByIds) {
       this.getEventsByIds = (ids: string[]) => inner.getEventsByIds!(ids);
     }
+    if (inner.deleteRow) {
+      this.deleteRow = async (tab: TabName, id: string) => {
+        try {
+          await inner.deleteRow!(tab, id);
+        } finally {
+          // So a page shown right after deleting doesn't still read the cached (undeleted) copy.
+          this.clear(tab);
+        }
+      };
+    }
   }
 
   deleteItemAndHistory?: (itemId: string) => Promise<DeleteItemResult>;
   getEventsByIds?: (ids: string[]) => Promise<Row[]>;
+  deleteRow?: (tab: TabName, id: string) => Promise<void>;
 
   private clear(...tabs: TabName[]) {
     for (const t of tabs) {

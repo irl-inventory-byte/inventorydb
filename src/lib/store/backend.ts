@@ -28,6 +28,13 @@ export interface TableBackend {
   getEventsByIds?(ids: string[]): Promise<Row[]>;
 
   /**
+   * Delete one row from a tab by its key column (the tab's first column — e.g. note_id for delay_notes).
+   * Optional: only implemented for backends/tabs that need row-level deletion from the app itself (as
+   * opposed to editing the table directly in Supabase).
+   */
+  deleteRow?(tab: TabName, id: string): Promise<void>;
+
+  /**
    * Permanently remove one item and its associated events.
    * Optional because not every backend implements deletion.
    */

@@ -179,6 +179,17 @@ export class Store {
     return rows.filter((e) => visible.has((e as unknown as Row).item_id));
   }
 
+  /**
+   * Permanently delete one row from a tab by its key (e.g. a delay note by note_id). Unlike items, this
+   * is not restricted to admins here — the calling server action decides who may call it.
+   */
+  async deleteRow(tab: TabName, id: string): Promise<void> {
+    if (!this.backend.deleteRow) {
+      throw new Error("Deleting a row is not supported by the active storage backend.");
+    }
+    await this.backend.deleteRow(tab, id);
+  }
+
   async getHistory(itemId: string) {
     const events = (await this.list("events")).filter(
       (event) => event.item_id === itemId

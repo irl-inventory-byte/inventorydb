@@ -20,7 +20,7 @@ import styles from "./dashboard.module.css";
 import { HubOrgChart, countHidden } from "./hub-tree-view";
 import AttentionFilter from "./attentionfilter";
 import { Icon, type IconName } from "./icons";
-import { addDelayNote, setBrokenStorageOverride, setRetiredBaseline } from "./actions";
+import { addDelayNote, deleteDelayNote, setBrokenStorageOverride, setRetiredBaseline } from "./actions";
 import { SummaryKpis } from "./summary-kpis";
 import { RIG_STATES, RIG_STATE_LABELS, rigState, type RigState } from "@/lib/rig-state";
 import { NO_ACTIVITY_DAYS, RigMetrics } from "./rig-metrics";
@@ -982,9 +982,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const detailHref = (key: string) => `/dashboard?${new URLSearchParams({ ...attentionKeep, adetail: key })}#delayed-items`;
   const closeDetailHref = `/dashboard?${new URLSearchParams(attentionKeep)}#attention`;
 
-  // "back" target for the per-item delay-note form below (see dashboard/actions.ts addDelayNote).
-  const attentionBack = `/dashboard?${new URLSearchParams(attentionKeep)}#attention`;
-
   // Notes left against individual delayed cards (see dashboard/actions.ts addDelayNote), newest first.
   const delayNoteLog = delayNotes.slice().sort((a, b) => Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0"));
   // Latest note per item_id, for the inline "Note" column on the Needs attention table below —
@@ -1797,14 +1794,25 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                   </thead>
                   <tbody>
                     {shownDelayed.map((r) => {
-                      // Representative item for this row: whichever item already has the latest
-                      // note, or the first item in the group if none does yet — new notes on this
-                      // row always attach to that same item, so re-saving edits it in place.
-                      // Also drives the Action column: a saved note (any non-empty value) means
-                      // someone has acted on this row; no note yet means it's still pending.
-                      const existing = r.items.map((it) => latestNoteByItem.get(it.id)).find(Boolean);
-                      const forItem = existing?.item_id ?? r.items[0]?.id;
-                      const actionTaken = !!(existing?.note ?? "").trim();
+                      // This row can be several items (same type/person/role/city/sender/send-date)
+                      // grouped into one Count. Each item has its OWN note (saved per item_id below in
+                      // the drill-down table), so collect every one of them here instead of picking just
+                      // one — a single inline box can't honestly represent several different notes.
+                      const itemNotes = r.items
+                        .map((it) => latestNoteByItem.get(it.id))
+                        .filter((note): note is NonNullable<typeof note> => !!note && !!note.note.trim());
+                      const distinctNotes = new Set(itemNotes.map((note) => note.note.trim()));
+                      // Action column: taken as soon as ANY item in the row has a note — not pending just
+                      // because they don't all match yet.
+                      const actionTaken = itemNotes.length > 0;
+                      // Single-item rows (the common case) still get the quick inline editor, attached to
+                      // that one item. Multi-item rows where every noted item agrees (or only one of them
+                      // has a note so far) also get it, editing/adding against that one item. Only once
+                      // the items actually disagree does the inline box stop making sense — those rows
+                      // point at the drill-down below instead, where each item's note is its own.
+                      const existing = itemNotes[0];
+                      const forItem = r.items.length === 1 ? r.items[0]?.id : (existing?.item_id ?? r.items[0]?.id);
+                      const showInline = distinctNotes.size <= 1;
                       return (
                       <tr key={r.key} style={r.key === detailKey ? { background: "#eff6ff" } : undefined}>
                         <td>{r.type}</td>
@@ -1826,9 +1834,15 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                         <td style={{ minWidth: 180 }}>
                           {!forItem ? (
                             <span className={styles.muted}>—</span>
+                          ) : !showInline ? (
+                            // These items don't all have the same note (or some have none) — showing just
+                            // one here would hide that, so link to the drill-down instead, where each
+                            // item's own note is shown and edited separately.
+                            <Link href={detailHref(r.key)} className={styles.link} style={{ fontSize: "0.78rem" }}>
+                              {itemNotes.length} of {r.items.length} noted — view individually
+                            </Link>
                           ) : (
                             <form action={addDelayNote} style={{ display: "flex", gap: 4 }}>
-                              <input type="hidden" name="back" value={attentionBack} />
                               <input type="hidden" name="item_id" value={forItem} />
                               <input type="hidden" name="item_type" value={r.type} />
                               <input type="hidden" name="person" value={r.person} />
@@ -1934,31 +1948,60 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                           <td>{howLong(it.hours)}</td>
                           <td>{it.status}</td>
                           <td style={{ minWidth: 220 }}>
-                            <form action={addDelayNote} style={{ display: "flex", gap: 6 }}>
-                              <input type="hidden" name="back" value={attentionBack} />
-                              <input type="hidden" name="item_id" value={it.id} />
-                              <input type="hidden" name="item_type" value={it.type} />
-                              <input type="hidden" name="person" value={detailRow.person} />
-                              <input type="hidden" name="sent_by" value={it.sentBy} />
-                              <input
-                                name="note"
-                                required
-                                placeholder="Add a note…"
-                                style={{
-                                  flex: 1,
-                                  minWidth: 0,
-                                  padding: "4px 8px",
-                                  border: "1px solid var(--border)",
-                                  borderRadius: 6,
-                                  background: "var(--surface-1)",
-                                  color: "var(--text-primary)",
-                                  fontSize: "0.85rem",
-                                }}
-                              />
-                              <button type="submit" style={{ padding: "4px 10px", fontSize: "0.85rem" }}>
-                                Save
-                              </button>
-                            </form>
+                            {(() => {
+                              const existingNote = latestNoteByItem.get(it.id);
+                              return (
+                                <div style={{ display: "flex", gap: 6 }}>
+                                  <form action={addDelayNote} style={{ display: "flex", gap: 6, flex: 1, minWidth: 0 }}>
+                                    <input type="hidden" name="item_id" value={it.id} />
+                                    <input type="hidden" name="item_type" value={it.type} />
+                                    <input type="hidden" name="person" value={detailRow.person} />
+                                    <input type="hidden" name="sent_by" value={it.sentBy} />
+                                    <input
+                                      name="note"
+                                      required
+                                      // Was always blank here before, even right after saving — the saved
+                                      // note never got read back into the box, so it LOOKED like nothing
+                                      // had been saved. Now it's prefilled with whatever's actually saved.
+                                      defaultValue={existingNote?.note ?? ""}
+                                      placeholder="Add a note…"
+                                      style={{
+                                        flex: 1,
+                                        minWidth: 0,
+                                        padding: "4px 8px",
+                                        border: "1px solid var(--border)",
+                                        borderRadius: 6,
+                                        background: "var(--surface-1)",
+                                        color: "var(--text-primary)",
+                                        fontSize: "0.85rem",
+                                      }}
+                                    />
+                                    <button type="submit" style={{ padding: "4px 10px", fontSize: "0.85rem" }}>
+                                      Save
+                                    </button>
+                                  </form>
+                                  {existingNote && (
+                                    <form action={deleteDelayNote}>
+                                      <input type="hidden" name="note_id" value={existingNote.note_id} />
+                                      <button
+                                        type="submit"
+                                        title="Delete this note"
+                                        style={{
+                                          padding: "4px 10px",
+                                          fontSize: "0.85rem",
+                                          color: "#dc2626",
+                                          border: "1px solid var(--border)",
+                                          borderRadius: 6,
+                                          background: "var(--surface-1)",
+                                        }}
+                                      >
+                                        Delete
+                                      </button>
+                                    </form>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </td>
                         </tr>
                       ))}
@@ -1983,7 +2026,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                   <table className={styles.table} style={{ width: "100%", minWidth: "760px", borderCollapse: "separate", borderSpacing: 0 }}>
                     <thead>
                       <tr>
-                        {["Date", "Item", "Item ID", "Person", "With whom", "Note"].map((h) => (
+                        {["Date", "Item", "Item ID", "Person", "With whom", "Note", ""].map((h) => (
                           <th key={h} scope="col" style={TH_STYLE}>
                             {h}
                           </th>
@@ -2003,6 +2046,25 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                           <td>{note.person || "—"}</td>
                           <td>{note.sent_by || "—"}</td>
                           <td style={{ whiteSpace: "normal" }}>{note.note}</td>
+                          <td>
+                            <form action={deleteDelayNote}>
+                              <input type="hidden" name="note_id" value={note.note_id} />
+                              <button
+                                type="submit"
+                                title="Delete this note"
+                                style={{
+                                  padding: "3px 8px",
+                                  fontSize: "0.78rem",
+                                  color: "#dc2626",
+                                  border: "1px solid var(--border)",
+                                  borderRadius: 6,
+                                  background: "var(--surface-1)",
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </form>
+                          </td>
                         </tr>
                       ))}
                     </tbody>

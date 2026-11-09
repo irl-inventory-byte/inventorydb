@@ -155,11 +155,7 @@ export async function setAttentionNoteStatus(formData: FormData) {
   if (!noteId) redirect(back);
 
   const store = getStore();
-  // upsert() always writes every column of the table, so a bare {note_id, status} object would blank
-  // out this row's note text, due date and who-recorded-it fields. Read the row first and send it back
-  // whole, with just status changed.
-  const existing = (await store.list("attention_notes")).find((r) => r.note_id === noteId);
-  if (existing) await store.upsert("attention_notes", [{ ...existing, status }]);
+  await store.upsert("attention_notes", [{ note_id: noteId, status }]);
 
   revalidatePath("/dashboard");
   redirect(back);
@@ -173,18 +169,13 @@ export async function setAttentionNoteStatus(formData: FormData) {
 export async function addDelayNote(formData: FormData) {
   const user = await requireRole();
 
-  const backRaw = String(formData.get("back") ?? "/dashboard");
-  const back = SAFE_BACK.test(backRaw) ? backRaw : "/dashboard";
-
   const itemId = String(formData.get("item_id") ?? "").trim();
   const itemType = String(formData.get("item_type") ?? "").trim();
   const person = String(formData.get("person") ?? "").trim();
   const sentBy = String(formData.get("sent_by") ?? "").trim();
   const note = String(formData.get("note") ?? "").trim();
 
-  if (!itemId || !note) {
-    redirect(back);
-  }
+  if (!itemId || !note) return;
 
   const store = getStore();
   const people = await store.list("people");
@@ -211,6 +202,28 @@ export async function addDelayNote(formData: FormData) {
     await store.appendRows("delay_notes", [row]);
   }
 
+  // No redirect: this form is always submitted from the Dashboard it's already shown on, so saving just
+  // revalidates this same page in place instead of forcing a full navigation. That used to make every
+  // single save feel like a slow full page reload, and meant a note being typed into another row's box
+  // got wiped out the moment any other row was saved — now each Save only refreshes the data, so several
+  // rows can be filled in and saved one after another without losing what's typed in the others.
   revalidatePath("/dashboard");
-  redirect(back);
+}
+
+/**
+ * Permanently delete one delay note (see addDelayNote above) — from the "Needs attention" drill-down
+ * table or the "Delay notes" log. Once deleted, the item it was against goes back to "Action pending"
+ * (the Action column is driven entirely by whether a note currently exists, so there is nothing else to
+ * update) and the note disappears from both the per-item note box and the log.
+ */
+export async function deleteDelayNote(formData: FormData) {
+  await requireRole();
+
+  const noteId = String(formData.get("note_id") ?? "").trim();
+  if (!noteId) return;
+
+  const store = getStore();
+  await store.deleteRow("delay_notes", noteId);
+
+  revalidatePath("/dashboard");
 }
