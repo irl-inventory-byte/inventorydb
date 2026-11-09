@@ -892,6 +892,38 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     });
   }
 
+  // Hardware team: QC-failed rigs sitting with a hardware-team person for more than LATE_AFTER_HOURS
+  // without being sent back to an IM (repaired or not) — the handoff the hardware team owes the IM team.
+  // Same rule as the Rig/Internal block above, just on status "with_hardware".
+  const heldByHardware = new Map<string, { count: number; hours: number }>();
+  for (const i of items) {
+    if (i.status !== "with_hardware") continue;
+    if (!i.current_holder || seen.has(i.current_holder)) continue;
+    const hours = hoursOut(i);
+    if (hours <= LATE_AFTER_HOURS) continue;
+    const g = heldByHardware.get(i.current_holder) ?? { count: 0, hours: 0 };
+    g.count++;
+    g.hours = Math.max(g.hours, hours);
+    heldByHardware.set(i.current_holder, g);
+  }
+  for (const [personId, g] of heldByHardware) {
+    const person = people.find((p) => p.person_id === personId);
+    attention.push({
+      key: `late-hardware-${personId}`,
+      person: person?.name ?? personId,
+      role: person ? ROLE_LABELS[person.role] : "Hardware",
+      city: cityOfPerson(personId, "with_hardware"),
+      sentBy: sentToPerson(personId, "with_hardware"),
+      items: g.count,
+      hours: g.hours,
+      outFor: howLong(g.hours),
+      issue: "Not sent to IM",
+      href: inventory({ holder: personId, status: "with_hardware" }),
+      tone: "warning",
+      late: lateWith(personId, "with_hardware"),
+    });
+  }
+
   // Longest out first. Lost / damaged rows have no time, so they go last.
   attention.sort((a, b) => (b.hours ?? -1) - (a.hours ?? -1) || b.items - a.items);
 
