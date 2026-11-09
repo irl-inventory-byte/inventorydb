@@ -211,13 +211,16 @@ export default async function InventoryPage({
   // All items: SD cards, rigs and mobiles together. A switch choice: that type only.
   const store = type ? storeFor(user.role, type) : storeForAll(user.role);
 
-  const [items, hubs, people, events, qcChecks] = await Promise.all([
+  const [items, hubs, people, qcChecks] = await Promise.all([
     store.list("items"),
     store.list("hubs"),
     store.list("people"),
-    store.list("events"),
     canSeeType(user.role, "rig") && !mobileView ? store.list("qc_checks") : Promise.resolve([] as QcCheck[]),
   ]);
+  // Only each item's OWN latest movement is used below (From/To columns, last-moved day, "late" check) —
+  // never the full history of every item — so fetch just those specific events (one per item,
+  // item.last_event_id) instead of downloading the whole events table on every request.
+  const events = await store.getEventsByIds(items.map((i) => i.last_event_id).filter(Boolean));
 
   // Latest QC result per rig (rows are oldest first, so the last one wins).
   const latestQc = new Map<string, string>();

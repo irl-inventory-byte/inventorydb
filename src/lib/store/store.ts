@@ -153,6 +153,32 @@ export class Store {
     return found;
   }
 
+  /**
+   * Only the events with these ids (e.g. items.map(i => i.last_event_id)), not the whole events table.
+   * Falls back to filtering a full list("events") if the backend has no targeted fetch, so this is always
+   * safe to call. Respects the same item-type visibility as list("events").
+   */
+  async getEventsByIds(ids: string[]): Promise<ItemEvent[]> {
+    const wanted = Array.from(new Set(ids.filter(Boolean)));
+    if (!wanted.length) return [];
+
+    if (!this.backend.getEventsByIds) {
+      const all = await this.list("events");
+      const set = new Set(wanted);
+      return all.filter((e) => set.has(e.event_id)) as unknown as ItemEvent[];
+    }
+
+    const rows = (await this.backend.getEventsByIds(wanted)) as unknown as ItemEvent[];
+    const types = this.types;
+    if (!types) return rows;
+
+    // Same filter list("events") applies: keep only events of a currently-visible item.
+    const visible = new Set(
+      (await this.backend.readAll("items")).filter((item) => types.has(typeOf(item))).map((item) => item.item_id),
+    );
+    return rows.filter((e) => visible.has((e as unknown as Row).item_id));
+  }
+
   async getHistory(itemId: string) {
     const events = (await this.list("events")).filter(
       (event) => event.item_id === itemId

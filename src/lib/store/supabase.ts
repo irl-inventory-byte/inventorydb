@@ -54,7 +54,7 @@ export class SupabaseBackend implements TableBackend {
   }
 
   private async call(
-    method: "GET" | "POST" | "DELETE" | "PATCH",
+    method: "GET" | "POST" | "DELETE",
     tab: TabName | "table_versions",
     query: string,
     body?: unknown,
@@ -179,6 +179,42 @@ export class SupabaseBackend implements TableBackend {
     return full.rows;
   }
 
+  /**
+   * Only the events with these ids (e.g. each item's last_event_id), in one small request, instead of
+   * the whole events history. Checks the kept copy first — if a wanted event is already in memory (the
+   * usual case once a server has been warm a little while), it's returned with no network call at all.
+   * Anything still missing is fetched directly from Supabase by event_id, which is cheap and does not
+   * download or keep the rest of the table.
+   */
+  async getEventsByIds(ids: string[]): Promise<Row[]> {
+    const wanted = Array.from(new Set(ids.filter(Boolean)));
+    if (!wanted.length) return [];
+
+    const found = new Map<string, Row>();
+    const kept = this.events;
+    if (kept) {
+      for (const row of kept.rows) {
+        if (wanted.includes(row.event_id)) found.set(row.event_id, { ...row });
+      }
+    }
+
+    const missing = wanted.filter((id) => !found.has(id));
+    if (missing.length) {
+      const columns = TABS.events;
+      // PostgREST's `in.()` list: ids are plain UUID/text, not quoted or escaped specially here.
+      const select = `select=${columns.join(",")}&event_id=in.(${missing.join(",")})`;
+      const res = await this.call("GET", "events", select);
+      const page = (await res.json()) as Record<string, unknown>[];
+      for (const r of page) {
+        const row: Row = {};
+        for (const c of columns) row[c] = r[c] === null || r[c] === undefined ? "" : String(r[c]);
+        found.set(row.event_id, row);
+      }
+    }
+
+    return wanted.map((id) => found.get(id)).filter((r): r is Row => r !== undefined);
+  }
+
   /** Total rows in a table (one small request). */
   private async count(tab: TabName): Promise<number> {
     const res = await this.call("GET", tab, "select=_seq&limit=1", undefined, { Prefer: "count=exact" });
@@ -286,14 +322,6 @@ export class SupabaseBackend implements TableBackend {
   private async upsertNow(tab: TabName, rows: Row[]) {
     const key = TABS[tab][0];
     // The same key twice in one request is refused by Postgres, so the last one wins (like the sheet).
-    // IMPORTANT: upsert() always does a FULL-ROW write — clean() fills every column of the tab, so any
-    // column a caller doesn't explicitly pass gets written as "". That's by design for a genuine full
-    // upsert (e.g. adding a new item, where every column is meant to be set). A caller that only means
-    // to change ONE field on an existing row (e.g. "just set `forwarded` on this row") must pass the
-    // complete current row with that one field changed — never a bare {id, field} object — or every
-    // other column on that row gets blanked. (See sd-details/actions.ts's saveSdDetails and
-    // dashboard/actions.ts's note status update for the correct pattern: spread the full row, override
-    // just the one field.)
     const byKey = new Map<string, Row>();
     for (const r of this.clean(tab, rows)) {
       byKey.delete(r[key]);

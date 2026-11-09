@@ -27,9 +27,15 @@ export class CachedBackend implements TableBackend {
         }
       };
     }
+    // Pass straight through: it's already a small, targeted fetch, so there's nothing here worth
+    // caching, and the whole point is to skip the full "events" tab entirely.
+    if (inner.getEventsByIds) {
+      this.getEventsByIds = (ids: string[]) => inner.getEventsByIds!(ids);
+    }
   }
 
   deleteItemAndHistory?: (itemId: string) => Promise<DeleteItemResult>;
+  getEventsByIds?: (ids: string[]) => Promise<Row[]>;
 
   private clear(...tabs: TabName[]) {
     for (const t of tabs) {
