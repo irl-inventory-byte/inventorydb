@@ -31,7 +31,7 @@ import { getStore } from "@/lib/store";
 import { MonthlyReportCard } from "./monthly-report";
 import { buildMonthlyReport, pickFilter } from "@/lib/monthly-report";
 import type { Item } from "@/lib/schema";
-import { rigTeamHub } from "@/lib/rig-hub";
+import { rigTeamHub, productivityTeamHub } from "@/lib/rig-hub";
 
 const inventory = (params: Record<string, string>) => `/inventory?${new URLSearchParams(params)}`;
 
@@ -525,28 +525,31 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // status "with_rig" belongs to the rig/productivity team exactly like a rig does, and would otherwise
   // be invisible here whenever the dashboard is on the Rig tab (where `items` holds only rigs).
   const rigHubObj = rigTeamHub(hubs);
+  const prodHubObj = productivityTeamHub(hubs);
   const teamItemsFor = (which: "rig" | "productivity") =>
     allItems.filter((i) => {
       if (i.status === "with_rig") return (i.sub_team || "rig") === which;
-      // In-stock items at the shared rig hub: use the SAME sub_team the item was last sent/received
-      // under (saved on the item, not cleared just because it's back in stock and not yet received
-      // again) — a card sent to Productivity and sitting in stock, not yet received, still counts under
-      // Productivity, not Rig. Only falls back to "rig" when no sub_team was ever saved on it.
-      return (i.sub_team || "rig") === which && rigHubObj && i.current_hub === rigHubObj.hub_id && i.status === "in_stock";
+      // In-stock items: which team they belong to now follows which hub they're physically sitting at —
+      // the Rig team hub (any hub/name starting "Rig team") or the Productivity team hub (any hub/name
+      // starting "Productivity team"), not a saved sub_team. An item in stock at the Rig team hub counts
+      // under Rig team; at the Productivity team hub, under Productivity team.
+      const hubObj = which === "rig" ? rigHubObj : prodHubObj;
+      return i.status === "in_stock" && !!hubObj && i.current_hub === hubObj.hub_id;
     });
   const rigTeamItemsList = teamItemsFor("rig");
   const prodTeamItemsList = teamItemsFor("productivity");
   const rigTeamCount = rigTeamItemsList.length;
   const prodTeamCount = prodTeamItemsList.length;
   const teamTotal = rigTeamCount + prodTeamCount;
-  // Items in_stock at the rig team's own hub are already counted under "With rig team" (teamItemsFor
-  // above) — exclude them from "In stock" so the tiles don't double-count and sum to the true total.
-  const teamHubIds = new Set<string>([rigHubObj?.hub_id].filter((h): h is string => !!h));
+  // Items in_stock at either team's own hub are already counted under "With rig team" (teamItemsFor
+  // above) — exclude both hubs from "In stock" so the tiles don't double-count and sum to the true total.
+  const teamHubIds = new Set<string>([rigHubObj?.hub_id, prodHubObj?.hub_id].filter((h): h is string => !!h));
   const inStockValue = items.filter((i) => i.status === "in_stock" && !teamHubIds.has(i.current_hub)).length;
-  // There's only one physical hub, so the link can't filter by sub-team the way it filters by hub — it
-  // shows both sub-teams together; the dropdown rows below link to the same place for now.
-  const teamHref = rigHubObj
-    ? inventory({ status: "with_rig,in_stock", hub: rigHubObj.hub_id })
+  // Links to Inventory, filtered to whichever of the two hubs actually exist — the hub filter takes a
+  // comma-separated list, so both teams' stock shows even though they now sit at two different hubs.
+  const teamHubIdList = [...teamHubIds].join(",");
+  const teamHref = teamHubIdList
+    ? inventory({ status: "with_rig,in_stock", hub: teamHubIdList })
     : inventory({ status: "with_rig" });
   // Rig team and Productivity team each get their own row with a total, and each one further splits
   // by city (the city of each item's current_hub — e.g. Bangalore). Every city count, under either
@@ -559,16 +562,18 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     }
     return [...count.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   };
-  const cityHref = (city: string) =>
-    rigHubObj
-      ? inventory({ status: "with_rig,in_stock", hub: rigHubObj.hub_id, city: city.toLowerCase() })
+  // Each team's own city link narrows to just that team's hub, not both.
+  const cityHrefFor = (hubObj: ReturnType<typeof rigTeamHub>) => (city: string) =>
+    hubObj
+      ? inventory({ status: "with_rig,in_stock", hub: hubObj.hub_id, city: city.toLowerCase() })
       : inventory({ status: "with_rig", city: city.toLowerCase() });
   const teamBreakdown = (
     [
-      ["Rig team", rigTeamCount, rigTeamItemsList],
-      ["Productivity team", prodTeamCount, prodTeamItemsList],
+      ["Rig team", rigTeamCount, rigTeamItemsList, rigHubObj],
+      ["Productivity team", prodTeamCount, prodTeamItemsList, prodHubObj],
     ] as const
-  ).map(([label, count, list]) => {
+  ).map(([label, count, list, hubObj]) => {
+    const cityHref = cityHrefFor(hubObj);
     const cities = byCity(list).map(([city, c]) => ({
       city,
       count: c,
@@ -579,7 +584,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       label,
       count,
       pct: teamTotal ? Math.round((count / teamTotal) * 100) : 0,
-      href: teamHref,
+      href: hubObj ? inventory({ status: "with_rig,in_stock", hub: hubObj.hub_id }) : teamHref,
       // When every item in this team is in the same one city, the city row would just repeat the
       // team's own total (100%) — drop it rather than show the same number twice.
       cities: cities.length === 1 && cities[0].pct === 100 ? [] : cities,
