@@ -18,6 +18,7 @@ export interface SupabaseConfig {
 
 const PAGE = 1000; // Supabase returns at most 1000 rows per request
 const CHUNK = 500; // rows per write request
+const EVENT_ID_CHUNK = 150; // ids per getEventsByIds request — keeps the "in.(...)" URL well under length limits
 const PARALLEL = 16; // page requests at the same time when reading a big table
 // Events only ever grow (a send or receive adds rows), so after one full download only the new rows are
 // fetched. The whole history is downloaded again only when the row count shows rows were removed, after an
@@ -187,28 +188,50 @@ export class SupabaseBackend implements TableBackend {
    * download or keep the rest of the table.
    */
   async getEventsByIds(ids: string[]): Promise<Row[]> {
-    const wanted = Array.from(new Set(ids.filter(Boolean)));
+    const wantedSet = new Set(ids.filter(Boolean));
+    const wanted = [...wantedSet];
     if (!wanted.length) return [];
 
     const found = new Map<string, Row>();
     const kept = this.events;
     if (kept) {
       for (const row of kept.rows) {
-        if (wanted.includes(row.event_id)) found.set(row.event_id, { ...row });
+        if (wantedSet.has(row.event_id)) found.set(row.event_id, { ...row });
       }
     }
 
     const missing = wanted.filter((id) => !found.has(id));
     if (missing.length) {
       const columns = TABS.events;
-      // PostgREST's `in.()` list: ids are plain UUID/text, not quoted or escaped specially here.
-      const select = `select=${columns.join(",")}&event_id=in.(${missing.join(",")})`;
-      const res = await this.call("GET", "events", select);
-      const page = (await res.json()) as Record<string, unknown>[];
-      for (const r of page) {
-        const row: Row = {};
-        for (const c of columns) row[c] = r[c] === null || r[c] === undefined ? "" : String(r[c]);
-        found.set(row.event_id, row);
+      // A big `in.(...)` list can make the request URL too long (thousands of items → 400 Bad Request),
+      // so ids are fetched in chunks — several chunks AT THE SAME TIME (like download() does for pages)
+      // rather than one request per id.
+      const chunks: string[][] = [];
+      for (let i = 0; i < missing.length; i += EVENT_ID_CHUNK) chunks.push(missing.slice(i, i + EVENT_ID_CHUNK));
+
+      const fetchChunk = async (chunk: string[]) => {
+        // PostgREST's `in.()` list: ids are plain UUID/text, not quoted or escaped specially here.
+        const select = `select=${columns.join(",")}&event_id=in.(${chunk.join(",")})`;
+        const res = await this.call("GET", "events", select);
+        return (await res.json()) as Record<string, unknown>[];
+      };
+
+      let next = 0;
+      const results: Record<string, unknown>[][] = new Array(chunks.length);
+      const worker = async () => {
+        while (next < chunks.length) {
+          const i = next++;
+          results[i] = await fetchChunk(chunks[i]);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(PARALLEL, chunks.length) }, worker));
+
+      for (const page of results) {
+        for (const r of page) {
+          const row: Row = {};
+          for (const c of columns) row[c] = r[c] === null || r[c] === undefined ? "" : String(r[c]);
+          found.set(row.event_id, row);
+        }
       }
     }
 
