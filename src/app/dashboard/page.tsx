@@ -528,9 +528,11 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const teamItemsFor = (which: "rig" | "productivity") =>
     allItems.filter((i) => {
       if (i.status === "with_rig") return (i.sub_team || "rig") === which;
-      // In-stock items at the shared rig hub have no sub_team of their own (nobody currently holds
-      // them to have chosen one) — they're pooled stock, counted under Rig team only.
-      return which === "rig" && rigHubObj && i.current_hub === rigHubObj.hub_id && i.status === "in_stock";
+      // In-stock items at the shared rig hub: use the SAME sub_team the item was last sent/received
+      // under (saved on the item, not cleared just because it's back in stock and not yet received
+      // again) — a card sent to Productivity and sitting in stock, not yet received, still counts under
+      // Productivity, not Rig. Only falls back to "rig" when no sub_team was ever saved on it.
+      return (i.sub_team || "rig") === which && rigHubObj && i.current_hub === rigHubObj.hub_id && i.status === "in_stock";
     });
   const rigTeamItemsList = teamItemsFor("rig");
   const prodTeamItemsList = teamItemsFor("productivity");
@@ -566,18 +568,23 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       ["Rig team", rigTeamCount, rigTeamItemsList],
       ["Productivity team", prodTeamCount, prodTeamItemsList],
     ] as const
-  ).map(([label, count, list]) => ({
-    label,
-    count,
-    pct: teamTotal ? Math.round((count / teamTotal) * 100) : 0,
-    href: teamHref,
-    cities: byCity(list).map(([city, c]) => ({
+  ).map(([label, count, list]) => {
+    const cities = byCity(list).map(([city, c]) => ({
       city,
       count: c,
       pct: count ? Math.round((c / count) * 100) : 0,
       href: cityHref(city),
-    })),
-  }));
+    }));
+    return {
+      label,
+      count,
+      pct: teamTotal ? Math.round((count / teamTotal) * 100) : 0,
+      href: teamHref,
+      // When every item in this team is in the same one city, the city row would just repeat the
+      // team's own total (100%) — drop it rather than show the same number twice.
+      cities: cities.length === 1 && cities[0].pct === 100 ? [] : cities,
+    };
+  });
 
   // The Broken tile's storage breakdown combines the admin's manual baseline (already-broken cards
   // that predate storage tracking, or were never scanned into the system) with the LIVE counts of
