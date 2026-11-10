@@ -17,6 +17,7 @@ import RigBulkAddForm from "./RigBulkAddForm";
 import MobileAddForm from "./MobileAddForm";
 import MobileBulkAddForm from "./MobileBulkAddForm";
 import PowerBankAddForm from "./PowerBankAddForm";
+import PowerBankBulkAddForm from "./PowerBankBulkAddForm";
 import { mobileHomeHub, rigHomeHub } from "@/lib/rig-hub";
 import BulkAddForm from "./BulkAddForm";
 import { applyCorrection } from "./actions";
@@ -88,6 +89,19 @@ function readCardDetails(raw: string) {
 
 /** A mobile's saved details (Asset Tag, Serial, Model No., Category, Storage). */
 function mobileDetails(raw: string): Record<string, string> {
+  try {
+    const parsed: unknown = JSON.parse(raw || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return Object.fromEntries(Object.entries(parsed).map(([k, v]) => [k, String(v ?? "")]));
+    }
+  } catch {
+    // Missing or invalid details show as "—".
+  }
+  return {};
+}
+
+/** A power bank's saved details (Date, Color, Capacity, Output), from the power bank sheet. */
+function powerBankDetails(raw: string): Record<string, string> {
   try {
     const parsed: unknown = JSON.parse(raw || "{}");
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
@@ -366,6 +380,8 @@ export default async function InventoryPage({
   // Includes optional Admin checkbox and holder-specific Since column.
   const columnCount = mobileView
     ? 13 + (isAdmin ? 1 : 0)
+    : powerBankView
+    ? 11 + (isAdmin ? 1 : 0)
     : rigView
     ? 7 + (isAdmin ? 1 : 0)
     : 16 + (isAdmin ? 1 : 0) + (holder ? 1 : 0) + (showQc ? 1 : 0);
@@ -397,6 +413,21 @@ export default async function InventoryPage({
               <th scope="col">Manufacturer</th>
               <th scope="col">Storage</th>
               <th scope="col">Cost</th>
+              <th scope="col">Status</th>
+              <th scope="col">Hub</th>
+            </tr>
+          ) : powerBankView ? (
+            <tr>
+              {isAdmin && <th scope="col" aria-label="Select items" />}
+              <th scope="col">Date</th>
+              <th scope="col">Items</th>
+              <th scope="col">Asset Tag</th>
+              <th scope="col">Brand</th>
+              <th scope="col">Model</th>
+              <th scope="col">Color</th>
+              <th scope="col">Capacity</th>
+              <th scope="col">Output</th>
+              <th scope="col">Price / Penalty</th>
               <th scope="col">Status</th>
               <th scope="col">Hub</th>
             </tr>
@@ -512,6 +543,55 @@ export default async function InventoryPage({
                     <td>{a["Category"] || "—"}</td>
                     <td>{item.brand || "—"}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{a["Storage"] || "—"}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>{displayAmount(item.price)}</td>
+                    <td>{STATUS_LABELS[item.status] ?? item.status}</td>
+                    <td>{hubName.get(item.current_hub) ?? item.current_hub}</td>
+                  </tr>
+                );
+              }
+
+              if (powerBankView) {
+                const when = last?.occurred_at || item.updated_at;
+                const a = powerBankDetails(item.attributes);
+                return (
+                  <tr key={item.item_id}>
+                    {isAdmin && (
+                      <td>
+                        <input type="checkbox" name="ids" value={item.item_id} aria-label={`Select ${item.item_id}`} />
+                      </td>
+                    )}
+                    <td style={{ whiteSpace: "nowrap" }}>{a["date"] || (when ? `${formatIst(when)} IST` : "—")}</td>
+                    <td>
+                      <TypeBadge type="power_bank" />
+                    </td>
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      <Link href={itemUrl}>{item.item_id}</Link>
+                      {isAdmin && (
+                        <div style={{ marginTop: 8 }}>
+                          <Link
+                            href={`${itemUrl}/delete`}
+                            aria-label={`Delete item ${item.item_id}`}
+                            style={{
+                              display: "inline-block",
+                              padding: "5px 10px",
+                              border: "1px solid #b91c1c",
+                              borderRadius: 6,
+                              color: "#b91c1c",
+                              backgroundColor: "#fff7f7",
+                              fontWeight: 600,
+                              textDecoration: "none",
+                            }}
+                          >
+                            Delete
+                          </Link>
+                        </div>
+                      )}
+                    </td>
+                    <td>{item.brand || "—"}</td>
+                    <td>{item.model || "—"}</td>
+                    <td>{a["color"] || "—"}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>{a["capacity"] || "—"}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>{a["output"] || "—"}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{displayAmount(item.price)}</td>
                     <td>{STATUS_LABELS[item.status] ?? item.status}</td>
                     <td>{hubName.get(item.current_hub) ?? item.current_hub}</td>
@@ -899,6 +979,18 @@ export default async function InventoryPage({
         </details>
       )}
 
+      {/* Add many power banks at once: Admin and IM. Scan or paste Asset Tags. */}
+      {canAddPowerBank && (
+        <details className={styles.details}>
+          <summary>+ Add multiple power banks</summary>
+          <p className={styles.muted}>
+            Scan or paste several Asset Tags, one per line. Details load automatically for each one from the
+            power bank sheet. All power banks start in stock at the home hub you choose.
+          </p>
+          <PowerBankBulkAddForm hubs={activeHubs} />
+        </details>
+      )}
+
       {/* Search in the background: the page stays on screen until the results are ready. */}
       <Form action="/inventory" className={styles.row} scroll={false} data-progress="1">
         {type && <input type="hidden" name="type" value={type} />}
@@ -1046,7 +1138,7 @@ export default async function InventoryPage({
         </p>
       )}
 
-      {!rigView && !mobileView && (
+      {!rigView && !mobileView && !powerBankView && (
         <p className={styles.muted}>
           Storage and card type come from saved item attributes.
           Price / Penalty shows the saved amount, not an automatic

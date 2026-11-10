@@ -14,6 +14,7 @@ import {
   type PowerBankRecord,
   type PowerBankSheetInfo,
 } from "@/lib/power-bank-sheet";
+import type { Item, ItemEvent } from "@/lib/schema";
 import { getStore } from "@/lib/store";
 import { istTimestamp } from "@/lib/time";
 
@@ -142,4 +143,136 @@ export async function addPowerBank(formData: FormData) {
   await store.commitBatch([plan.event!], [plan.item!]);
   refresh();
   redirect(`/inventory?${new URLSearchParams({ type: "power_bank", added: plan.item!.item_id })}`);
+}
+
+/* ------------------------------------------------------------------ */
+/* ADD MANY POWER BANKS: Admin and IM                                   */
+/* ------------------------------------------------------------------ */
+
+const POWER_BANK_BULK_LIMIT = 200;
+
+export type PowerBankCheck = PowerBankLookup & {
+  scanned: string;
+  status: "ready" | "exists" | "repeated" | "notfound";
+};
+
+const emptyLookup: PowerBankLookup = {
+  assetTag: "",
+  date: "",
+  type: "Power Bank",
+  brand: "",
+  model: "",
+  color: "",
+  capacity: "",
+  output: "",
+  price: "",
+};
+
+/** Check a list of Asset Tags before saving: found in the sheet, already added, repeated. */
+export async function checkPowerBanks(scans: string[]): Promise<{ rows: PowerBankCheck[]; error?: string; info?: string }> {
+  await requireRole(...POWER_BANK_ADD_ROLES);
+  let sheet;
+  try {
+    sheet = await loadPowerBankSheet();
+  } catch (error) {
+    return { rows: [], error: powerBankSheetError(error) };
+  }
+  const saved = new Set((await getStore().list("items")).map((i) => i.item_id));
+  const seen = new Set<string>();
+  const rows: PowerBankCheck[] = [];
+
+  for (const raw of scans.slice(0, POWER_BANK_BULK_LIMIT)) {
+    const scanned = String(raw ?? "").trim();
+    if (!scanned) continue;
+    const found = findPowerBank(sheet.records, scanned);
+    const base = found ? toLookup(found) : { ...emptyLookup, assetTag: scanned };
+    const id = found?.assetTag ?? scanned;
+    const key = id.toLowerCase();
+    let status: PowerBankCheck["status"] = "ready";
+    if (!found) status = "notfound";
+    else if (seen.has(key)) status = "repeated";
+    else if (saved.has(id)) status = "exists";
+    seen.add(key);
+    rows.push({ ...base, scanned, status });
+  }
+  const info = `Read ${sheet.info.powerBanks} power banks from the tab "${sheet.info.tab}".`;
+  return { rows, info };
+}
+
+export type PowerBankBulkResult = { added: string[]; skipped: { assetTag: string; reason: string }[]; error?: string };
+
+/**
+ * Add many power banks at once, all at the chosen home hub, in stock. Details come from the power bank
+ * sheet (read again here, not taken from the browser); Asset Tags not in the sheet are skipped. One
+ * receipt for all.
+ */
+export async function addPowerBanks(scans: string[], homeHub: string): Promise<PowerBankBulkResult> {
+  const user = await requireRole(...POWER_BANK_ADD_ROLES);
+  const list = (scans ?? []).map((s) => String(s ?? "").trim()).filter(Boolean).slice(0, POWER_BANK_BULK_LIMIT);
+  if (!list.length) return { added: [], skipped: [], error: "There are no power banks to add." };
+  if (!homeHub) return { added: [], skipped: [], error: "Select the home hub." };
+
+  let records: PowerBankRecord[];
+  try {
+    records = (await loadPowerBankSheet()).records;
+  } catch (error) {
+    return { added: [], skipped: [], error: powerBankSheetError(error) };
+  }
+
+  const store = getStore();
+  const [items, hubs] = await Promise.all([store.list("items"), store.list("hubs")]);
+  if (!hubs.some((h) => h.hub_id === homeHub && h.active !== "false")) {
+    return { added: [], skipped: [], error: "Please select a valid active home hub." };
+  }
+
+  const known: Item[] = [...items];
+  const events: ItemEvent[] = [];
+  const toSave: Item[] = [];
+  const skipped: PowerBankBulkResult["skipped"] = [];
+  const now = istTimestamp();
+  const batch = newId("b"); // one receipt for the whole list
+  const by = user.email ?? "unknown";
+  const taken = new Set(known.map((i) => i.item_id));
+
+  for (const scanned of list) {
+    const found = findPowerBank(records, scanned);
+    const assetTag = found?.assetTag ?? scanned;
+    if (!found) {
+      skipped.push({ assetTag, reason: "not in the power bank sheet" });
+      continue;
+    }
+    if (taken.has(assetTag)) {
+      skipped.push({ assetTag, reason: "already in the inventory" });
+      continue;
+    }
+    const plan = planAddItem(
+      {
+        itemId: assetTag,
+        homeHub,
+        prismNo: "",
+        brand: found.brand,
+        model: found.model,
+        price: found.price,
+        itemType: "power_bank",
+        attributes: powerBankAttributes({ color: found.color, capacity: found.capacity, output: found.output, date: found.date }),
+      },
+      known,
+      { hubs, by, now, newId },
+    );
+    if (plan.errors.length || !plan.item || !plan.event) {
+      skipped.push({ assetTag, reason: plan.errors.join(" ") || "could not be prepared" });
+      continue;
+    }
+    plan.event.batch_id = batch;
+    plan.event.note = "Power bank added to inventory";
+    taken.add(assetTag);
+    known.push(plan.item);
+    events.push(plan.event);
+    toSave.push(plan.item);
+  }
+
+  if (!toSave.length) return { added: [], skipped };
+  await store.commitBatch(events, toSave);
+  refresh();
+  return { added: toSave.map((i) => i.item_id), skipped };
 }
