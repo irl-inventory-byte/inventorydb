@@ -5,7 +5,7 @@ import { requireRole } from "@/lib/authz";
 import { LATE_AFTER_HOURS } from "@/lib/dashboard";
 import { QC_LABELS, ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
 import { STATUSES, type QcCheck } from "@/lib/schema";
-import { ADD_ROLES, MOBILE_ADD_ROLES, canSeeType, storeFor, storeForAll, typeParam } from "@/lib/access";
+import { ADD_ROLES, MOBILE_ADD_ROLES, POWER_BANK_ADD_ROLES, canSeeType, storeFor, storeForAll, typeParam } from "@/lib/access";
 import { formatIst, istDate } from "@/lib/time";
 import styles from "../admin/admin.module.css";
 import { TypeBadge, rowTint } from "../ItemTypeBadge";
@@ -16,6 +16,7 @@ import RigAddForm from "./RigAddForm";
 import RigBulkAddForm from "./RigBulkAddForm";
 import MobileAddForm from "./MobileAddForm";
 import MobileBulkAddForm from "./MobileBulkAddForm";
+import PowerBankAddForm from "./PowerBankAddForm";
 import { mobileHomeHub, rigHomeHub } from "@/lib/rig-hub";
 import BulkAddForm from "./BulkAddForm";
 import { applyCorrection } from "./actions";
@@ -142,12 +143,19 @@ export default async function InventoryPage({
     ADD_ROLES.includes(user.role) &&
     canSeeType(user.role, "sd_card") &&
     type !== "rig" &&
-    type !== "mobile";
+    type !== "mobile" &&
+    type !== "power_bank";
   const canAddRig =
-    (user.role === "admin" || user.role === "im") && type !== "sd_card" && type !== "mobile";
+    (user.role === "admin" || user.role === "im") &&
+    type !== "sd_card" &&
+    type !== "mobile" &&
+    type !== "power_bank";
   // Mobiles: Admin and IM, on the Mobile tab and under All items.
   const mobileView = type === "mobile";
   const canAddMobile = (mobileView || type === "") && MOBILE_ADD_ROLES.includes(user.role) && canSeeType(user.role, "mobile");
+  const powerBankView = type === "power_bank";
+  const canAddPowerBank =
+    (powerBankView || type === "") && POWER_BANK_ADD_ROLES.includes(user.role) && canSeeType(user.role, "power_bank");
 
   const q = one(sp.q).trim().toLowerCase();
   // Several searches at once: separate them with commas, semicolons or new lines, e.g. "IC-6, IC-7, 3566…".
@@ -864,6 +872,33 @@ export default async function InventoryPage({
         </details>
       )}
 
+      {/* Add a power bank: Admin and IM. Scan/type the Asset Tag; details load from the power bank sheet. */}
+      {canAddPowerBank && (
+        <details
+          className={styles.details}
+          open={powerBankView && (one(sp.added) || one(sp.addError)) ? true : undefined}
+        >
+          <summary>+ Add a power bank</summary>
+
+          <p className={styles.muted}>
+            Scan or type its Asset Tag: Date, Type, Brand, Model, Color, Capacity, Output and Price/Penalty
+            load from the power bank sheet. It starts in stock at the hub you choose.
+          </p>
+
+          {powerBankView && one(sp.added) && (
+            <p className={styles.ok}>
+              Added power bank {one(sp.added)}.{" "}
+              <Link href={`/inventory/${encodeURIComponent(one(sp.added))}`}>View it</Link>
+              , or add another below.
+            </p>
+          )}
+
+          {powerBankView && one(sp.addError) && <p className={styles.error}>{one(sp.addError)}</p>}
+
+          <PowerBankAddForm hubs={activeHubs} />
+        </details>
+      )}
+
       {/* Search in the background: the page stays on screen until the results are ready. */}
       <Form action="/inventory" className={styles.row} scroll={false} data-progress="1">
         {type && <input type="hidden" name="type" value={type} />}
@@ -1015,7 +1050,7 @@ export default async function InventoryPage({
         <p className={styles.muted}>
           Storage and card type come from saved item attributes.
           Price / Penalty shows the saved amount, not an automatic
-          charge. Missing values show “Not set”.
+          charge. Missing values show "Not set".
         </p>
       )}
 
