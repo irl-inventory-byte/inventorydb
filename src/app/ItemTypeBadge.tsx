@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { MOBILE_IMAGE, RIG_IMAGE, SD_256_IMAGE, SD_512_IMAGE, SD_CARD_IMAGE } from "./item-images";
+import { MOBILE_IMAGE, POWER_BANK_IMAGE, RIG_IMAGE, SD_256_IMAGE, SD_512_IMAGE, SD_CARD_IMAGE } from "./item-images";
 
 /**
  * SD card / Rig / Mobile / Power Bank tags. Blue for SD cards, orange for rigs, green for mobiles, purple
@@ -26,8 +26,7 @@ export const rowTint = (type: string | undefined): CSSProperties | undefined =>
   kindOf(type) === "rig" ? { backgroundColor: RIG_ROW_BG } : undefined;
 
 // Each item type shows a small photo. An SD card shows its own card: 256 GB or 512 GB (both when not set).
-// Power banks have no photo yet, so they fall back to the drawn icon below.
-const PHOTO: Record<Kind, string> = { sd_card: SD_CARD_IMAGE, mobile: MOBILE_IMAGE, rig: RIG_IMAGE, power_bank: "" };
+const PHOTO: Record<Kind, string> = { sd_card: SD_CARD_IMAGE, mobile: MOBILE_IMAGE, rig: RIG_IMAGE, power_bank: POWER_BANK_IMAGE };
 
 /** "256 GB" / "512 GB" from a saved storage value, or "" when it is not set. */
 function sizeOf(storage?: string): string {

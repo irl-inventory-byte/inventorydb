@@ -9,9 +9,9 @@ import type { HardwareUpdate, Hub, Item, ItemEvent, Person, QcCheck, Status } fr
  */
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-const TYPES = ["sd_card", "rig", "mobile"] as const;
-export const REPORT_TYPE_LABEL: Record<string, string> = { sd_card: "SD cards", rig: "Rigs", mobile: "Mobiles" };
-const TYPE_ONE: Record<string, string> = { sd_card: "SD card", rig: "Rig", mobile: "Mobile" };
+const TYPES = ["sd_card", "rig", "mobile", "power_bank"] as const;
+export const REPORT_TYPE_LABEL: Record<string, string> = { sd_card: "SD cards", rig: "Rigs", mobile: "Mobiles", power_bank: "Power Banks" };
+const TYPE_ONE: Record<string, string> = { sd_card: "SD card", rig: "Rig", mobile: "Mobile", power_bank: "Power Bank" };
 const ACTION_LABEL: Record<string, string> = {
   check_out: "Sent",
   receive: "Received",
@@ -26,7 +26,13 @@ const ACTION_LABEL: Record<string, string> = {
 };
 
 const typeOf = (i: Pick<Item, "item_type"> | undefined) =>
-  i?.item_type === "rig" ? "rig" : i?.item_type === "mobile" ? "mobile" : "sd_card";
+  i?.item_type === "rig"
+    ? "rig"
+    : i?.item_type === "mobile"
+      ? "mobile"
+      : i?.item_type === "power_bank"
+        ? "power_bank"
+        : "sd_card";
 
 /** "2026-10" for an instant, in India time. */
 export const monthKey = (t: number) => new Date(t + IST_OFFSET_MS).toISOString().slice(0, 7);
@@ -62,7 +68,7 @@ export interface ReportFilter {
   to: string; // "2026-10-24", inclusive
   person: string; // person_id
   city: string;
-  type: string; // "sd_card" | "rig" | "mobile" | ""
+  type: string; // "sd_card" | "rig" | "mobile" | "power_bank" | ""
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -304,7 +310,7 @@ export function buildMonthlyReport(input: MonthlyInput): MonthlyReport {
           i.model,
           i.prism_no,
           a.capacity || a.Storage || "",
-          a.card_type || "",
+          a.card_type || a.color || "",
           a["Asset Tag"] || "",
           a.Serial || "",
           a.Category || "",

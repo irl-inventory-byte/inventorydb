@@ -826,15 +826,23 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       .filter((k) => k.label !== "With rig team" && k.label !== "Internal")
       .map((k) => {
         const isBroken = k.label === "Broken";
+        const isRetired = k.label === "Retired";
         return {
           ...k,
           href: `${k.href}&type=power_bank`,
-          value: isBroken ? powerBankBrokenValue : k.value,
-          hint: isBroken ? share(powerBankBrokenValue) : k.hint.replace("of all items", "of all power banks"),
+          value: isBroken ? powerBankBrokenValue : isRetired ? powerBankRetiredValue : k.value,
+          hint: isBroken
+            ? share(powerBankBrokenValue)
+            : isRetired
+              ? share(powerBankRetiredValue)
+              : k.hint.replace("of all items", "of all power banks"),
           cities: k.cities?.map((c) => ({ ...c, href: `${c.href}&type=power_bank` })),
           storage: undefined, // SD card capacity breakdown doesn't apply to power banks
           storageOverrideKey: isBroken ? undefined : k.storageOverrideKey,
           storageOverrideValue: isBroken ? undefined : k.storageOverrideValue,
+          // The SD card "Unique / Duplicate" retired breakdown is specific to the SD card sheet's own
+          // tracking — power banks have no equivalent, so this tile just shows the live count, no breakdown.
+          dupes: isRetired ? undefined : k.dupes,
         };
       }),
   ];
@@ -1844,7 +1852,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
         />
 
         <FieldUsageCard
-          unit={rigView ? "rigs" : mobileView ? "mobiles" : "SD cards"}
+          unit={rigView ? "rigs" : mobileView ? "mobiles" : powerBankView ? "power banks" : "SD cards"}
           usage={usage}
           from={usageRange.from}
           to={usageRange.to}
@@ -1884,7 +1892,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                 <span className={`${styles.icon} ${styles.iconGood}`} aria-hidden>
                   ✓
                 </span>{" "}
-                No delayed cards right now.
+                No delayed {rigView ? "rigs" : mobileView ? "mobiles" : powerBankView ? "power banks" : "cards"} right now.
               </p>
             ) : (
               <div
