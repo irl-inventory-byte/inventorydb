@@ -22,6 +22,7 @@ import AttentionFilter from "./attentionfilter";
 import { Icon, type IconName } from "./icons";
 import { addDelayNote, deleteDelayNote, setBrokenStorageOverride, setRetiredBaseline } from "./actions";
 import { SummaryKpis } from "./summary-kpis";
+import { PowerBankSummary } from "./power-bank-summary";
 import { RIG_STATES, RIG_STATE_LABELS, rigState, type RigState } from "@/lib/rig-state";
 import { NO_ACTIVITY_DAYS, RigMetrics } from "./rig-metrics";
 import { ackAvgResponseMinutes, ackByCity, ackByDay, ackByHour, ackByRole, formatResponseMinutes } from "@/lib/ack-stats";
@@ -107,6 +108,7 @@ function details(raw: string): Record<string, string> {
 }
 
 const mobileList = (params: Record<string, string> = {}) => `/inventory?${new URLSearchParams({ type: "mobile", ...params })}`;
+const powerBankList = (params: Record<string, string> = {}) => `/inventory?${new URLSearchParams({ type: "power_bank", ...params })}`;
 
 /** Count mobiles by a label, biggest first; the rest are summed into one "other" bar. */
 function bars(items: Item[], labelOf: (i: Item) => string, what: string, href: (label: string) => string): BarRow[] {
@@ -184,11 +186,60 @@ function MobileCharts({ items }: { items: Item[] }) {
     </>
   );
 }
+
+function PowerBankCharts({ items }: { items: Item[] }) {
+  const byMaker = bars(items, (i) => i.brand, "brands", (l) => powerBankList({ q: l }));
+  const byModel = bars(items, (i) => i.model, "models", (l) => powerBankList({ q: l }));
+  const byColor = bars(items, (i) => details(i.attributes)["color"] ?? "", "colors", (l) => powerBankList({ q: l }));
+  const byCapacity = bars(items, (i) => details(i.attributes)["capacity"] ?? "", "capacities", (l) => powerBankList({ q: l }));
+
+  return (
+    <>
+      {items.length === 0 ? (
+        <section className={styles.card}>
+          <p className={styles.muted}>
+            No power banks yet. An Admin or IM adds them in Inventory → Power Bank → + Add a power bank.
+          </p>
+        </section>
+      ) : (
+        <>
+          <div className={styles.chartRow}>
+            <section className={styles.card} aria-label="Power banks by brand">
+              <h2>By brand</h2>
+              <BarList rows={byMaker} />
+            </section>
+            <section className={styles.card} aria-label="Power banks by model">
+              <h2>By model</h2>
+              <BarList rows={byModel} />
+            </section>
+          </div>
+          <div className={styles.chartRow}>
+            <section className={styles.card} aria-label="Power banks by color">
+              <h2>By color</h2>
+              <BarList rows={byColor} />
+            </section>
+            <section className={styles.card} aria-label="Power banks by capacity">
+              <h2>By capacity</h2>
+              <BarList rows={byCapacity} />
+            </section>
+          </div>
+        </>
+      )}
+
+      <p className={styles.muted}>
+        <Link href={powerBankList()} className={styles.link}>
+          See every power bank in Inventory
+        </Link>{" "}
+        — Asset Tag, Brand, Model, Color, Capacity, Output and Price/Penalty.
+      </p>
+    </>
+  );
+}
 // Field usage (u…) and hourly chart (h…) filter settings, kept when another dashboard filter is applied.
 const EXTRA_KEYS = ["ufrom", "uto", "ucity", "uperson", "umodel", "uout", "htype", "hperson", "hcity", "hrole", "hfrom", "hto"];
 const HOURLY_KEYS = ["htype", "hperson", "hcity", "hrole", "hfrom", "hto"];
 const MOVE_KEYS = ["mtype", "mperson", "mcity", "mrole", "mfrom", "mto"];
-const TYPE_LABELS: Record<string, string> = { sd_card: "SD cards", rig: "Rigs", mobile: "Mobiles" };
+const TYPE_LABELS: Record<string, string> = { sd_card: "SD cards", rig: "Rigs", mobile: "Mobiles", power_bank: "Power Banks" };
 
 export default async function DashboardPage({ searchParams }: PageProps<"/dashboard">) {
   const user = await requireRole();
@@ -205,7 +256,10 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   // QC team performance shows whenever rigs are in view (All or Rigs).
   // Mobile view: tiles and breakdowns only (mobiles are not sent or received).
   const mobileView = type === "mobile";
-  const showQc = canSeeType(user.role, "rig") && type !== "sd_card" && !mobileView;
+  // Power bank view: same idea as Mobile — tiles and breakdowns only (power banks are not sent or received
+  // through the rig/QC/hardware flow, they just move between IMs, FOs, IFOs and the internal team).
+  const powerBankView = type === "power_bank";
+  const showQc = canSeeType(user.role, "rig") && type !== "sd_card" && !mobileView && !powerBankView;
   const showAck = user.role === "admin" || user.role === "im";
   // Monthly report (all item types this login can see) needs its own full items/events read — fetched
   // alongside everything else below (not after it) so the two round trips overlap instead of stacking.
@@ -756,7 +810,35 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
         };
       }),
   ];
-  const kpis = rigView ? rigKpis : mobileView ? mobileKpis : sdKpis;
+  // Power banks: same shape as the mobile tiles, but pointed at the Power Bank list.
+  const powerBankBrokenValue = items.filter((i) => i.item_type === "power_bank" && i.status === "damaged").length;
+  const powerBankRetiredValue = items.filter((i) => i.item_type === "power_bank" && i.status === "retired").length;
+  const powerBankKpis: Kpi[] = [
+    {
+      label: "Total power banks",
+      value: d.total,
+      hint: `${n(d.outCount)} in use · ${n(d.usable)} usable`,
+      href: powerBankList(),
+      icon: "layers",
+      color: "var(--series-1)",
+    },
+    ...sdKpis
+      .filter((k) => k.label !== "With rig team" && k.label !== "Internal")
+      .map((k) => {
+        const isBroken = k.label === "Broken";
+        return {
+          ...k,
+          href: `${k.href}&type=power_bank`,
+          value: isBroken ? powerBankBrokenValue : k.value,
+          hint: isBroken ? share(powerBankBrokenValue) : k.hint.replace("of all items", "of all power banks"),
+          cities: k.cities?.map((c) => ({ ...c, href: `${c.href}&type=power_bank` })),
+          storage: undefined, // SD card capacity breakdown doesn't apply to power banks
+          storageOverrideKey: isBroken ? undefined : k.storageOverrideKey,
+          storageOverrideValue: isBroken ? undefined : k.storageOverrideValue,
+        };
+      }),
+  ];
+  const kpis = rigView ? rigKpis : mobileView ? mobileKpis : powerBankView ? powerBankKpis : sdKpis;
 
   // Bars: one series, one colour. Every bar opens the matching list or hub.
   const statusRows = STATUS_ORDER.filter((st) => s[st] > 0)
@@ -765,7 +847,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       key: st,
       label: STATUS_LABELS[st],
       value: s[st],
-      href: inventory({ status: st, ...(mobileView && { type: "mobile" }) }),
+      href: inventory({ status: st, ...(mobileView && { type: "mobile" }), ...(powerBankView && { type: "power_bank" }) }),
       tip: `${STATUS_LABELS[st]}\n${n(s[st])} items (${((s[st] / Math.max(1, d.total)) * 100).toFixed(1)}%)`,
     }));
 
@@ -1135,7 +1217,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             <div>
               <h1>Inventory Dashboard</h1>
               <p className={styles.subtitle}>
-                {n(d.total)} {mobileView ? "mobiles" : "items"} · {activeHubs} hubs · the latest known position of every item
+                {n(d.total)} {mobileView ? "mobiles" : powerBankView ? "power banks" : "items"} · {activeHubs} hubs · the latest known position of every item
               </p>
             </div>
           </div>
@@ -1195,8 +1277,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 
         <TypeSwitch role={user.role} current={type} path="/dashboard" includeAll={false} />
 
-        {/* Mobiles: no SD card storage / colour summary; the tiles below start with the total. */}
-        {!mobileView && (
+        {/* Mobiles: no fleet breakdown card; the tiles below start with the total. */}
+        {!mobileView && !powerBankView && (
           <SummaryKpis
             d={d}
             items={items}
@@ -1209,8 +1291,19 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           />
         )}
 
-        {/* Mobile tiles: an even 3-column grid (3 + 3 on a laptop, 2 per row on a tablet, 1 on a phone). */}
-        {mobileView && (
+        {/* Power banks: their own fleet breakdown, by Capacity and Colour — not SD card's GB/Black-Green. */}
+        {powerBankView && (
+          <PowerBankSummary
+            d={d}
+            items={items}
+            attentionHref="/dashboard?type=power_bank#attention"
+            brokenCount={powerBankBrokenValue}
+            retiredCount={powerBankRetiredValue}
+          />
+        )}
+
+        {/* Mobile / power bank tiles: an even 3-column grid (3 + 3 on a laptop, 2 per row on a tablet, 1 on a phone). */}
+        {(mobileView || powerBankView) && (
           <style>{`
 .kpi-mob.kpi-mob{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 .kpi-mob.kpi-mob > * span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1219,7 +1312,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 `}</style>
         )}
         {/* SD card tiles: rows that always fill the full width (4 + 3 on a laptop), labels on one line. */}
-        {!rigView && !mobileView && (
+        {!rigView && !mobileView && !powerBankView && (
           <style>{`
 .kpi-sd.kpi-sd{display:flex;flex-wrap:wrap;gap:12px}
 .kpi-sd.kpi-sd > *{flex:1 1 230px;min-width:0}
@@ -1227,7 +1320,13 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
 `}</style>
         )}
         <section
-          className={rigView ? `${styles.kpiGrid} ${styles.kpiGridRig}` : mobileView ? `${styles.kpiGrid} kpi-mob` : `${styles.kpiGrid} kpi-sd`}
+          className={
+            rigView
+              ? `${styles.kpiGrid} ${styles.kpiGridRig}`
+              : mobileView || powerBankView
+                ? `${styles.kpiGrid} kpi-mob`
+                : `${styles.kpiGrid} kpi-sd`
+          }
           aria-label="Overview"
         >
           <style>{`
@@ -1704,6 +1803,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
         </div>
 
         {mobileView && <MobileCharts items={items} />}
+        {powerBankView && <PowerBankCharts items={items} />}
 
         <DailyMoves
           title={`${typesTitle(moveTypes)} moved per day`}
