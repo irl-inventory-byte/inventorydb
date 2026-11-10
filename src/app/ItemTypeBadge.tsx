@@ -2,20 +2,22 @@ import type { CSSProperties } from "react";
 import { MOBILE_IMAGE, RIG_IMAGE, SD_256_IMAGE, SD_512_IMAGE, SD_CARD_IMAGE } from "./item-images";
 
 /**
- * SD card / Rig / Mobile tags. Blue for SD cards, orange for rigs, green for mobiles, each with its own
- * icon so they can be told apart without colour (and when printed in grey).
- * No hooks, so it works on server pages and inside client components.
+ * SD card / Rig / Mobile / Power Bank tags. Blue for SD cards, orange for rigs, green for mobiles, purple
+ * for power banks, each with its own icon so they can be told apart without colour (and when printed in
+ * grey). No hooks, so it works on server pages and inside client components.
  */
 
-type Kind = "sd_card" | "rig" | "mobile";
-const KINDS: Kind[] = ["sd_card", "rig", "mobile"];
+type Kind = "sd_card" | "rig" | "mobile" | "power_bank";
+const KINDS: Kind[] = ["sd_card", "rig", "mobile", "power_bank"];
 
-const kindOf = (type: string | undefined): Kind => (type === "rig" ? "rig" : type === "mobile" ? "mobile" : "sd_card");
+const kindOf = (type: string | undefined): Kind =>
+  type === "rig" ? "rig" : type === "mobile" ? "mobile" : type === "power_bank" ? "power_bank" : "sd_card";
 
 const LOOK: Record<Kind, { label: string; plural: string; bg: string; fg: string; border: string }> = {
   sd_card: { label: "SD card", plural: "SD cards", bg: "#E6EEFF", fg: "#1D3FA8", border: "#B9CBF5" },
   rig: { label: "Rig", plural: "Rigs", bg: "#FFF1DC", fg: "#8A4300", border: "#F2C98F" },
   mobile: { label: "Mobile", plural: "Mobiles", bg: "#E3F5EA", fg: "#14653A", border: "#A8DDBC" },
+  power_bank: { label: "Power Bank", plural: "Power Banks", bg: "#F2E8FF", fg: "#5B21A6", border: "#D8BFF2" },
 };
 
 /** Light row tint so rigs stand out in long tables. */
@@ -24,7 +26,8 @@ export const rowTint = (type: string | undefined): CSSProperties | undefined =>
   kindOf(type) === "rig" ? { backgroundColor: RIG_ROW_BG } : undefined;
 
 // Each item type shows a small photo. An SD card shows its own card: 256 GB or 512 GB (both when not set).
-const PHOTO: Record<Kind, string> = { sd_card: SD_CARD_IMAGE, mobile: MOBILE_IMAGE, rig: RIG_IMAGE };
+// Power banks have no photo yet, so they fall back to the drawn icon below.
+const PHOTO: Record<Kind, string> = { sd_card: SD_CARD_IMAGE, mobile: MOBILE_IMAGE, rig: RIG_IMAGE, power_bank: "" };
 
 /** "256 GB" / "512 GB" from a saved storage value, or "" when it is not set. */
 function sizeOf(storage?: string): string {
@@ -73,6 +76,12 @@ function Icon({ kind, size, storage }: { kind: Kind; size: number; storage?: str
           <rect x="6" y="2" width="12" height="20" rx="2" />
           <path d="M11 18h2" />
         </>
+      ) : kind === "power_bank" ? (
+        <>
+          <rect x="4" y="6" width="14" height="12" rx="2" />
+          <path d="M18 10h2v4h-2z" fill="currentColor" stroke="none" />
+          <path d="M12 9l-2.5 3.2H11L9.5 15l3.5-3.6h-1.8z" fill="currentColor" stroke="none" />
+        </>
       ) : (
         <>
           <path d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" />
@@ -113,7 +122,7 @@ export function TypeBadge({ type, storage }: { type: string | undefined; storage
 
 /** Counts, e.g. "3 SD cards · 2 Rigs". Shows only the types present. */
 export function TypeCounts({ types }: { types: (string | undefined)[] }) {
-  const counts: Record<Kind, number> = { sd_card: 0, rig: 0, mobile: 0 };
+  const counts: Record<Kind, number> = { sd_card: 0, rig: 0, mobile: 0, power_bank: 0 };
   for (const t of types) counts[kindOf(t)]++;
 
   const shown = KINDS.filter((k) => counts[k] > 0);
@@ -133,7 +142,7 @@ export function TypeCounts({ types }: { types: (string | undefined)[] }) {
 
 /** Plain-text counts for buttons and messages: "3 SD cards, 2 Rigs". */
 export function typeCountText(types: (string | undefined)[]): string {
-  const counts: Record<Kind, number> = { sd_card: 0, rig: 0, mobile: 0 };
+  const counts: Record<Kind, number> = { sd_card: 0, rig: 0, mobile: 0, power_bank: 0 };
   for (const t of types) counts[kindOf(t)]++;
   return KINDS
     .filter((k) => counts[k] > 0)

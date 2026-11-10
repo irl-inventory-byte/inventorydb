@@ -4,25 +4,28 @@ import { getStore } from "./store";
 /**
  * WHO CAN SEE AND DO WHAT. Change access here; every page uses these rules.
  *
- *              SD cards   Rigs   Mobiles   Send/receive   Add items   Hardware   QC
- *   Admin        yes      yes     yes         yes           yes        yes      yes
- *   IM           yes      yes     yes         yes           yes        yes      yes
- *   FO           yes      yes     yes          -             -          -        -
- *   Rig team     yes       -       -          yes           yes         -        -
- *   IFO          yes       -      yes          -             -          -        -
- *   Hardware      -       yes      -        send only       -         yes       -
- *   QC            -       yes      -        send only       -          -       yes
- *   Internal     yes      yes     yes         yes           -          -        -   (works like an IM for send / receive)
+ *              SD cards   Rigs   Mobiles  Power banks  Send/receive   Add items   Hardware   QC
+ *   Admin        yes      yes     yes        yes           yes           yes        yes      yes
+ *   IM           yes      yes     yes        yes           yes           yes        yes      yes
+ *   FO           yes      yes     yes        yes            -             -          -        -
+ *   Rig team     yes       -       -          -            yes           yes         -        -
+ *   IFO          yes       -      yes        yes            -             -          -        -
+ *   Hardware      -       yes      -          -          send only       -         yes       -
+ *   QC            -       yes      -          -          send only       -          -       yes
+ *   Internal     yes      yes     yes        yes           yes           -          -        -   (works like an IM for send / receive)
  *
  * Mobiles: Admin and IM add them (scan the IMEI; details load from the mobile sheet). They are sent and
  * received like SD cards, between IMs, FOs, IFOs and the internal team (the rig, QC and hardware teams
  * don't hand them over). They never show in SD card or rig counts.
  *
+ * Power banks: Admin and IM add them by hand (Asset Tag, Brand, Model, Color, Capacity, Output, Price/
+ * Penalty). Sent and received the same way as mobiles, between IMs, FOs, IFOs and the internal team.
+ *
  * Rig route: IM → QC team. QC pass → IM; QC fail → hardware team → IM → QC again.
  * An IM can send a rig to an FO or IFO only when its latest QC result is Pass.
  */
 
-export const ITEM_TYPES = ["sd_card", "rig", "mobile"] as const;
+export const ITEM_TYPES = ["sd_card", "rig", "mobile", "power_bank"] as const;
 export type ItemType = (typeof ITEM_TYPES)[number];
 
 /** SD cards and rigs (e.g. for views that are only about them). */
@@ -31,15 +34,18 @@ export const CORE_TYPES: readonly ItemType[] = ["sd_card", "rig"];
 /** Can add mobiles. */
 export const MOBILE_ADD_ROLES: Role[] = ["admin", "im"];
 
+/** Can add power banks. */
+export const POWER_BANK_ADD_ROLES: Role[] = ["admin", "im"];
+
 const TYPES_FOR: Record<Role, readonly ItemType[]> = {
-  admin: ["sd_card", "rig", "mobile"],
-  im: ["sd_card", "rig", "mobile"],
-  fo: ["sd_card", "rig", "mobile"],
+  admin: ["sd_card", "rig", "mobile", "power_bank"],
+  im: ["sd_card", "rig", "mobile", "power_bank"],
+  fo: ["sd_card", "rig", "mobile", "power_bank"],
   rig: ["sd_card"],
-  ifo: ["sd_card", "mobile"],
+  ifo: ["sd_card", "mobile", "power_bank"],
   hardware: ["rig"],
   qc: ["rig"],
-  internal: ["sd_card", "rig", "mobile"], // internal team: works like an IM for send / receive, mobiles included
+  internal: ["sd_card", "rig", "mobile", "power_bank"], // internal team: works like an IM for send / receive, mobiles and power banks included
 };
 
 /** Every role that can sign in and look around (dashboard, inventory, receipts). */
@@ -63,7 +69,13 @@ export const QC_ROLES: Role[] = ["admin", "im", "qc"];
 
 /** An item's type. Older rows without a type are SD cards. */
 export function itemType(item: Pick<Item, "item_type">): ItemType {
-  return item.item_type === "rig" ? "rig" : item.item_type === "mobile" ? "mobile" : "sd_card";
+  return item.item_type === "rig"
+    ? "rig"
+    : item.item_type === "mobile"
+      ? "mobile"
+      : item.item_type === "power_bank"
+        ? "power_bank"
+        : "sd_card";
 }
 
 /** The item types this role may see, in display order. */

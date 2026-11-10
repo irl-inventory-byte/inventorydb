@@ -148,7 +148,10 @@ export default async function ReceivePage({
               id: item.item_id,
               status: item.status,
               hub: item.current_hub,
-              type: item.item_type === "rig" || item.item_type === "mobile" ? item.item_type : "sd_card",
+              type:
+                item.item_type === "rig" || item.item_type === "mobile" || item.item_type === "power_bank"
+                  ? item.item_type
+                  : "sd_card",
               ...(item.item_type === "mobile" && { aliases: mobileAliases(item.attributes) }),
             }))}
           />
@@ -308,7 +311,10 @@ export default async function ReceivePage({
             id: item.item_id,
             status: item.status,
             hub: item.current_hub,
-            type: item.item_type === "rig" || item.item_type === "mobile" ? item.item_type : "sd_card",
+            type:
+              item.item_type === "rig" || item.item_type === "mobile" || item.item_type === "power_bank"
+                ? item.item_type
+                : "sd_card",
             ...(item.item_type === "mobile" && { aliases: mobileAliases(item.attributes) }),
           }))}
         />

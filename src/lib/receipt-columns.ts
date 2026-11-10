@@ -2,9 +2,10 @@ import type { ReceiptLine } from "./receipt";
 
 /**
  * The item columns on a receipt (web page and PDF), different for each item type:
- *   SD card → Type, Serial, Prism no., Brand / Model, Storage, Colour, Penalty
- *   Rig     → Type, Rig ID / Asset Tag, Brand, Model, Penalty
- *   Mobile  → Type, IMEI, Asset Tag, Serial, Category, Storage, Cost (penalty)
+ *   SD card    → Type, Serial, Prism no., Brand / Model, Storage, Colour, Penalty
+ *   Rig        → Type, Rig ID / Asset Tag, Brand, Model, Penalty
+ *   Mobile     → Type, IMEI, Asset Tag, Serial, Category, Storage, Cost (penalty)
+ *   Power bank → Type, Asset Tag, Brand / Model, Colour, Capacity, Price/Penalty
  * The penalty column is last and is filled by the page / PDF (it is the item's saved amount).
  */
 export interface ReceiptColumn {
@@ -14,9 +15,14 @@ export interface ReceiptColumn {
   badge?: boolean; // show the item type badge instead of text (web page)
 }
 
-export const RECEIPT_TYPES = ["sd_card", "rig", "mobile"] as const;
+export const RECEIPT_TYPES = ["sd_card", "rig", "mobile", "power_bank"] as const;
 
-export const RECEIPT_TYPE_TITLE: Record<string, string> = { sd_card: "SD cards", rig: "Rigs", mobile: "Mobiles" };
+export const RECEIPT_TYPE_TITLE: Record<string, string> = {
+  sd_card: "SD cards",
+  rig: "Rigs",
+  mobile: "Mobiles",
+  power_bank: "Power Banks",
+};
 
 const dash = (v: string) => v.trim() || "—";
 
@@ -51,6 +57,19 @@ export function receiptColumns(type: string): {
       penaltyTitle: "Cost (penalty)",
       pdfPenaltyTitle: "Cost",
       penaltyWidth: 52,
+    };
+  }
+  if (type === "power_bank") {
+    return {
+      cols: [
+        { title: "Type", value: () => "Power Bank", pdfWidth: 56, badge: true },
+        { title: "Asset Tag", value: (l) => l.itemId, pdfWidth: 100 },
+        { title: "Brand / Model", value: (l) => dash([l.brand, l.model].filter(Boolean).join(" ")), pdfWidth: 110 },
+        { title: "Capacity", value: (l) => dash(l.storage), pdfWidth: 70 },
+      ],
+      penaltyTitle: "Price / Penalty",
+      pdfPenaltyTitle: "Penalty",
+      penaltyWidth: 60,
     };
   }
   return {
