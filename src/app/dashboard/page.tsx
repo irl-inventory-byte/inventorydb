@@ -823,23 +823,20 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       color: "var(--series-1)",
     },
     ...sdKpis
-      .filter((k) => k.label !== "With rig team" && k.label !== "Internal")
+      // "Broken" removed from the power bank tab per request: this tile has no equivalent meaning here
+      // and was left showing a 0 with no real breakdown.
+      .filter((k) => k.label !== "With rig team" && k.label !== "Internal" && k.label !== "Broken")
       .map((k) => {
-        const isBroken = k.label === "Broken";
         const isRetired = k.label === "Retired";
         return {
           ...k,
           href: `${k.href}&type=power_bank`,
-          value: isBroken ? powerBankBrokenValue : isRetired ? powerBankRetiredValue : k.value,
-          hint: isBroken
-            ? share(powerBankBrokenValue)
-            : isRetired
-              ? share(powerBankRetiredValue)
-              : k.hint.replace("of all items", "of all power banks"),
+          value: isRetired ? powerBankRetiredValue : k.value,
+          hint: isRetired ? share(powerBankRetiredValue) : k.hint.replace("of all items", "of all power banks"),
           cities: k.cities?.map((c) => ({ ...c, href: `${c.href}&type=power_bank` })),
           storage: undefined, // SD card capacity breakdown doesn't apply to power banks
-          storageOverrideKey: isBroken ? undefined : k.storageOverrideKey,
-          storageOverrideValue: isBroken ? undefined : k.storageOverrideValue,
+          storageOverrideKey: k.storageOverrideKey,
+          storageOverrideValue: k.storageOverrideValue,
           // The SD card "Unique / Duplicate" retired breakdown is specific to the SD card sheet's own
           // tracking — power banks have no equivalent, so this tile just shows the live count, no breakdown.
           dupes: isRetired ? undefined : k.dupes,
