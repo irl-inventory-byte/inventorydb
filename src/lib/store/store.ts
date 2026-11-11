@@ -15,8 +15,14 @@ import type {
 } from "./backend";
 import { matchScan, mobileAliases, scanIndex } from "../scan";
 
-// An item's type. Older rows without a type are SD cards.
-const typeOf = (item: Row) => (item.item_type === "rig" ? "rig" : item.item_type === "mobile" ? "mobile" : "sd_card");
+// An item's type. Older rows without a type are SD cards. This was missing "power_bank" — every power
+// bank item fell through to the "sd_card" case here, so a store narrowed to just {"power_bank"} (the
+// Power Bank tab) filtered every power bank OUT (typeOf said "sd_card", which isn't in that set), while
+// a store narrowed to just {"sd_card"} wrongly included every power bank IN. That's why a power bank
+// could be added successfully (the write itself doesn't go through this function) but never appeared
+// in the Power Bank tab's list afterward.
+const typeOf = (item: Row) =>
+  item.item_type === "rig" ? "rig" : item.item_type === "mobile" ? "mobile" : item.item_type === "power_bank" ? "power_bank" : "sd_card";
 
 export class Store {
   /**
