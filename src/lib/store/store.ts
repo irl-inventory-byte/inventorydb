@@ -24,6 +24,19 @@ import { matchScan, mobileAliases, scanIndex } from "../scan";
 const typeOf = (item: Row) =>
   item.item_type === "rig" ? "rig" : item.item_type === "mobile" ? "mobile" : item.item_type === "power_bank" ? "power_bank" : "sd_card";
 
+// Normalizes an item_id for lookup so a stored ID that LOOKS identical to the one in a URL or click
+// target, but isn't byte-for-byte identical (a non-breaking space instead of a regular one, an en-dash
+// "–" or em-dash "—" instead of a hyphen "-", doubled spaces, or leading/trailing whitespace — all
+// invisible on screen), still matches. This is what made some items (seen so far with power banks)
+// 404 on both /inventory/[id] and its delete page even though the row plainly exists in the list: the
+// exact-string match in getItem() silently failed on a character nobody could see was different.
+const normalizeId = (id: string) =>
+  id
+    .replace(/[  -​  　]/g, " ") // NBSP and other invisible/odd spaces -> normal space
+    .replace(/[‐-―−]/g, "-") // en-dash, em-dash, minus sign, etc. -> plain hyphen
+    .replace(/\s+/g, " ") // collapse doubled/multiple spaces
+    .trim();
+
 export class Store {
   /**
    * @param types When set, only items of these types (and their events,
@@ -124,8 +137,13 @@ export class Store {
   }
 
   async getItem(itemId: string) {
-    return (await this.list("items")).find(
-      (item) => item.item_id === itemId
+    const items = await this.list("items");
+    // Exact match first (fast path, and avoids any surprise when two different-looking ids would
+    // otherwise normalize to the same thing). Falls back to a normalized match — see normalizeId's
+    // comment for why that fallback is needed.
+    return (
+      items.find((item) => item.item_id === itemId) ??
+      items.find((item) => normalizeId(item.item_id) === normalizeId(itemId))
     );
   }
 
