@@ -2,7 +2,6 @@ import Link from "next/link";
 import { LATE_AFTER_HOURS, type Dashboard } from "@/lib/dashboard";
 import type { Item } from "@/lib/schema";
 import { getStore } from "@/lib/store";
-import { loadAssetRecords } from "@/lib/asset-sheet";
 import { n } from "./charts";
 import styles from "./dashboard.module.css";
 import { Icon, type IconName } from "./icons";
@@ -33,31 +32,11 @@ interface FleetCounts {
   ageUnknown: number; // not in the sheet, or New/Old blank
 }
 
-/**
- * New / Old for every SD card in the inventory, from the SD card sheet's New/Old column (matched by Asset
- * Tag). The sheet is read through the same short cache as Add SD card. null = the sheet could not be read.
- *
- * This is a SEPARATE Google Sheet from the app's own database, read directly via the Sheets API —
- * on a cache miss (every 5 min) that can be several Google API round trips one after another. Rather
- * than let a slow or slow-to-authenticate read stall the whole dashboard, this gives it SHEET_TIMEOUT_MS
- * to finish; past that it falls back to null (same as "could not be read") and lets the page render.
- * The read keeps going in the background and fills the cache, so the next load is normally fast again.
- * (Bumped from 1.5s to 4s — 1.5s was timing out too often and New/Old kept falling back to the text
- * message instead of showing tiles. Combined with the 15-minute cache, most loads should still hit a
- * warm cache and render instantly; only a true cache-miss load pays this cost, and it's capped at 4s.)
- */
-const SHEET_TIMEOUT_MS = 4000;
-
-async function sheetAges(): Promise<Map<string, string> | null> {
-  try {
-    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), SHEET_TIMEOUT_MS));
-    const records = await Promise.race([loadAssetRecords(), timeout]);
-    if (!records) return null;
-    return new Map(records.map((r) => [r.itemId.trim().toUpperCase(), (r.condition ?? "").trim().toLowerCase()]));
-  } catch {
-    return null;
-  }
-}
+// New / Old for SD cards used to be read here from the SD card sheet on every dashboard load (a
+// separate Google Sheet, read live via the Sheets API, with its own multi-second worst case) — that
+// sheet read now happens ONLY where it belongs: during Add item / Add SD card (see inventory/actions.ts,
+// mobile-actions.ts, power-bank-actions.ts). The dashboard no longer touches that sheet at all, so
+// `ages` below is always null and the New / Old tiles are simply not shown here.
 
 interface SummaryKpisProps {
   d: Dashboard;
@@ -249,8 +228,8 @@ export async function SummaryKpis({
         )
       : sourceItems;
 
-  const hasSd = fleetItems.some((i) => i.item_type !== "rig" && i.item_type !== "mobile");
-  const ages = hasSd ? await sheetAges() : null;
+  // No sheet read here (see note above) — New / Old is only ever known at Add item time now.
+  const ages: Map<string, string> | null = null;
   const fleet = countFleet(fleetItems, ages);
   // Fold the admin's "already broken before tracking" baseline into the storage breakdown too, so
   // the 512/256 GB tiles and the Total agree with each other and with the Broken tile's own number.
@@ -567,11 +546,8 @@ export async function SummaryKpis({
               </span>
             )}
 
-            {hasSd && !ages && (
-              <span style={{ display: "block", marginTop: 8, fontSize: 12 }}>
-                New / Old: the SD card sheet could not be read right now.
-              </span>
-            )}
+            {/* New / Old tiles removed from the dashboard on purpose (see note above) — not a sheet
+                failure, so no "could not be read" message here either. */}
 
             {/* "Unknown / other colour" line removed per request. */}
 
