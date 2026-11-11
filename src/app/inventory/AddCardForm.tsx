@@ -483,7 +483,10 @@ export default function AddCardForm({
 
         <label style={fieldStyle}>
           <span>New / Old</span>
-          <input value={condition} placeholder="Loads from the sheet" readOnly style={inputStyle} />
+          {/* name="condition" so this actually reaches the server and gets saved — it used to be
+              readOnly display only, with no name, so it was silently dropped on save and the
+              dashboard's New/Old breakdown had nothing to read (see actions.ts's addItem). */}
+          <input name="condition" value={condition} placeholder="Loads from the sheet" readOnly style={inputStyle} />
         </label>
 
         <label style={fieldStyle}>

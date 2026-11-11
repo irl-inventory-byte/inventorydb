@@ -206,6 +206,7 @@ export default function BulkAddForm({
           model: row.model,
           capacity: row.capacity,
           cardType: row.cardType,
+          condition: row.condition,
         })),
       });
 

@@ -175,6 +175,12 @@ export async function addItem(formData: FormData) {
     formData.get("cardType") ?? ""
   ).trim();
 
+  // "New"/"Old" from the sheet (see AddCardForm's "New / Old" field). Normalized to a plain "new"/"old"
+  // so the dashboard's Fleet breakdown can read it straight back out of attributes without caring about
+  // the sheet's exact casing/wording.
+  const condition = String(formData.get("condition") ?? "").trim().toLowerCase();
+  const age = condition.startsWith("new") ? "new" : condition.startsWith("old") ? "old" : "";
+
   function reject(message: string): never {
     redirect(
       `/inventory?${new URLSearchParams({
@@ -290,6 +296,7 @@ export async function addItem(formData: FormData) {
       ...attributes,
       capacity,
       card_type: cardType,
+      ...(age ? { age } : {}),
     }),
   };
 
@@ -461,6 +468,7 @@ export type BulkAddRow = {
   model: string;
   capacity: string;
   cardType: string;
+  condition?: string; // sheet "New/Old" — see addItem's same-named field for why this is saved now
 };
 
 export type BulkAddResult = {
@@ -530,6 +538,9 @@ export async function addItems(input: {
 
     const price = penaltyForCapacity(capacity);
 
+    const condition = String(row?.condition ?? "").trim().toLowerCase();
+    const age = condition.startsWith("new") ? "new" : condition.startsWith("old") ? "old" : "";
+
     const plan = planAddItem(
       {
         itemId: serial,
@@ -575,6 +586,7 @@ export async function addItems(input: {
         ...attributes,
         capacity,
         card_type: cardType,
+        ...(age ? { age } : {}),
       }),
     };
 
