@@ -9,7 +9,7 @@ export default function ImportForm() {
   const [text, setText] = useState("");
 
   return (
-    <form action={action} className={styles.list}>
+    <form action={action} className={styles.list} data-progress="1">
       <input
         type="file"
         accept=".csv,.tsv,.txt"

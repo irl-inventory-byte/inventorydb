@@ -148,7 +148,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/inv
       </dl>
 
       {user.role === "admin" && (
-        <form action={applyCorrection} className={styles.list}>
+        <form action={applyCorrection} className={styles.list} data-progress="1">
           <input type="hidden" name="back" value={`/inventory/${item.item_id}`} />
           <input type="hidden" name="ids" value={item.item_id} />
           <CorrectionPanel hubs={hubs} people={people} showScan={false} />

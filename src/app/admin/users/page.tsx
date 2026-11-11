@@ -119,7 +119,7 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
         </p>
       )}
 
-      <form action={addUser} className={styles.row}>
+      <form action={addUser} className={styles.row} data-progress="1">
         <input type="hidden" name="back" value={back} />
         <input name="email" type="email" placeholder="Google email" required />
         {roleSelect()}

@@ -51,7 +51,7 @@ export default function RigChecks({
       </p>
 
       {canQc && (
-        <form action={addQcCheck} className={styles.list} aria-label="Record a QC result">
+        <form action={addQcCheck} className={styles.list} aria-label="Record a QC result" data-progress="1">
           <input type="hidden" name="itemId" value={itemId} />
           <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
             <label style={{ ...fieldStyle, flex: "0 1 220px" }}>
@@ -104,7 +104,7 @@ export default function RigChecks({
       <h2>Hardware updates</h2>
 
       {canHardware && (
-        <form action={addHardwareUpdate} className={styles.list} aria-label="Add a hardware update">
+        <form action={addHardwareUpdate} className={styles.list} aria-label="Add a hardware update" data-progress="1">
           <input type="hidden" name="itemId" value={itemId} />
           <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
             <label style={{ ...fieldStyle, flex: "0 1 220px" }}>
@@ -128,7 +128,7 @@ export default function RigChecks({
       )}
 
       {canRetire && (
-        <form action={retireRig} className={styles.list} aria-label="Declare this rig dead">
+        <form action={retireRig} className={styles.list} aria-label="Declare this rig dead" data-progress="1">
           <input type="hidden" name="itemId" value={itemId} />
           <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end", border: "1px solid #F2C0BC", borderRadius: 8, padding: 12 }}>
             <label style={{ ...fieldStyle, flex: "1 1 320px" }}>

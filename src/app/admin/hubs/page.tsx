@@ -52,7 +52,7 @@ export default async function HubsPage({ searchParams }: PageProps<"/admin/hubs"
         ERRORS[error] && <p className={styles.error}>{ERRORS[error]}</p>
       )}
 
-      <form action={addHub} className={styles.row}>
+      <form action={addHub} className={styles.row} data-progress="1">
         <input name="name" placeholder="New hub name" required />
         <input name="city" placeholder="City (optional)" />
         {parentSelect(undefined, central)}

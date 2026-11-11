@@ -127,7 +127,7 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
       </p>
       <h1>Send items</h1>
 
-      <form action={sendCards} className={styles.form}>
+      <form action={sendCards} className={styles.form} data-progress="1">
         <div className={styles.field}>
           <label className={styles.label} htmlFor="by">
             Sent by

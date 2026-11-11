@@ -172,7 +172,7 @@ export default async function LostItemsPage({ searchParams }: PageProps<"/lost">
                             </p>
                           ))}
                           {canAddNote && (
-                            <form action={addLostNote} style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                            <form action={addLostNote} style={{ display: "flex", gap: 6, marginTop: 4 }} data-progress="1">
                               <input type="hidden" name="item" value={r.item_id} />
                               <input type="hidden" name="status" value={status} />
                               <input

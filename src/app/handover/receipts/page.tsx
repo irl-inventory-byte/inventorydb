@@ -387,7 +387,7 @@ export default async function ReceiptsPage({
                         <>
                           <details style={{ marginTop: 6 }}>
                             <summary style={{ cursor: "pointer" }}>Edit note</summary>
-                            <form action={updateReceiptNote} style={{ display: "grid", gap: 6, marginTop: 6 }}>
+                            <form action={updateReceiptNote} style={{ display: "grid", gap: 6, marginTop: 6 }} data-progress="1">
                               <input type="hidden" name="batch" value={r.batchId} />
                               <input type="hidden" name="back" value={here} />
                               <textarea
@@ -404,7 +404,7 @@ export default async function ReceiptsPage({
 
                           <details style={{ marginTop: 6 }}>
                             <summary style={{ cursor: "pointer", color: "#b91c1c" }}>Delete</summary>
-                            <form action={deleteReceipt} style={{ display: "grid", gap: 6, marginTop: 6 }}>
+                            <form action={deleteReceipt} style={{ display: "grid", gap: 6, marginTop: 6 }} data-progress="1">
                               <input type="hidden" name="batch" value={r.batchId} />
                               <input type="hidden" name="back" value={here} />
                               <input
@@ -428,7 +428,7 @@ export default async function ReceiptsPage({
                       )}
 
                       {isAdmin && r.deleted && (
-                        <form action={restoreReceipt} style={{ marginTop: 6 }}>
+                        <form action={restoreReceipt} style={{ marginTop: 6 }} data-progress="1">
                           <input type="hidden" name="batch" value={r.batchId} />
                           <input type="hidden" name="back" value={here} />
                           <button type="submit">Restore</button>

@@ -320,7 +320,7 @@ export default async function PeoplePage({
       {/* Add person remains independent of the filter form. */}
       <h2>Add person</h2>
 
-      <form action={addPerson} className={styles.row}>
+      <form action={addPerson} className={styles.row} data-progress="1">
         <input
           name="name"
           placeholder="Full name"

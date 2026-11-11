@@ -138,7 +138,7 @@ export default async function ReceivePage({
           </table>
         )}
 
-        <form action={receiveCards} className={styles.list} style={{ marginTop: 16 }}>
+        <form action={receiveCards} className={styles.list} style={{ marginTop: 16 }} data-progress="1">
           <input type="hidden" name="hub" value="" />
           <ReceiveScanArea
             hub=""
@@ -300,7 +300,7 @@ export default async function ReceivePage({
         </p>
       )}
 
-      <form action={receiveCards} className={styles.list}>
+      <form action={receiveCards} className={styles.list} data-progress="1">
         <input type="hidden" name="hub" value={hub} />
 
         {/* Item scan box (batch receive from a receipt QR is switched off). */}

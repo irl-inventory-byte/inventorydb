@@ -1959,7 +1959,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                               {itemNotes.length} of {r.items.length} noted — view individually
                             </Link>
                           ) : (
-                            <form action={addDelayNote} style={{ display: "flex", gap: 4 }}>
+                            <form action={addDelayNote} style={{ display: "flex", gap: 4 }} data-progress="1">
                               <input type="hidden" name="item_id" value={forItem} />
                               <input type="hidden" name="item_type" value={r.type} />
                               <input type="hidden" name="person" value={r.person} />
@@ -2069,7 +2069,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                               const existingNote = latestNoteByItem.get(it.id);
                               return (
                                 <div style={{ display: "flex", gap: 6 }}>
-                                  <form action={addDelayNote} style={{ display: "flex", gap: 6, flex: 1, minWidth: 0 }}>
+                                  <form action={addDelayNote} style={{ display: "flex", gap: 6, flex: 1, minWidth: 0 }} data-progress="1">
                                     <input type="hidden" name="item_id" value={it.id} />
                                     <input type="hidden" name="item_type" value={it.type} />
                                     <input type="hidden" name="person" value={detailRow.person} />
@@ -2098,7 +2098,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                                     </button>
                                   </form>
                                   {existingNote && (
-                                    <form action={deleteDelayNote}>
+                                    <form action={deleteDelayNote} data-progress="1">
                                       <input type="hidden" name="note_id" value={existingNote.note_id} />
                                       <button
                                         type="submit"
@@ -2164,7 +2164,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
                           <td>{note.sent_by || "—"}</td>
                           <td style={{ whiteSpace: "normal" }}>{note.note}</td>
                           <td>
-                            <form action={deleteDelayNote}>
+                            <form action={deleteDelayNote} data-progress="1">
                               <input type="hidden" name="note_id" value={note.note_id} />
                               <button
                                 type="submit"

@@ -98,7 +98,7 @@ export default function ReportForm({
   };
 
   return (
-    <form action={addRigReport} className={styles.form} style={{ display: "grid", gap: 12 }}>
+    <form action={addRigReport} className={styles.form} style={{ display: "grid", gap: 12 }} data-progress="1">
       <input type="hidden" name="rig" value={rig} />
       <input type="hidden" name="photo" value={photo} />
       <div className={styles.field}>
