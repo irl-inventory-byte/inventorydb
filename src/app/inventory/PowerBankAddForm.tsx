@@ -19,9 +19,10 @@ const EMPTY: PowerBankLookup = {
   price: "",
 };
 
-// The details from the power bank sheet, in the order they are shown.
+// The details from the power bank sheet, in the order they are shown. "date" isn't shown here (per
+// request) — it's still read from the sheet and saved on the item server-side (see power-bank-actions.ts),
+// just not displayed or editable on this form.
 const FIELDS: [keyof PowerBankLookup, string][] = [
-  ["date", "Date"],
   ["type", "Type"],
   ["brand", "Brand"],
   ["model", "Model"],

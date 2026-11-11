@@ -111,47 +111,12 @@ export function PowerBankSummary({ d, hubParam, items, attentionHref, brokenCoun
   const pct = d.utilization === null ? null : Math.round(d.utilization);
 
   // Nothing tracked yet for this scope: the four cards below would otherwise show a confusing wall of
-  // "0" and a bare "—" dash (Utilization has no ratio to compute with zero usable items). Show one clear
-  // empty state instead, with a way to add the first power bank.
+  // "0" and a bare "—" dash (Utilization has no ratio to compute with zero usable items). Per request,
+  // this section is simply left out of the dashboard until the first power bank is added — once one
+  // exists in the database (status in_stock by default), `total` stops being 0 and the normal cards
+  // below render as usual.
   if (total === 0) {
-    return (
-      <section className={styles.summaryGrid} aria-label="Management summary">
-        <div
-          className={styles.summary}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            textAlign: "center",
-            gap: 10,
-            gridColumn: "1 / -1",
-            padding: "36px 24px",
-          }}
-        >
-          <span className={styles.summaryIcon} style={{ color: "var(--text-muted)" }}>
-            <Icon name="layers" size={28} />
-          </span>
-          <strong style={{ fontSize: "1.1rem", fontWeight: 600 }}>No power banks here yet</strong>
-          <span className={styles.summaryNote} style={{ maxWidth: 420 }}>
-            {hubParam
-              ? "This hub doesn't have any power banks tracked yet. Add one to start seeing utilization and activity here."
-              : "No power banks are tracked yet. Add one to start seeing utilization and activity here."}
-          </span>
-          <Link
-            href={list()}
-            style={{
-              marginTop: 4,
-              fontSize: "0.85rem",
-              fontWeight: 600,
-              color: "var(--series-1)",
-              textDecoration: "none",
-            }}
-          >
-            View power bank inventory →
-          </Link>
-        </div>
-      </section>
-    );
+    return null;
   }
 
   const share = (count: number) => (powerBanks.length > 0 ? `${Math.round((count / powerBanks.length) * 100)}%` : "");
