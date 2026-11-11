@@ -130,17 +130,6 @@ export class Store {
   }
 
   /**
-   * Same as getItem, but forces a fresh read of "items" first — bypassing any cached copy from a
-   * moment ago (see TableBackend.invalidate's comment). Use this where showing "not found" when the
-   * item actually exists would be a real problem, e.g. the delete-confirmation page: a stale cache on a
-   * different instance should never make a real item look deleted already.
-   */
-  async getItemFresh(itemId: string) {
-    this.backend.invalidate?.("items");
-    return this.getItem(itemId);
-  }
-
-  /**
    * Look up scanned/typed IDs, ignoring letter case. A mobile is also found by an IMEI in a QR code
    * ("IMEI1 - IMEI2"), its Asset Tag or its Serial. Return a map keyed by the requested IDs.
    */
