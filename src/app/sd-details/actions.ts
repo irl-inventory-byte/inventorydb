@@ -90,26 +90,36 @@ export async function saveSdDetails(formData: FormData) {
     recorded_at: istTimestamp(),
     forwarded: "",
   };
+  // This is the one write the person has to wait for — it's what makes the entry "saved". Everything
+  // below (the Google Sheet copy) used to be awaited here too, adding up to 6 seconds of waiting with
+  // nothing to show for it on screen. Now it's started but NOT awaited (see forwardInBackground below) —
+  // it keeps running after this function redirects, so the page shows "Saved." right after this one
+  // write finishes instead of after the Google Sheet copy also finishes.
   await getStore().appendRows("sd_card_durations", [rowToSave]);
 
-  const forwarded = await forwardToScript(team, {
-    "SD CARD DATE": cardDate,
-    [team === "im" ? "IM" : "RIG TEAM NAME"]: teamMember,
-    ...(team === "rig" && { TEAM: "Rig team" }),
-    "FO / IFO": foIfo,
-    "IC NAME": icName,
-    CITY: city,
-    "IC-NUMBER": icNumber,
-    "SD CARD SERIAL NUMBER / ASSET TAG": serial,
-    DU_TIME: duration,
-    FAILED_HOURS: failedHours,
-    FAILED_RAW_CLIPS: failedRawClips,
-    "NO. OF RAW CLIPS": rawClips,
-  });
-  // Send the WHOLE row back, not just {record_id, forwarded} — upsert() always writes every column of
-  // the table, so a partial object here would blank out every other field on this row (that was the
-  // original bug: the row looked right for a moment, then went blank once this ran).
-  await getStore().upsert("sd_card_durations", [{ ...rowToSave, forwarded }]);
+  async function forwardInBackground() {
+    const forwarded = await forwardToScript(team, {
+      "SD CARD DATE": cardDate,
+      [team === "im" ? "IM" : "RIG TEAM NAME"]: teamMember,
+      ...(team === "rig" && { TEAM: "Rig team" }),
+      "FO / IFO": foIfo,
+      "IC NAME": icName,
+      CITY: city,
+      "IC-NUMBER": icNumber,
+      "SD CARD SERIAL NUMBER / ASSET TAG": serial,
+      DU_TIME: duration,
+      FAILED_HOURS: failedHours,
+      FAILED_RAW_CLIPS: failedRawClips,
+      "NO. OF RAW CLIPS": rawClips,
+    });
+    // Send the WHOLE row back, not just {record_id, forwarded} — upsert() always writes every column of
+    // the table, so a partial object here would blank out every other field on this row (that was the
+    // original bug: the row looked right for a moment, then went blank once this ran).
+    await getStore().upsert("sd_card_durations", [{ ...rowToSave, forwarded }]);
+  }
+  // Started here (before the redirect), NOT awaited — must come before back() below, since back()
+  // throws (Next.js's redirect mechanism) and nothing after that throw would run.
+  void forwardInBackground();
 
   back({ saved: "1" });
 }

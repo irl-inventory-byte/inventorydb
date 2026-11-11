@@ -1,8 +1,10 @@
 import type { CSSProperties } from "react";
 import type { SdCardDuration } from "@/lib/schema";
 import { formatIst } from "@/lib/time";
+import SdDetailsFields from "./SdDetailsFields";
 
-// Hard-coded IC name list (given by the user directly — no admin page to manage this yet).
+// Hard-coded IC name list (given by the user directly — no admin page to manage this yet). Also used
+// by the filter bar below (the add-entry form itself now lives in SdDetailsFields.tsx).
 const IC_NAMES = [
   "Aditya", "Anshitha", "Bhavana", "Hari Prasad M S", "Hemanth", "Kavya", "Kusuma H",
   "MALIAKA", "Mohit", "NAVEEN", "Niharika", "Prajakta", "Priyanshu", "Sohan", "Spoorthi",
@@ -67,152 +69,15 @@ export default function SdDetailsForm({
         <p style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534", borderRadius: 8, padding: "8px 12px" }}>Saved.</p>
       )}
 
-      <form
+      <SdDetailsFields
+        team={team}
         action={action}
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: 10,
-          padding: 14,
-          border: "1px solid #cbd5e1",
-          borderRadius: 10,
-          background: "#f8fafc",
-          maxWidth: 760,
-        }}
-      >
-        <input type="hidden" name="team" value={team} />
-
-        {team === "rig" && (
-          <label style={field}>
-            Team *
-            <select name="sub_team" required defaultValue="" style={input}>
-              <option value="" disabled>
-                Select team
-              </option>
-              <option value="rig">Rig team</option>
-              <option value="productivity">Productivity team</option>
-            </select>
-          </label>
-        )}
-
-        <label style={field}>
-          SD card date *
-          <input type="date" name="card_date" required max={new Date().toISOString().slice(0, 10)} style={input} />
-        </label>
-
-        <label style={field}>
-          {memberLabel} *
-          {/* A dropdown that also takes free text: pick from the list, or type a name that isn't in it
-              yet and it's saved as typed — no admin step needed to add someone new. */}
-          <input
-            list="member-options"
-            name="team_member"
-            required
-            defaultValue={defaultMember || ""}
-            placeholder={`Select or type ${memberLabel}`}
-            autoComplete="off"
-            style={input}
-          />
-          <datalist id="member-options">
-            {memberOptions.map((m) => (
-              <option key={m.id} value={m.name} />
-            ))}
-          </datalist>
-        </label>
-
-        <label style={field}>
-          FO / IFO
-          <input
-            list="foifo-options"
-            name="fo_ifo"
-            placeholder="Select or type FO / IFO"
-            autoComplete="off"
-            style={input}
-          />
-          <datalist id="foifo-options">
-            {foIfoOptions.map((p) => (
-              <option key={p.id} value={p.name} />
-            ))}
-          </datalist>
-        </label>
-
-        <label style={field}>
-          IC name *
-          <input
-            list="ic-name-options"
-            name="ic_name"
-            required
-            placeholder="Select or type IC name"
-            autoComplete="off"
-            style={input}
-          />
-          <datalist id="ic-name-options">
-            {IC_NAMES.map((name) => (
-              <option key={name} value={name} />
-            ))}
-          </datalist>
-        </label>
-
-        <label style={field}>
-          City *
-          <select name="city" required defaultValue="" style={input}>
-            <option value="" disabled>
-              Select city
-            </option>
-            {cities.map(([city]) => (
-              <option key={city} value={city}>
-                {city}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label style={field}>
-          IC-Number (must start with IC-) *
-          <input type="text" name="ic_number" required pattern="IC-.*" title="Must start with IC-" placeholder="IC-123" style={input} />
-        </label>
-
-        <label style={field}>
-          SD card serial number / asset tag *
-          <input type="text" name="serial" required placeholder="Serial or asset tag" style={input} />
-        </label>
-
-        <label style={field}>
-          Duration (HH:MM:SS) *
-          <input type="text" name="duration" required pattern="\d{1,2}:\d{2}:\d{2}" placeholder="HH:MM:SS (e.g. 01:30:45)" style={input} />
-        </label>
-
-        {/* Rig form only — not shown on the IM form. */}
-        {team === "rig" && (
-          <label style={field}>
-            Failed hours (HH:MM:SS)
-            <input type="text" name="failed_hours" pattern="\d{1,2}:\d{2}:\d{2}" placeholder="HH:MM:SS, leave blank if none" style={input} />
-          </label>
-        )}
-
-        <label style={field}>
-          No. of raw clips *
-          <input type="number" name="raw_clips" required min={0} placeholder="e.g. 25" style={input} />
-        </label>
-
-        <div style={{ display: "flex", alignItems: "flex-end" }}>
-          <button
-            type="submit"
-            style={{
-              fontSize: "0.88rem",
-              fontWeight: 600,
-              padding: "8px 18px",
-              borderRadius: 6,
-              border: "1px solid #1e293b",
-              background: "#1e293b",
-              color: "#fff",
-              cursor: "pointer",
-            }}
-          >
-            Submit
-          </button>
-        </div>
-      </form>
+        memberLabel={memberLabel}
+        memberOptions={memberOptions}
+        foIfoOptions={foIfoOptions}
+        cities={cities}
+        defaultMember={defaultMember}
+      />
 
       {filters && (
         <form
