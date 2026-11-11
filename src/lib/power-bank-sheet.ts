@@ -17,6 +17,17 @@ import { google } from "googleapis";
 const DEFAULT_POWER_BANK_SHEET_ID = "1gQxy-hzaoU7oja_yp5eSHTyajUr6UX-bgXyWIL82mNE";
 const DEFAULT_TAB_GID = 0;
 const TTL_MS = 5 * 60 * 1000;
+// If Google's API hangs (bad network, bad credentials that don't fail fast, …) with no timeout here,
+// the Add Power Bank form's "busy" state never clears and the Save button stays silently disabled
+// forever — this bounds that so the form always gets back a note, one way or another, within 8s.
+const SHEET_TIMEOUT_MS = 8000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`Timed out ${what} (over ${ms / 1000}s).`)), ms)),
+  ]);
+}
 
 export interface PowerBankRecord {
   assetTag: string;
@@ -170,17 +181,25 @@ export async function loadPowerBankSheet(): Promise<{ records: PowerBankRecord[]
 
   let tab = process.env.POWER_BANK_SHEET_TAB ?? "";
   if (!tab) {
-    const meta = await api.spreadsheets.get({ spreadsheetId, fields: "sheets.properties(sheetId,title)" });
+    const meta = await withTimeout(
+      api.spreadsheets.get({ spreadsheetId, fields: "sheets.properties(sheetId,title)" }),
+      SHEET_TIMEOUT_MS,
+      "reading the power bank sheet's tab list",
+    );
     const tabs = meta.data.sheets ?? [];
     const linked = tabs.find((s) => s.properties?.sheetId === DEFAULT_TAB_GID);
     tab = (linked ?? tabs[0])?.properties?.title ?? "Sheet1";
   }
 
-  const result = await api.spreadsheets.values.get({
-    spreadsheetId,
-    range: `'${tab.replace(/'/g, "''")}'!A1:AZ`,
-    valueRenderOption: "UNFORMATTED_VALUE",
-  });
+  const result = await withTimeout(
+    api.spreadsheets.values.get({
+      spreadsheetId,
+      range: `'${tab.replace(/'/g, "''")}'!A1:AZ`,
+      valueRenderOption: "UNFORMATTED_VALUE",
+    }),
+    SHEET_TIMEOUT_MS,
+    "reading the power bank sheet",
+  );
   const rows = (result.data.values ?? []).map((row) => row.map((v) => String(v ?? "")));
   const { records } = parsePowerBankSheet(rows);
   cache = { records, info: { tab, powerBanks: records.length }, at: Date.now(), id: spreadsheetId };
