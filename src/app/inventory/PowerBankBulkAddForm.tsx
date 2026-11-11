@@ -22,6 +22,8 @@ const splitScans = (text: string) =>
 const rupees = (v: string) => (v ? `₹${Number(v).toLocaleString("en-IN")}` : "—");
 
 function checkLabel(row: Row): { text: string; color: string } {
+  if (row.status === "badformat")
+    return { text: 'Wrong format — must be exactly "Power Bank - " then a number, e.g. "Power Bank - 1"', color: "#B42318" };
   if (row.status === "exists") return { text: "Already in inventory", color: "#8A4B00" };
   if (row.status === "repeated") return { text: "Repeated in list", color: "#8A4B00" };
   if (row.status === "notfound") return { text: "Not in power bank sheet – use Add a power bank", color: "#B42318" };
@@ -164,7 +166,10 @@ export default function PowerBankBulkAddForm({ hubs = [] }: { hubs?: Hubs }) {
             spellCheck={false}
             style={{ ...inputStyle, fontFamily: "monospace", resize: "vertical" }}
           />
-          <small className={styles.muted}>One power bank per line. Details load automatically from the power bank sheet.</small>
+          <small className={styles.muted}>
+            One power bank per line. Each must be exactly &quot;Power Bank - &quot; then a number (e.g. &quot;Power Bank - 1&quot;) —
+            anything else is rejected below. Details load automatically from the power bank sheet.
+          </small>
         </label>
       </div>
 

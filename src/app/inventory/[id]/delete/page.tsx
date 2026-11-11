@@ -21,7 +21,9 @@ export default async function DeleteItemPage({
   const sp = await searchParams;
 
   const store = getStore();
-  const item = await store.getItem(id);
+  // getItemFresh, not getItem: a stale per-instance cache must never make a just-added item look like
+  // it doesn't exist (see lib/store/store.ts and backend.ts for why).
+  const item = await store.getItemFresh(id);
 
   if (!item) {
     notFound();

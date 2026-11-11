@@ -20,6 +20,16 @@ import { istTimestamp } from "@/lib/time";
 
 const newId = (prefix: string) => `${prefix}-${randomUUID().slice(0, 8)}`;
 
+// The only Asset Tag format power banks may be added under: "Power Bank - " then one or more digits
+// (e.g. "Power Bank - 1", "Power Bank - 20045"). Enforced here, server-side, on every add path (single
+// and bulk) — this is what the item is saved and later looked up and deleted by, so a format that
+// varies between entries (extra/missing spaces, a different dash character, etc.) is exactly what
+// caused near-duplicate items and a "Delete" link that 404s on an item whose real ID doesn't match
+// what was typed. The check is strict on purpose: no case-folding, no trimming surprises — type or
+// scan it exactly as shown, or it's rejected with the reason below.
+const ASSET_TAG_FORMAT = /^Power Bank - \d+$/;
+const ASSET_TAG_FORMAT_HELP = 'The Asset Tag must be exactly "Power Bank - " followed by a number, e.g. "Power Bank - 1". Check for extra spaces or a different dash.';
+
 export type PowerBankLookup = {
   assetTag: string;
   date: string;
@@ -93,6 +103,7 @@ export async function addPowerBank(formData: FormData) {
   const itemId = text("itemId") || text("find");
   const homeHub = text("homeHub");
   if (!itemId) reject("Enter or scan the Asset Tag.");
+  if (!ASSET_TAG_FORMAT.test(itemId)) reject(ASSET_TAG_FORMAT_HELP);
   if (!homeHub) reject("Select the home hub.");
 
   // The sheet is read again on the server; what it says wins over the form.
@@ -153,7 +164,7 @@ const POWER_BANK_BULK_LIMIT = 200;
 
 export type PowerBankCheck = PowerBankLookup & {
   scanned: string;
-  status: "ready" | "exists" | "repeated" | "notfound";
+  status: "ready" | "exists" | "repeated" | "notfound" | "badformat";
 };
 
 const emptyLookup: PowerBankLookup = {
@@ -189,7 +200,8 @@ export async function checkPowerBanks(scans: string[]): Promise<{ rows: PowerBan
     const id = found?.assetTag ?? scanned;
     const key = id.toLowerCase();
     let status: PowerBankCheck["status"] = "ready";
-    if (!found) status = "notfound";
+    if (!ASSET_TAG_FORMAT.test(id)) status = "badformat";
+    else if (!found) status = "notfound";
     else if (seen.has(key)) status = "repeated";
     else if (saved.has(id)) status = "exists";
     seen.add(key);
@@ -237,6 +249,10 @@ export async function addPowerBanks(scans: string[], homeHub: string): Promise<P
   for (const scanned of list) {
     const found = findPowerBank(records, scanned);
     const assetTag = found?.assetTag ?? scanned;
+    if (!ASSET_TAG_FORMAT.test(assetTag)) {
+      skipped.push({ assetTag, reason: ASSET_TAG_FORMAT_HELP });
+      continue;
+    }
     if (!found) {
       skipped.push({ assetTag, reason: "not in the power bank sheet" });
       continue;

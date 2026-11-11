@@ -55,9 +55,11 @@ export async function deleteInventoryItem(
   const store = getStore();
 
   try {
-    // Snapshot the item and its history before they are removed.
+    // Snapshot the item and its history before they are removed. getItemFresh (not getItem): a stale
+    // per-instance cache here would just put wrong/blank details in the audit log, not block the
+    // deletion itself, but there's no reason to let the log be wrong when it's cheap to avoid.
     const [item, history] = await Promise.all([
-      store.getItem(itemId),
+      store.getItemFresh(itemId),
       store.getHistory(itemId),
     ]);
 

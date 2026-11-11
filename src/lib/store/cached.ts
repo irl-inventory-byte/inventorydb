@@ -55,6 +55,11 @@ export class CachedBackend implements TableBackend {
     }
   }
 
+  /** Public version of clear(), for callers that need to force a fresh read (see backend.ts). */
+  invalidate(tab: TabName) {
+    this.clear(tab);
+  }
+
   private copy(rows: Row[]): Row[] {
     return rows.map((r) => ({ ...r }));
   }

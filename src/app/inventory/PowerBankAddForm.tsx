@@ -152,12 +152,19 @@ export default function PowerBankAddForm({ hubs = [] }: { hubs?: Hubs }) {
               value={find}
               onChange={(e) => changeFind(e.target.value)}
               onKeyDown={onEnter}
-              placeholder="Scan the QR code, or type the Asset Tag"
+              placeholder='Must be exactly "Power Bank - 1" (a number after the dash)'
               autoComplete="off"
               spellCheck={false}
               required
+              pattern="Power Bank - \d+"
+              title='Must be exactly "Power Bank - " followed by a number, e.g. "Power Bank - 1". Check for extra spaces or a different dash.'
               style={{ ...inputStyle, fontSize: "1.05rem", padding: "12px 14px" }}
             />
+            {find.trim() && !/^Power Bank - \d+$/.test(find.trim()) && (
+              <span style={{ fontSize: "0.8rem", color: "#B42318" }}>
+                Wrong format — it must be exactly &quot;Power Bank - &quot; then a number, e.g. &quot;Power Bank - 1&quot;.
+              </span>
+            )}
           </label>
         </div>
 
