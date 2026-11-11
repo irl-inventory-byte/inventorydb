@@ -120,12 +120,16 @@ function attributeText(value: unknown): string {
  *
  * {
  *   "capacity": "512 GB",
- *   "card_type": "Black"
+ *   "card_type": "Black",
+ *   "age": "new"
  * }
  *
- * Storage and colour are separate breakdowns of the same items.
+ * Storage, colour and age are separate breakdowns of the same items. "age" ("new"/"old", from the SD
+ * card sheet's New/Old column) is saved on the item itself at Add item time (see inventory/actions.ts) —
+ * it is no longer read live from the sheet here, so the `ages` param is gone; an item added before this
+ * field existed just has no "age" and falls into ageUnknown below, same as before.
  */
-function countFleet(items: readonly Item[], ages: Map<string, string> | null): FleetCounts {
+function countFleet(items: readonly Item[]): FleetCounts {
   const counts: FleetCounts = {
     storage512: 0,
     storage256: 0,
@@ -148,12 +152,12 @@ function countFleet(items: readonly Item[], ages: Map<string, string> | null): F
     }
     counts.sdCards++;
 
-    const age = ages?.get(item.item_id.trim().toUpperCase()) ?? "";
-    if (age.startsWith("new")) counts.newCards++;
-    else if (age.startsWith("old")) counts.oldCards++;
-    else counts.ageUnknown++;
-
     const attributes = readAttributes(item.attributes);
+
+    const age = attributeText(attributes.age).toLowerCase();
+    if (age === "new") counts.newCards++;
+    else if (age === "old") counts.oldCards++;
+    else counts.ageUnknown++;
 
     const capacity = attributeText(attributes.capacity)
       .replace(/\s+/g, "")
@@ -228,9 +232,9 @@ export async function SummaryKpis({
         )
       : sourceItems;
 
-  // No sheet read here (see note above) — New / Old is only ever known at Add item time now.
-  const ages: Map<string, string> | null = null;
-  const fleet = countFleet(fleetItems, ages);
+  // New / Old is read straight from each item's own saved attributes now (see countFleet) — no live
+  // sheet read here.
+  const fleet = countFleet(fleetItems);
   // Fold the admin's "already broken before tracking" baseline into the storage breakdown too, so
   // the 512/256 GB tiles and the Total agree with each other and with the Broken tile's own number.
   if (baselineStorage) {
@@ -294,27 +298,26 @@ export async function SummaryKpis({
       border: "#16a34a",
       text: "#14532d",
     },
-    // New / Old from the SD card sheet (only when the sheet could be read).
-    ...(ages
-      ? [
-          {
-            label: "New cards",
-            count: fleet.newCards,
-            pct: share(fleet.newCards),
-            bg: "#e0f2fe",
-            border: "#0284c7",
-            text: "#0c4a6e",
-          },
-          {
-            label: "Old cards",
-            count: fleet.oldCards,
-            pct: share(fleet.oldCards),
-            bg: "rgba(100, 116, 139, 0.18)",
-            border: "#64748b",
-            text: "var(--text-primary)",
-          },
-        ]
-      : []),
+    // New / Old, saved on the item itself at Add item time (see countFleet's comment). Always shown
+    // (even as 0) rather than hidden when nothing has that field recorded yet — items added before this
+    // field existed count toward ageUnknown instead, and showing "0" here (instead of hiding the tile)
+    // is how you can tell the save is actually wired up versus just having no new-item data yet.
+    {
+      label: "New cards",
+      count: fleet.newCards,
+      pct: share(fleet.newCards),
+      bg: "#e0f2fe",
+      border: "#0284c7",
+      text: "#0c4a6e",
+    },
+    {
+      label: "Old cards",
+      count: fleet.oldCards,
+      pct: share(fleet.oldCards),
+      bg: "rgba(100, 116, 139, 0.18)",
+      border: "#64748b",
+      text: "var(--text-primary)",
+    },
   ];
 
   // Broken and Retired's own percentage is of the two combined (how the unusable pile splits between
