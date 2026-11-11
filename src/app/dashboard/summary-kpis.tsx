@@ -243,9 +243,12 @@ export async function SummaryKpis({
     fleet.sdCards += baselineTotal;
   }
   // Fixed manual correction, folded straight into the counts with no separate UI or note anywhere —
-  // cards whose colour/age were never recorded. SD cards only.
+  // cards whose colour was never recorded. SD cards only.
   fleet.green += 89;
-  fleet.oldCards += 94;
+  // The old +94 "Old cards" correction is gone: New/Old is now tracked per real item (see countFleet
+  // and inventory/actions.ts), so Old cards reflects actual saved data instead of a fixed guess. It will
+  // read low (mostly 0) until cards are added or re-saved with their New/Old value going forward — that
+  // is expected, not a bug.
 
   // A second read can differ if inventory changed during rendering,
   // or if the caller supplied a different hub scope. (Compared against the real tracked total —
