@@ -9,29 +9,10 @@ import { istTimestamp } from "@/lib/time";
 
 type Team = "im" | "rig";
 
-// The two Google Apps Script forms this data used to be entered into directly. Submissions are now
-// saved to our own database first (the record this app actually reads back), and a copy is also
-// POSTed here as a best effort — these endpoints are behind the organization's Google sign-in, so
-// this could not be inspected directly; the field names below are a best guess from the form's
-// visible labels. If the copy stops landing in the Google Sheet, the field names are the first thing
-// to check (`forwarded` on the saved row records what happened, "yes" or "no: <reason>").
-const FORWARD_URL: Record<Team, string> = {
-  im: "https://script.google.com/a/macros/ailabs.instawork.com/s/AKfycbxv4qQ0v9OAM-Oo5e-cftWhK1mAKOFXPbaVY9hCQGDHL9JSBT55KKjE5F-Vjp3EGzKxGg/exec",
-  rig: "https://script.google.com/a/macros/ailabs.instawork.com/s/AKfycbzHG48Yr4YgQrhnH-EhR0JFpLCw0Rh5bqUgoyG0AdOejbqDC8lOQ-VodXYPIgHzZD8J/exec",
-};
-
-async function forwardToScript(team: Team, fields: Record<string, string>): Promise<string> {
-  try {
-    const res = await fetch(FORWARD_URL[team], {
-      method: "POST",
-      body: new URLSearchParams(fields),
-      signal: AbortSignal.timeout(6000),
-    });
-    return res.ok ? "yes" : `no: HTTP ${res.status}`;
-  } catch (err) {
-    return `no: ${err instanceof Error ? err.message : "failed"}`;
-  }
-}
+// This used to also POST a copy of every submission to the IM/Rig team's old Google Apps Script form,
+// so the Google Sheet stayed in sync with this app's own database. Per request, that forwarding has
+// been removed entirely — this app's own database (sd_card_durations) is now the only place these
+// entries are saved; nothing here writes to the Google Sheet anymore.
 
 /** Shared by both the IM and Rig team SD card details forms; `team` (a hidden field) tells them apart. */
 export async function saveSdDetails(formData: FormData) {
@@ -88,38 +69,9 @@ export async function saveSdDetails(formData: FormData) {
     recorded_by: user.email ?? "unknown",
     recorded_by_name: recordedByName,
     recorded_at: istTimestamp(),
-    forwarded: "",
+    forwarded: "n/a", // no longer forwarded anywhere — see note above
   };
-  // This is the one write the person has to wait for — it's what makes the entry "saved". Everything
-  // below (the Google Sheet copy) used to be awaited here too, adding up to 6 seconds of waiting with
-  // nothing to show for it on screen. Now it's started but NOT awaited (see forwardInBackground below) —
-  // it keeps running after this function redirects, so the page shows "Saved." right after this one
-  // write finishes instead of after the Google Sheet copy also finishes.
   await getStore().appendRows("sd_card_durations", [rowToSave]);
-
-  async function forwardInBackground() {
-    const forwarded = await forwardToScript(team, {
-      "SD CARD DATE": cardDate,
-      [team === "im" ? "IM" : "RIG TEAM NAME"]: teamMember,
-      ...(team === "rig" && { TEAM: "Rig team" }),
-      "FO / IFO": foIfo,
-      "IC NAME": icName,
-      CITY: city,
-      "IC-NUMBER": icNumber,
-      "SD CARD SERIAL NUMBER / ASSET TAG": serial,
-      DU_TIME: duration,
-      FAILED_HOURS: failedHours,
-      FAILED_RAW_CLIPS: failedRawClips,
-      "NO. OF RAW CLIPS": rawClips,
-    });
-    // Send the WHOLE row back, not just {record_id, forwarded} — upsert() always writes every column of
-    // the table, so a partial object here would blank out every other field on this row (that was the
-    // original bug: the row looked right for a moment, then went blank once this ran).
-    await getStore().upsert("sd_card_durations", [{ ...rowToSave, forwarded }]);
-  }
-  // Started here (before the redirect), NOT awaited — must come before back() below, since back()
-  // throws (Next.js's redirect mechanism) and nothing after that throw would run.
-  void forwardInBackground();
 
   back({ saved: "1" });
 }
