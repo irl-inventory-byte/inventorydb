@@ -4,6 +4,9 @@ import { getStore } from "./store";
 import { formatIst } from "./time";
 import { acknowledgmentText } from "./acknowledgment-text";
 import { assetHandoverPosterPdf } from "./asset-handover-poster";
+import { powerBankFieldGuidePdf } from "./handover-docs/power-bank-field-guide";
+import { foDebuggingSopPdf } from "./handover-docs/fo-debugging-sop";
+import { fieldOfficerSopPdf } from "./handover-docs/field-officer-sop";
 
 /**
  * Emails the receipt PDF to both people on a batch: the person who sent the
@@ -268,7 +271,7 @@ export async function sendReceiptEmail(options: {
     "",
     `View the receipt online: ${receiptUrl}`,
     "",
-    "The PDF receipt is attached, along with the Asset Handover & Custody Notice for reference.",
+    "The PDF receipt is attached, along with the Asset Handover & Custody Notice, the Power Bank Field Guide, and the FO/Field Officer SOPs for reference.",
     ...(acknowledgment
       ? [
           "",
@@ -293,7 +296,7 @@ export async function sendReceiptEmail(options: {
     ${row("Total listed penalty amount", totalPenalty)}
   </table>
   <p style="margin:16px 0"><a href="${escapeHtml(receiptUrl)}">View the receipt online</a></p>
-  <p style="color:#666;margin:0 0 16px">The PDF receipt is attached, along with the Asset Handover &amp; Custody Notice for reference.</p>
+  <p style="color:#666;margin:0 0 16px">The PDF receipt is attached, along with the Asset Handover &amp; Custody Notice, the Power Bank Field Guide, and the FO/Field Officer SOPs for reference.</p>
   ${
     acknowledgment
       ? `
@@ -320,6 +323,23 @@ export async function sendReceiptEmail(options: {
       {
         filename: "Asset-Handover-and-Custody-Notice.pdf",
         content: assetHandoverPosterPdf(),
+        contentType: "application/pdf",
+      },
+      // Reference material sent alongside every handover/custody receipt, same as the custody notice
+      // above — the field guide and the two SOPs, so recipients always have them on hand.
+      {
+        filename: "Power-Bank-Field-Guide.pdf",
+        content: powerBankFieldGuidePdf(),
+        contentType: "application/pdf",
+      },
+      {
+        filename: "FO-Debugging-SOP.pdf",
+        content: foDebuggingSopPdf(),
+        contentType: "application/pdf",
+      },
+      {
+        filename: "Field-Officer-SOP.pdf",
+        content: fieldOfficerSopPdf(),
         contentType: "application/pdf",
       },
     ],
