@@ -31,6 +31,11 @@ export const CORE_TYPES: readonly ItemType[] = ["sd_card", "rig"];
 
 /** Can add mobiles. */
 export const MOBILE_ADD_ROLES: Role[] = ["admin", "im"];
+/** Can add power banks. NOTE: guessed to match MOBILE_ADD_ROLES — this repo clone never had the power
+ *  bank feature, so this export was missing after an earlier full-file replacement of this file.
+ *  Double-check against whatever role list power-bank-actions.ts actually used before, and fix this
+ *  if it's wrong (e.g. if rig team should also be able to add power banks). */
+export const POWER_BANK_ADD_ROLES: Role[] = ["admin", "im"];
 
 const TYPES_FOR: Record<Role, readonly ItemType[]> = {
   admin: ["sd_card", "rig", "mobile"],

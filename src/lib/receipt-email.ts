@@ -1,12 +1,8 @@
-import nodemailer from "nodemailer";
+﻿import nodemailer from "nodemailer";
 import type { BatchSummary } from "./receipt";
 import { getStore } from "./store";
 import { formatIst } from "./time";
 import { acknowledgmentText } from "./acknowledgment-text";
-import { assetHandoverPosterPdf } from "./asset-handover-poster";
-import { powerBankFieldGuidePdf } from "./handover-docs/power-bank-field-guide";
-import { foDebuggingSopPdf } from "./handover-docs/fo-debugging-sop";
-import { fieldOfficerSopPdf } from "./handover-docs/field-officer-sop";
 
 /**
  * Emails the receipt PDF to both people on a batch: the person who sent the
@@ -224,6 +220,13 @@ export async function sendReceiptEmail(options: {
   acknowledgment?: { yesUrl: string };
 }): Promise<ReceiptEmailResult> {
   const { summary, title, pdf, fileName, receiptUrl, totalPenalty, acknowledgment } = options;
+  // Same origin the receipt link itself uses, so the SOP links work wherever this is sent from
+  // (local dev, a preview deploy, production) without a separate base-URL setting.
+  const origin = new URL(receiptUrl).origin;
+  const fieldOfficerSopUrl = `${origin}/api/docs/field-officer-sop`;
+  const foDebuggingSopUrl = `${origin}/api/docs/fo-debugging-sop`;
+  const assetHandoverNoticeUrl = `${origin}/api/docs/asset-handover-notice`;
+  const powerBankFieldGuideUrl = `${origin}/api/docs/power-bank-field-guide`;
 
   const recipients = (options.people ?? [{ id: summary.toId, name: summary.toName }]).filter(
     (r) => r.id || r.name,
@@ -271,7 +274,11 @@ export async function sendReceiptEmail(options: {
     "",
     `View the receipt online: ${receiptUrl}`,
     "",
-    "The PDF receipt is attached, along with the Asset Handover & Custody Notice, the Power Bank Field Guide, and the FO/Field Officer SOPs for reference.",
+    "The PDF receipt is attached. The following reference documents are online, not attached:",
+    `Asset Handover & Custody Notice: ${assetHandoverNoticeUrl}`,
+    `Power Bank Field Guide: ${powerBankFieldGuideUrl}`,
+    `Field Officer SOP: ${fieldOfficerSopUrl}`,
+    `FO Debugging SOP: ${foDebuggingSopUrl}`,
     ...(acknowledgment
       ? [
           "",
@@ -296,7 +303,16 @@ export async function sendReceiptEmail(options: {
     ${row("Total listed penalty amount", totalPenalty)}
   </table>
   <p style="margin:16px 0"><a href="${escapeHtml(receiptUrl)}">View the receipt online</a></p>
-  <p style="color:#666;margin:0 0 16px">The PDF receipt is attached, along with the Asset Handover &amp; Custody Notice, the Power Bank Field Guide, and the FO/Field Officer SOPs for reference.</p>
+  <p style="color:#666;margin:0 0 8px">The PDF receipt is attached. The following reference documents are online, not attached:</p>
+  <p style="color:#666;margin:0 0 16px">
+    <a href="${escapeHtml(assetHandoverNoticeUrl)}">Asset Handover &amp; Custody Notice</a>
+    &middot;
+    <a href="${escapeHtml(powerBankFieldGuideUrl)}">Power Bank Field Guide</a>
+    &middot;
+    <a href="${escapeHtml(fieldOfficerSopUrl)}">Field Officer SOP</a>
+    &middot;
+    <a href="${escapeHtml(foDebuggingSopUrl)}">FO Debugging SOP</a>
+  </p>
   ${
     acknowledgment
       ? `
@@ -314,32 +330,14 @@ export async function sendReceiptEmail(options: {
     subject,
     text: textBody,
     html,
+    // Only the receipt itself is attached now. The Asset Handover & Custody Notice, Power Bank Field
+    // Guide and the two SOPs are all linked in the email body instead (see assetHandoverNoticeUrl /
+    // powerBankFieldGuideUrl / fieldOfficerSopUrl / foDebuggingSopUrl above) — each served by its own
+    // route under src/app/api/docs/*/route.ts.
     attachments: [
       {
         filename: fileName,
         content: Buffer.from(pdf),
-        contentType: "application/pdf",
-      },
-      {
-        filename: "Asset-Handover-and-Custody-Notice.pdf",
-        content: assetHandoverPosterPdf(),
-        contentType: "application/pdf",
-      },
-      // Reference material sent alongside every handover/custody receipt, same as the custody notice
-      // above — the field guide and the two SOPs, so recipients always have them on hand.
-      {
-        filename: "Power-Bank-Field-Guide.pdf",
-        content: powerBankFieldGuidePdf(),
-        contentType: "application/pdf",
-      },
-      {
-        filename: "FO-Debugging-SOP.pdf",
-        content: foDebuggingSopPdf(),
-        contentType: "application/pdf",
-      },
-      {
-        filename: "Field-Officer-SOP.pdf",
-        content: fieldOfficerSopPdf(),
         contentType: "application/pdf",
       },
     ],
