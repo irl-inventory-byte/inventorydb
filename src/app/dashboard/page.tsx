@@ -244,7 +244,9 @@ const TYPE_LABELS: Record<string, string> = { sd_card: "SD cards", rig: "Rigs", 
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
+  searchParams:
+    | Record<string, string | string[] | undefined>
+    | Promise<Record<string, string | string[] | undefined>>;
 }) {
   const user = await requireRole();
   const sp = await searchParams;
@@ -797,6 +799,10 @@ export default async function DashboardPage({
   // SD-only "starting count" baseline with the live SD damaged count — neither of which has anything
   // to do with mobiles. Mobiles just get their own live count of item_type "mobile" + status "damaged".
   const mobileBrokenValue = items.filter((i) => i.item_type === "mobile" && i.status === "damaged").length;
+  // Retired mobiles: a real live count, not the SD card tab's hardcoded 14 (11 unique + 3 duplicate —
+  // that number, and its Unique/Duplicate breakdown, are specific to the SD card sheet's own manual
+  // count and were otherwise being shown unchanged on the Mobile tab even with zero mobiles retired).
+  const mobileRetiredValue = items.filter((i) => i.item_type === "mobile" && i.status === "retired").length;
   const mobileKpis: Kpi[] = [
     {
       label: "Total mobiles",
@@ -810,16 +816,28 @@ export default async function DashboardPage({
       .filter((k) => k.label !== "With rig team" && k.label !== "Internal")
       .map((k) => {
         const isBroken = k.label === "Broken";
+        const isRetired = k.label === "Retired";
+        // Same "?" vs "&" issue fixed on the Power Bank tab: k.href doesn't always already have a "?"
+        // (e.g. "/retired", "/transit" don't; "/lost?status=lost" and inventory() links do), so blindly
+        // appending "&type=mobile" could produce an invalid, 404-ing URL like "/retired&type=mobile".
+        const withType = (href: string) => `${href}${href.includes("?") ? "&" : "?"}type=mobile`;
         return {
           ...k,
-          href: `${k.href}&type=mobile`,
-          value: isBroken ? mobileBrokenValue : k.value,
-          hint: isBroken ? share(mobileBrokenValue) : k.hint.replace("of all items", "of all mobiles"),
-          cities: k.cities?.map((c) => ({ ...c, href: `${c.href}&type=mobile` })),
+          href: withType(k.href),
+          value: isBroken ? mobileBrokenValue : isRetired ? mobileRetiredValue : k.value,
+          hint: isBroken
+            ? share(mobileBrokenValue)
+            : isRetired
+              ? share(mobileRetiredValue)
+              : k.hint.replace("of all items", "of all mobiles"),
+          cities: k.cities?.map((c) => ({ ...c, href: withType(c.href) })),
           storage: undefined, // SD card capacity breakdown doesn't apply to mobiles
           // The SD-only "starting count" override box doesn't apply to mobiles either.
           storageOverrideKey: isBroken ? undefined : k.storageOverrideKey,
           storageOverrideValue: isBroken ? undefined : k.storageOverrideValue,
+          // The SD card "Unique / Duplicate" retired breakdown is specific to the SD card sheet's own
+          // tracking — mobiles have no equivalent, so this tile just shows the live count, no breakdown.
+          dupes: isRetired ? undefined : k.dupes,
         };
       }),
   ];
@@ -841,12 +859,18 @@ export default async function DashboardPage({
       .filter((k) => k.label !== "With rig team" && k.label !== "Internal" && k.label !== "Broken")
       .map((k) => {
         const isRetired = k.label === "Retired";
+        // k.href may or may not already have a "?" (e.g. "/retired" and "/transit" don't; "/lost?status=lost"
+        // and inventory() links do) — blindly appending "&type=power_bank" to one with no "?" yet produced
+        // an invalid URL like "/retired&type=power_bank" (the whole thing read as one literal path, which
+        // 404s), instead of the intended "/retired?type=power_bank". This is why clicking "Retired" from
+        // the Power Bank tab didn't open the retired-items page.
+        const withType = (href: string) => `${href}${href.includes("?") ? "&" : "?"}type=power_bank`;
         return {
           ...k,
-          href: `${k.href}&type=power_bank`,
+          href: withType(k.href),
           value: isRetired ? powerBankRetiredValue : k.value,
           hint: isRetired ? share(powerBankRetiredValue) : k.hint.replace("of all items", "of all power banks"),
-          cities: k.cities?.map((c) => ({ ...c, href: `${c.href}&type=power_bank` })),
+          cities: k.cities?.map((c) => ({ ...c, href: withType(c.href) })),
           storage: undefined, // SD card capacity breakdown doesn't apply to power banks
           storageOverrideKey: k.storageOverrideKey,
           storageOverrideValue: k.storageOverrideValue,
