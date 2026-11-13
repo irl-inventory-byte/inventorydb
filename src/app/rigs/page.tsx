@@ -27,7 +27,11 @@ const FILTERS: [string, string][] = [
  * RIG CHECKS: every rig with its latest QC result and hardware update.
  * Admin, IM, Hardware team and QC team. Open a rig to add an update or QC result.
  */
-export default async function RigsPage({ searchParams }: PageProps<"/">) {
+export default async function RigsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await requireRole("admin", "im", "hardware", "qc");
   const sp = await searchParams;
   const qcFilter = one(sp.qc);
@@ -36,6 +40,11 @@ export default async function RigsPage({ searchParams }: PageProps<"/">) {
   // ?state=…: one rig state from the dashboard tiles (In stock, QC pending, RTD, …).
   const stateFilter = (RIG_STATES as readonly string[]).includes(one(sp.state)) ? (one(sp.state) as RigState) : "";
   const q = one(sp.q).trim().toLowerCase();
+  // ?from=/?to=: filter by the rig's Last QC date (YYYY-MM-DD, inclusive both ends). A rig with no QC
+  // yet is excluded once either bound is set — there's no QC date to compare, so "no match" is correct,
+  // not a bug.
+  const fromDate = one(sp.from).trim();
+  const toDate = one(sp.to).trim();
 
   const store = storeFor(user.role, "rig");
   const [rigs, hubs, people, qcChecks, hardware] = await Promise.all([
@@ -70,13 +79,30 @@ export default async function RigsPage({ searchParams }: PageProps<"/">) {
         !q ||
         [r.item_id, r.prism_no, r.brand, r.model].some((v) => (v ?? "").toLowerCase().includes(q))
     )
+    .filter((r) => {
+      if (!fromDate && !toDate) return true;
+      const qcAt = latestQc.get(r.item_id)?.recorded_at;
+      if (!qcAt) return false;
+      const day = qcAt.slice(0, 10); // recorded_at is an ISO timestamp; compare by its date part
+      return (!fromDate || day >= fromDate) && (!toDate || day <= toDate);
+    })
     .sort((a, b) => a.item_id.localeCompare(b.item_id));
 
   const link = (qc: string) => {
-    const params = new URLSearchParams({ ...(qc && { qc }), ...(q && { q }) });
+    const params = new URLSearchParams({
+      ...(qc && { qc }),
+      ...(q && { q }),
+      ...(fromDate && { from: fromDate }),
+      ...(toDate && { to: toDate }),
+    });
     const s = params.toString();
     return s ? `/rigs?${s}` : "/rigs";
   };
+  const clearDateHref = (() => {
+    const params = new URLSearchParams({ ...(qcFilter && { qc: qcFilter }), ...(q && { q }) });
+    const s = params.toString();
+    return s ? `/rigs?${s}` : "/rigs";
+  })();
 
   return (
     <main className={styles.pageWide}>
@@ -97,6 +123,15 @@ export default async function RigsPage({ searchParams }: PageProps<"/">) {
           <>
             {" "}
             <strong>Showing only rigs ready for the field.</strong> <Link href="/rigs">Show all</Link>
+          </>
+        )}
+        {(fromDate || toDate) && (
+          <>
+            {" "}
+            <strong>
+              Last QC {fromDate && toDate ? `between ${fromDate} and ${toDate}` : fromDate ? `from ${fromDate}` : `up to ${toDate}`}.
+            </strong>{" "}
+            <Link href={clearDateHref}>Clear date filter</Link>
           </>
         )}
       </p>
@@ -125,9 +160,17 @@ export default async function RigsPage({ searchParams }: PageProps<"/">) {
         ))}
       </nav>
 
-      <form className={styles.row} method="get">
+      <form className={styles.row} method="get" style={{ flexWrap: "wrap", alignItems: "center", gap: 8 }}>
         {qcFilter && <input type="hidden" name="qc" value={qcFilter} />}
         <input name="q" defaultValue={one(sp.q)} placeholder="Search rig ID, prism no., brand or model" aria-label="Search rigs" />
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem" }}>
+          Last QC from
+          <input type="date" name="from" defaultValue={fromDate} aria-label="Last QC from date" />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem" }}>
+          to
+          <input type="date" name="to" defaultValue={toDate} aria-label="Last QC to date" />
+        </label>
         <button type="submit">Search</button>
       </form>
 

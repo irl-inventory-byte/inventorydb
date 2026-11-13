@@ -90,12 +90,14 @@ export function PowerBankSummary({ d, hubParam, items, attentionHref, brokenCoun
     ...(retiredCount > 0
       ? [
           {
+            // Matches Broken's red palette instead of a mismatched grey — Broken and Retired are one
+            // pair (both "unusable"), same change made on the SD card dashboard tab.
             label: "Retired power banks",
             count: retiredCount,
             pct: unusableShare(retiredCount),
-            bg: "rgba(100, 116, 139, 0.18)",
-            border: "#64748b",
-            text: "var(--text-primary)",
+            bg: "#fee2e2",
+            border: "#dc2626",
+            text: "#7f1d1d",
           },
         ]
       : []),

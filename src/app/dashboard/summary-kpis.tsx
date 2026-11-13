@@ -314,12 +314,15 @@ export async function SummaryKpis({
       text: "#0c4a6e",
     },
     {
+      // Was a mismatched grey (the same palette "Retired cards" uses, further below) instead of New
+      // cards' own blue — New and Old are one pair (like 512/256 and Black/Green above), so they now
+      // share one palette too.
       label: "Old cards",
       count: fleet.oldCards,
       pct: share(fleet.oldCards),
-      bg: "rgba(100, 116, 139, 0.18)",
-      border: "#64748b",
-      text: "var(--text-primary)",
+      bg: "#e0f2fe",
+      border: "#0284c7",
+      text: "#0c4a6e",
     },
   ];
 
@@ -348,27 +351,22 @@ export async function SummaryKpis({
     ...(retiredCount > 0
       ? [
           {
+            // Broken and Retired are one pair (both "unusable" items) — give Retired the same red
+            // palette as Broken instead of the mismatched grey it had (which also happened to be
+            // identical to Old cards' palette above, making unrelated tiles look paired instead).
             label: "Retired cards",
             count: retiredCount,
             pct: unusableShare(retiredCount),
-            bg: "rgba(100, 116, 139, 0.18)",
-            border: "#64748b",
-            text: "var(--text-primary)",
+            bg: "#fee2e2",
+            border: "#dc2626",
+            text: "#7f1d1d",
           },
         ]
       : []),
-    ...(fleet.rigs > 0
-      ? [
-          {
-            label: "Rigs",
-            count: fleet.rigs,
-            pct: "",
-            bg: "#fef3c7",
-            border: "#d97706",
-            text: "#78350f",
-          },
-        ]
-      : []),
+    // A "Rigs" breakdown chip used to render here on the Rig tab — removed per request: it just
+    // repeated the same number already shown on the Fleet/"Rigs" card right above it (both read
+    // fleet.rigs), leaving a redundant box with empty space under it whenever nothing else qualified
+    // (no broken/retired rigs in view).
   ];
 
   const cards: SummaryCard[] = [
