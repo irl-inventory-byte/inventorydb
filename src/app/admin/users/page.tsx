@@ -18,7 +18,17 @@ const ERRORS: Record<string, string> = {
     "A secondary role of IM, QC, Hardware, Rig, FO or Internal needs a linked person (handovers are recorded under that person). Choose the linked person first.",
 };
 
-export default async function UsersPage({ searchParams }: PageProps<"/admin/users">) {
+export default async function UsersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    error?: string | string[];
+    q?: string | string[];
+    frole?: string | string[];
+    fstatus?: string | string[];
+    saved?: string | string[];
+  }>;
+}) {
   const me = await requireRole("admin");
   const { error, q, frole, fstatus, saved } = await searchParams;
   const text = typeof q === "string" ? q.trim().toLowerCase() : "";
@@ -61,6 +71,7 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
       <option value="hardware">Hardware team</option>
       <option value="qc">QC team</option>
       <option value="internal">Internal team</option>
+      <option value="ic">IC</option>
       <option value="admin">Admin</option>
     </select>
   );
@@ -73,6 +84,7 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
       <option value="hardware">Secondary: Hardware team</option>
       <option value="qc">Secondary: QC team</option>
       <option value="internal">Secondary: Internal team</option>
+      <option value="ic">Secondary: IC</option>
       <option value="admin">Secondary: Admin</option>
     </select>
   );
@@ -119,7 +131,7 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
         </p>
       )}
 
-      <form action={addUser} className={styles.row} data-progress="1">
+      <form action={addUser} className={styles.row}>
         <input type="hidden" name="back" value={back} />
         <input name="email" type="email" placeholder="Google email" required />
         {roleSelect()}
@@ -139,6 +151,7 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
           <option value="hardware">Hardware team</option>
           <option value="qc">QC team</option>
           <option value="internal">Internal team</option>
+          <option value="ic">IC</option>
           <option value="admin">Admin</option>
           <option value="two">Has a secondary role</option>
         </select>

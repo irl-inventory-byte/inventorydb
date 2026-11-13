@@ -46,6 +46,7 @@ export default function UserRow({
         <option value="hardware">Hardware team</option>
         <option value="qc">QC team</option>
         <option value="internal">Internal team</option>
+        <option value="ic">IC</option>
         <option value="admin">Admin</option>
       </select>
       <select
@@ -62,6 +63,7 @@ export default function UserRow({
         <option value="hardware">Secondary: Hardware team</option>
         <option value="qc">Secondary: QC team</option>
         <option value="internal">Secondary: Internal team</option>
+        <option value="ic">Secondary: IC</option>
         {!isMe && <option value="admin">Secondary: Admin</option>}
       </select>
       <select name="person" defaultValue={user.person_id} onChange={submit}>

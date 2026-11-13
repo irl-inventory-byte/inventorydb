@@ -24,7 +24,8 @@ import { peopleActingAs } from "@/lib/roles";
 import { istTimestamp } from "@/lib/time";
 
 // The site's own address, used for the QR code link inside the archived PDF.
-async function siteUrl() {
+// Exported so other handover-style flows (e.g. /ic/transfer) can archive + email a receipt the same way.
+export async function siteUrl() {
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
@@ -33,8 +34,9 @@ async function siteUrl() {
 
 const go = (path: string, params: Record<string, string>) => `${path}?${new URLSearchParams(params)}`;
 
-// Shared by both flows: collect the scanned cards, plan, save all-or-nothing, redirect with the result.
-async function run(
+// Shared by both flows (and by /ic/transfer): collect the scanned cards, plan, save all-or-nothing,
+// redirect with the result.
+export async function run(
   formData: FormData,
   path: string,
   build: (targets: Item[], ctx: HandoverContext) => HandoverPlan | Promise<HandoverPlan>,

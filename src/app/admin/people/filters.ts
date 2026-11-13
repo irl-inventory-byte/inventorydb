@@ -9,6 +9,7 @@ export const PERSON_ROLES = [
   ["hardware", "Hardware team"],
   ["qc", "QC team"],
   ["internal", "Internal"],
+  ["ic", "IC"],
 ] as const;
 export type PersonRole = (typeof PERSON_ROLES)[number][0];
 
