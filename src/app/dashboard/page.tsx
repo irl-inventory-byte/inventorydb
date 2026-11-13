@@ -241,13 +241,7 @@ const HOURLY_KEYS = ["htype", "hperson", "hcity", "hrole", "hfrom", "hto"];
 const MOVE_KEYS = ["mtype", "mperson", "mcity", "mrole", "mfrom", "mto"];
 const TYPE_LABELS: Record<string, string> = { sd_card: "SD cards", rig: "Rigs", mobile: "Mobiles", power_bank: "Power Banks" };
 
-export default async function DashboardPage({
-  searchParams,
-}: {
-  searchParams:
-    | Record<string, string | string[] | undefined>
-    | Promise<Record<string, string | string[] | undefined>>;
-}) {
+export default async function DashboardPage({ searchParams }: { searchParams: Record<string, string | string[] | undefined> | Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requireRole();
   const sp = await searchParams;
   // Filter values: a multi-select sends ?x=a&x=b, links carry "a,b"; both are read as a list.
