@@ -6,7 +6,7 @@ import { formatIst } from "@/lib/time";
 import styles from "../admin/admin.module.css";
 import BackLink from "../BackLink";
 
-const TYPE_NAME: Record<string, string> = { sd_card: "SD card", rig: "Rig", mobile: "Mobile" };
+const TYPE_NAME: Record<string, string> = { sd_card: "SD card", rig: "Rig", mobile: "Mobile", power_bank: "Power Bank" };
 
 /**
  * IN TRANSIT: the detail view behind the dashboard's "In transit" tile (status traveling or pending).

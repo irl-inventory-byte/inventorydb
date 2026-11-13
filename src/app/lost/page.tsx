@@ -10,7 +10,7 @@ import { addLostNote } from "./actions";
 import ReportLostScan from "./ReportLostScan";
 import BackLink from "../BackLink";
 
-const TYPE_NAME: Record<string, string> = { sd_card: "SD card", rig: "Rig", mobile: "Mobile" };
+const TYPE_NAME: Record<string, string> = { sd_card: "SD card", rig: "Rig", mobile: "Mobile", power_bank: "Power Bank" };
 
 const money = (v: string) => (v ? `₹${Number(v).toLocaleString("en-IN")}` : "—");
 
@@ -19,7 +19,11 @@ const money = (v: string) => (v ? `₹${Number(v).toLocaleString("en-IN")}` : "�
  * tile. Date, who last held the item, who recorded it, city/hub, item, amount, and a free-text
  * investigation-notes thread per item (Admin/IM can add to it). Filterable by item type.
  */
-export default async function LostItemsPage({ searchParams }: PageProps<"/lost">) {
+export default async function LostItemsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await requireRole(...VIEW_ROLES);
   const canAddNote = user.role === "admin" || user.role === "im";
   const sp = await searchParams;
