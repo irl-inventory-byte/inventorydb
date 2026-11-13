@@ -35,10 +35,8 @@ export default function CorrectionPanel({
         />
       )}
       <div className={styles.row}>
-        <select name="status" defaultValue="" required>
-          <option value="" disabled>
-            New status
-          </option>
+        <select name="status" defaultValue="">
+          <option value="">Keep current status (age/hub-only changes)</option>
           {STATUSES.map((s) => (
             <option key={s} value={s}>
               {STATUS_LABELS[s]}
@@ -73,8 +71,9 @@ export default function CorrectionPanel({
       </div>
       <p className={styles.muted} style={{ marginTop: -8 }}>
         Age applies to SD cards only and is most useful on items added before New/Old was tracked (they
-        show as blank on the dashboard until set here) — a valid status above is still required even when
-        only the age is changing.
+        show as blank on the dashboard until set here). Leave status on "Keep current status" to tag age
+        on items that are in different statuses (in stock, with an FO, broken, retired, …) in one batch
+        without changing where they are or who holds them.
       </p>
       <div className={styles.row}>
         <input name="note" placeholder="Note (required), e.g. found with FO in Kadapa" required />
