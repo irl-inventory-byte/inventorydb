@@ -23,7 +23,10 @@ import { getStore } from "./store";
  * An IM can send a rig to an FO or IFO only when its latest QC result is Pass.
  */
 
-export const ITEM_TYPES = ["sd_card", "rig", "mobile"] as const;
+// NOTE: "power_bank" added back here because other pages (dashboard/page.tsx, inventory/page.tsx) in
+// your deployed app already reference it as an ItemType — this repo clone never had the feature, so it
+// was dropped when access.ts was fully replaced earlier. See the POWER_BANK_ADD_ROLES note below.
+export const ITEM_TYPES = ["sd_card", "rig", "mobile", "power_bank"] as const;
 export type ItemType = (typeof ITEM_TYPES)[number];
 
 /** SD cards and rigs (e.g. for views that are only about them). */
@@ -37,16 +40,19 @@ export const MOBILE_ADD_ROLES: Role[] = ["admin", "im"];
  *  if it's wrong (e.g. if rig team should also be able to add power banks). */
 export const POWER_BANK_ADD_ROLES: Role[] = ["admin", "im"];
 
+// NOTE: power_bank added to admin/im/fo (and internal/ic, to match mobile) as a best-effort guess so the
+// type isn't invisible anywhere it used to appear — this repo clone never had the feature, so there's no
+// ground truth here. If power banks should NOT show for some of these roles, trim this list to match.
 const TYPES_FOR: Record<Role, readonly ItemType[]> = {
-  admin: ["sd_card", "rig", "mobile"],
-  im: ["sd_card", "rig", "mobile"],
-  fo: ["sd_card", "rig", "mobile"],
+  admin: ["sd_card", "rig", "mobile", "power_bank"],
+  im: ["sd_card", "rig", "mobile", "power_bank"],
+  fo: ["sd_card", "rig", "mobile", "power_bank"],
   rig: ["sd_card"],
   ifo: ["sd_card", "mobile"],
   hardware: ["rig"],
   qc: ["rig"],
-  internal: ["sd_card", "rig", "mobile"], // internal team: works like an IM for send / receive, mobiles included
-  ic: ["sd_card", "rig", "mobile"], // IC: sends only to an FO, from Bangalore stock (see /ic/transfer)
+  internal: ["sd_card", "rig", "mobile", "power_bank"], // internal team: works like an IM for send / receive, mobiles included
+  ic: ["sd_card", "rig", "mobile", "power_bank"], // IC: sends only to an FO, from Bangalore stock (see /ic/transfer)
 };
 
 /** Every role that can sign in and look around (dashboard, inventory, receipts). */

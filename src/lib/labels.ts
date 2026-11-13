@@ -33,6 +33,7 @@ export const ITEM_TYPE_LABELS: Record<string, string> = {
   sd_card: "SD card",
   rig: "Rig",
   mobile: "Mobile",
+  power_bank: "Power bank",
 };
 
 export const QC_LABELS: Record<string, string> = {
