@@ -117,6 +117,7 @@ export async function applyCorrection(formData: FormData) {
   ];
 
   const teamRaw = String(formData.get("team") ?? "");
+  const ageRaw = String(formData.get("age") ?? "");
   const plan = planCorrection(
     targets,
     {
@@ -126,7 +127,10 @@ export async function applyCorrection(formData: FormData) {
       homeHub: String(formData.get("homeHub") ?? ""),
       note: String(formData.get("note") ?? ""),
       team: teamRaw === "rig" || teamRaw === "productivity" ? teamRaw : "",
-    },
+      ...(ageRaw === "new" || ageRaw === "old"
+        ? { age: ageRaw }
+        : {}),
+    } as any,
     {
       hubs,
       people,

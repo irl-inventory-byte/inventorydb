@@ -27,15 +27,17 @@ export default function SendToFields({
   allowInternal = true,
   bangalore,
   rigTeam,
+  productivityTeam,
   alwaysBangalore = false,
 }: {
   groups: PersonGroup[];
   hubs: { id: string; name: string }[];
   allowInternal?: boolean;
   bangalore?: { id: string; name: string }; // QC and hardware teams always work here
-  rigTeam?: { id: string; name: string }; // the rig team's own location (shared by the Rig team and the
-  // Productivity team — both sub-teams work out of this one hub; which team an item belongs to is
-  // chosen on the form below, each time it's sent, since the same person can send to either team)
+  rigTeam?: { id: string; name: string }; // the Rig team's own location
+  productivityTeam?: { id: string; name: string }; // the Productivity team's own, separate location —
+  // the two sub-teams used to share one hub; whichever sub-team is chosen below now auto-fills the
+  // matching hub instead of always defaulting to the Rig team's.
   alwaysBangalore?: boolean; // the sender is the QC or hardware team: every send stays at Bangalore
 }) {
   const [role, setRole] = useState("");
@@ -43,7 +45,14 @@ export default function SendToFields({
   const [internalName, setInternalName] = useState("");
   const [hub, setHub] = useState("");
   const [city, setCity] = useState("");
-  const [subTeam, setSubTeam] = useState("rig");
+  // No default: "Rig team" used to be pre-selected here, so a sender who didn't notice this dropdown
+  // (easy to miss — it only appears for the "Rig" category) silently recorded every send as the Rig
+  // team even when it was actually going to the Productivity team. That default is also what the
+  // dashboard's with_rig count falls back to (`i.sub_team || "rig"`), so the two defaults compounded:
+  // nothing ever landed on "Productivity team" unless someone actively changed this dropdown. Starting
+  // blank and requiring a real choice (see the empty disabled option below) stops new sends from being
+  // silently misattributed; it does not correct items already recorded under the old default.
+  const [subTeam, setSubTeam] = useState("");
   const isInternal = role === INTERNAL;
   const isRig = role === "rig";
   const isFo = role === "fo";
@@ -70,8 +79,8 @@ export default function SendToFields({
                 setPerson(""); // a person from the old category must not stay selected
                 setInternalName("");
                 setCity("");
-                // Rig team: default the location to their own hub, but it stays a normal, changeable dropdown.
-                if (newRole === "rig" && rigTeam) setHub(rigTeam.id);
+                setSubTeam(""); // force an explicit rig/productivity choice again for the new category
+                setHub(""); // the hub now depends on that choice (see the sub_team select below)
               }}
             >
               <option value="">Select a category</option>
@@ -123,13 +132,23 @@ export default function SendToFields({
                 name="sub_team"
                 value={subTeam}
                 required
-                onChange={(e) => setSubTeam(e.target.value)}
+                onChange={(e) => {
+                  const newSubTeam = e.target.value;
+                  setSubTeam(newSubTeam);
+                  // Each sub-team now has its own hub — fill the location with the right one, but it
+                  // stays a normal, changeable dropdown below in case that's wrong for this send.
+                  if (newSubTeam === "rig" && rigTeam) setHub(rigTeam.id);
+                  else if (newSubTeam === "productivity" && productivityTeam) setHub(productivityTeam.id);
+                }}
               >
+                <option value="" disabled>
+                  Choose rig or productivity team
+                </option>
                 <option value="rig">Rig team</option>
                 <option value="productivity">Productivity team</option>
               </select>
               <span className={styles.hint} style={{ alignSelf: "center", margin: 0 }}>
-                Same role, same hub — choose which team this is actually going to today.
+                Different hubs for each team now — choose which team this is actually going to today.
               </span>
             </div>
           )}
@@ -173,9 +192,14 @@ export default function SendToFields({
           Send to (location)
         </label>
         <div className={styles.control}>
-          {role === "rig" && !rigTeam ? (
+          {isRig && subTeam === "rig" && !rigTeam ? (
             <p className={styles.error}>
               No &quot;Rig team&quot; hub found. Add one in Manage hubs (named &quot;Rig team&quot;) before sending to the rig team.
+            </p>
+          ) : isRig && subTeam === "productivity" && !productivityTeam ? (
+            <p className={styles.error}>
+              No &quot;Productivity team&quot; hub found. Add one in Manage hubs (named &quot;Productivity team&quot;) before sending to
+              the productivity team.
             </p>
           ) : bangalore && (alwaysBangalore || role === "qc" || role === "hardware") ? (
             <>

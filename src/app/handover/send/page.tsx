@@ -1,4 +1,10 @@
 import Link from "next/link";
+// Import or define PageProps for route "/handover/send"
+import type { ParsedUrlQueryInput } from "querystring";
+
+type PageProps<Path extends string = string> = {
+  searchParams: Record<string, string | string[] | undefined>;
+};
 import { actorOptions, allowedActors, defaultActor } from "@/lib/actors";
 import { requireRole } from "@/lib/authz";
 import { STATUS_LABELS, one } from "@/lib/labels";
@@ -8,7 +14,7 @@ import styles from "../form.module.css";
 import { sendCards } from "../actions";
 import SendScanFields from "./SendScanFields";
 import { rigCondition } from "@/lib/rig-state";
-import { rigHomeHub, rigTeamHub } from "@/lib/rig-hub";
+import { productivityTeamHub, rigHomeHub, rigTeamHub } from "@/lib/rig-hub";
 import HardwareSendFields from "./HardwareSendFields";
 import QcSendFields from "./QcSendFields";
 import SendToFields from "./SendToFields";
@@ -78,12 +84,17 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
   // QC and hardware teams always work at Bangalore.
   const bangaloreHub = rigHomeHub(hubs);
   const bangalore = bangaloreHub ? { id: bangaloreHub.hub_id, name: bangaloreHub.name } : undefined;
-  // The rig team's own location — shared by both the Rig team and the Productivity team (same role,
-  // same hub; which sub-team someone is on is set on their Person record, see admin/people). undefined
-  // (not Bangalore) if that hub hasn't been added yet — SendToFields then shows an error instead of
-  // silently using Bangalore.
+  // The Rig team's own location, and — now that the two are tracked as separate physical hubs —
+  // the Productivity team's own location too. Each is undefined (not Bangalore) if that hub hasn't
+  // been added yet (Manage hubs → + Add a hub, named "Rig team" / "Productivity team"); SendToFields
+  // shows an error instead of silently defaulting to the wrong place when the one that's needed is
+  // missing.
   const rigTeamHubRow = rigTeamHub(hubs);
   const rigTeam = rigTeamHubRow ? { id: rigTeamHubRow.hub_id, name: rigTeamHubRow.name } : undefined;
+  const productivityTeamHubRow = productivityTeamHub(hubs);
+  const productivityTeam = productivityTeamHubRow
+    ? { id: productivityTeamHubRow.hub_id, name: productivityTeamHubRow.name }
+    : undefined;
 
   // Start at the IM's own hub. Someone with no hub (an admin) starts where most cards are in stock.
   const stockByHub = new Map<string, number>();
@@ -177,6 +188,7 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
             allowInternal={!held}
             bangalore={bangalore}
             rigTeam={rigTeam}
+            productivityTeam={productivityTeam}
             alwaysBangalore={false}
           />
         )}

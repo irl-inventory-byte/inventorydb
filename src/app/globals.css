@@ -1,13 +1,18 @@
+/*
+ * THEME. The app's light/dark state is always decided by JS (see layout.tsx's inline script), which
+ * sets data-theme="light" or data-theme="dark" on <html> before first paint — from the person's saved
+ * choice (ThemeToggle, localStorage key "theme"), or their OS preference the first time they visit.
+ * Every theme-aware rule below keys off that attribute alone, not @media (prefers-color-scheme), so an
+ * explicit in-app choice always wins even when it disagrees with the OS.
+ */
 :root {
   --background: #ffffff;
   --foreground: #171717;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root[data-theme="dark"] {
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
 
 html {
@@ -42,10 +47,11 @@ a {
   text-decoration: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
+html[data-theme="dark"] {
+  color-scheme: dark;
+}
+html[data-theme="light"] {
+  color-scheme: light;
 }
 
 /* Text colours that follow the theme. CSS modules use these instead of fixed greys / reds / greens. */
@@ -58,17 +64,16 @@ a {
   --btn-bg: #222222;
   --btn-text: #ffffff;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --muted-text: #a3a3a3;
-    --error-text: #f87171;
-    --ok-text: #4ade80;
-    --warn-text: #fbbf24;
-    --soft-bg: #1f1f1f;
-    --btn-bg: #e5e5e5;
-    --btn-text: #111111;
-  }
-
+:root[data-theme="dark"] {
+  --muted-text: #a3a3a3;
+  --error-text: #f87171;
+  --ok-text: #4ade80;
+  --warn-text: #fbbf24;
+  --soft-bg: #1f1f1f;
+  --btn-bg: #e5e5e5;
+  --btn-text: #111111;
+}
+:root[data-theme="dark"] {
   /*
    * DARK MODE SAFETY NET. Some screens set colours directly on an element (style="color:#0f172a").
    * In dark mode these exact colours are swapped: dark text → light, red / green / amber / blue text → a

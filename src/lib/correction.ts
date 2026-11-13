@@ -20,6 +20,10 @@ export interface CorrectionInput {
   // "" keeps the card's current sub_team (normal corrections don't touch it). Only "rig" and
   // "productivity" are meaningful; see schema.ts's TABS.items and dashboard/page.tsx's "With rig team".
   team?: "rig" | "productivity" | "";
+  // Sets (or corrects) the card's New/Old attribute after the fact — most of the fleet was added
+  // before this field existed, so it has no age yet and the dashboard's New/Old tile can't count it
+  // until an admin sets it here. "" keeps the card's current age (normal corrections don't touch it).
+  age?: "new" | "old" | "";
 }
 
 export interface CorrectionContext {
@@ -84,18 +88,46 @@ export function planCorrection(
   const batch = ctx.newId("b");
   const base = { batch_id: batch, occurred_at: ctx.now, recorded_at: ctx.now, recorded_by: ctx.by, note };
 
+  // Reads/writes the "age" ("new"/"old") field inside the item's own attributes JSON blob, same shape
+  // Add item writes (see inventory/actions.ts). Invalid/missing JSON is treated as an empty object,
+  // same tolerance as the dashboard's own reader (summary-kpis.tsx's readAttributes).
+  const readAge = (raw: string): string => {
+    try {
+      const parsed: unknown = JSON.parse(raw || "{}");
+      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const v = (parsed as Record<string, unknown>).age;
+        return typeof v === "string" ? v.trim().toLowerCase() : "";
+      }
+    } catch {
+      // fall through
+    }
+    return "";
+  };
+  const withAge = (raw: string, age: "new" | "old"): string => {
+    let obj: Record<string, unknown> = {};
+    try {
+      const parsed: unknown = JSON.parse(raw || "{}");
+      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) obj = parsed as Record<string, unknown>;
+    } catch {
+      // raw wasn't valid JSON — start fresh rather than lose the correction
+    }
+    return JSON.stringify({ ...obj, age });
+  };
+
   for (const item of targets) {
     const newHolder = needRole ? holder!.person_id : "";
     const newHub =
       input.hub || (HUB_FROM_HOLDER.has(status) && holder ? holder.hub : item.current_hub);
     const newHome = input.homeHub || item.home_hub;
     const newTeam = input.team === "rig" || input.team === "productivity" ? input.team : item.sub_team;
+    const ageChanged = (input.age === "new" || input.age === "old") && input.age !== readAge(item.attributes);
+    const newAttributes = ageChanged ? withAge(item.attributes, input.age as "new" | "old") : item.attributes;
 
     const stateChanged =
       status !== item.status || newHub !== item.current_hub || newHolder !== item.current_holder;
     const homeChanged = newHome !== item.home_hub;
     const teamChanged = newTeam !== item.sub_team;
-    if (!stateChanged && !homeChanged && !teamChanged) {
+    if (!stateChanged && !homeChanged && !teamChanged && !ageChanged) {
       plan.unchanged.push(item.item_id);
       continue;
     }
@@ -130,8 +162,9 @@ export function planCorrection(
         hub: newHub,
         status_after: status,
       });
-    } else if (teamChanged) {
-      // Only the rig/productivity team pool changed (e.g. sorting in-stock cards) — nothing else about
+    } else if (teamChanged || ageChanged) {
+      // Only the rig/productivity team pool and/or the New/Old age changed (e.g. sorting in-stock
+      // cards, or setting the age on an item added before this field existed) — nothing else about
       // the item moved, but there must still be an event to log the change and hang last_event_id off.
       events.push({
         ...base,
@@ -155,6 +188,7 @@ export function planCorrection(
       current_holder: newHolder,
       home_hub: newHome,
       sub_team: newTeam,
+      attributes: newAttributes,
       last_event_id: events[events.length - 1].event_id,
       updated_at: ctx.now,
     });

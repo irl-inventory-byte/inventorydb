@@ -65,7 +65,17 @@ export default function CorrectionPanel({
             </option>
           ))}
         </select>
+        <select name="age" defaultValue="">
+          <option value="">Age (New/Old): keep</option>
+          <option value="new">New</option>
+          <option value="old">Old</option>
+        </select>
       </div>
+      <p className={styles.muted} style={{ marginTop: -8 }}>
+        Age applies to SD cards only and is most useful on items added before New/Old was tracked (they
+        show as blank on the dashboard until set here) — a valid status above is still required even when
+        only the age is changing.
+      </p>
       <div className={styles.row}>
         <input name="note" placeholder="Note (required), e.g. found with FO in Kadapa" required />
         <button type="submit">Apply correction</button>
