@@ -17,6 +17,7 @@ const ROLE_LABELS = {
   hardware: "Hardware team",
   qc: "QC team",
   internal: "Internal",
+  ic: "IC",
 } as const;
 
 type PersonRole = keyof typeof ROLE_LABELS;
@@ -51,7 +52,9 @@ function isPersonRole(value: string): value is PersonRole {
 
 export default async function PeoplePage({
   searchParams,
-}: PageProps<"/admin/people">) {
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   await requireRole("admin", "im");
 
   const sp = await searchParams;
@@ -320,7 +323,7 @@ export default async function PeoplePage({
       {/* Add person remains independent of the filter form. */}
       <h2>Add person</h2>
 
-      <form action={addPerson} className={styles.row} data-progress="1">
+      <form action={addPerson} className={styles.row}>
         <input
           name="name"
           placeholder="Full name"

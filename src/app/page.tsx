@@ -1,6 +1,6 @@
 import Link from "next/link";
 import RoleSwitch from "./RoleSwitch";
-import { INVENTORY_ROLES, MY_DASHBOARD_ROLES, RECEIVE_ROLES, SEND_ROLES, VIEW_ROLES } from "@/lib/access";
+import { IC_TRANSFER_ROLES, INVENTORY_ROLES, MY_DASHBOARD_ROLES, RECEIVE_ROLES, SEND_ROLES, VIEW_ROLES } from "@/lib/access";
 import { signOut } from "@/auth";
 import { requireRole } from "@/lib/authz";
 import { ROLE_LABELS, one } from "@/lib/labels";
@@ -78,6 +78,13 @@ const WORK: Tile[] = [
     desc: "Hand items to an IM, IFO, FO, the rig team, QC or hardware team.",
     icon: "send",
     roles: SEND_ROLES,
+  },
+  {
+    href: "/ic/transfer",
+    title: "Transfer to FO",
+    desc: "Send items from Bangalore stock to a field officer. Emails the receipt to them automatically.",
+    icon: "send",
+    roles: IC_TRANSFER_ROLES,
   },
   {
     href: "/handover/receive",
@@ -183,7 +190,9 @@ function Section({
 
 export default async function Home({
   searchParams,
-}: PageProps<"/">) {
+}: {
+  searchParams: Promise<{ denied?: string | string[] }>;
+}) {
   const user = await requireRole();
   const sp = await searchParams;
 

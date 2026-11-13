@@ -34,6 +34,7 @@ const ROLE_ALIASES: Record<string, Role> = {
   "qc team": "qc",
   internal: "internal",
   "internal team": "internal",
+  ic: "ic",
 };
 export const normalizeRole = (raw: string | undefined): Role | undefined =>
   ROLE_ALIASES[String(raw ?? "").trim().toLowerCase().replace(/\s+/g, " ")];

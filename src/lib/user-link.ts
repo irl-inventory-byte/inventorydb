@@ -4,10 +4,10 @@ import type { Person } from "./schema";
 const norm = (v: string | undefined) => String(v ?? "").trim().toLowerCase();
 const isActive = (p: Person) => norm(p.active) !== "false";
 
-export type LoginRole = "admin" | "im" | "rig" | "fo" | "hardware" | "qc" | "internal";
+export type LoginRole = "admin" | "im" | "rig" | "fo" | "hardware" | "qc" | "internal" | "ic";
 
 // The person role a login role must be linked to. An admin login may be linked to anyone, or no one.
-const NEEDS: Partial<Record<LoginRole, Person["role"]>> = { im: "im", rig: "rig", internal: "internal" };
+const NEEDS: Partial<Record<LoginRole, Person["role"]>> = { im: "im", rig: "rig", internal: "internal", ic: "ic" };
 // Logins that MAY be linked to a person of the same role, but don't have to be.
 const MAY_LINK: Partial<Record<LoginRole, Person["role"]>> = { fo: "fo", hardware: "hardware", qc: "qc" };
 
@@ -54,6 +54,7 @@ const ROLE_NAME: Record<string, string> = {
   hardware: "Hardware",
   qc: "QC",
   internal: "Internal",
+  ic: "IC",
 };
 
 /**

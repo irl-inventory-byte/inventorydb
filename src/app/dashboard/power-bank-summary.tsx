@@ -173,7 +173,17 @@ export function PowerBankSummary({ d, hubParam, items, attentionHref, brokenCoun
     >
       <div
         className={styles.summary}
-        style={{ display: "flex", flexDirection: "column", flex: "1 1 320px", alignSelf: "flex-start", height: "auto", maxHeight: "none", minWidth: 0, overflow: "visible" }}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          flex: "1 1 320px",
+          alignSelf: "start",
+          height: "fit-content",
+          maxHeight: "none",
+          minHeight: 0,
+          minWidth: 0,
+          overflow: "visible",
+        }}
       >
         {cardTop(byKey.fleet)}
 
@@ -208,8 +218,8 @@ export function PowerBankSummary({ d, hubParam, items, attentionHref, brokenCoun
         )}
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", flex: "1 1 320px", alignSelf: "flex-start", gap: 14, minWidth: 0 }}>
-        <div className={styles.summary} style={{ display: "flex", flexDirection: "column", height: "auto", maxHeight: "none", minWidth: 0, overflow: "visible" }}>
+      <div style={{ display: "flex", flexDirection: "column", flex: "1 1 320px", alignSelf: "start", height: "fit-content", gap: 14, minWidth: 0 }}>
+        <div className={styles.summary} style={{ display: "flex", flexDirection: "column", height: "fit-content", maxHeight: "none", minHeight: 0, minWidth: 0, overflow: "visible" }}>
           {cardTop(byKey.utilization)}
           <span style={{ display: "block", width: "100%", marginTop: 12, paddingTop: 12, borderTop: "1px solid #cbd5e1", fontSize: 12, lineHeight: 1.5, color: "#334155", whiteSpace: "normal" }}>
             <strong>Utilization</strong> = items in use ÷ usable items.

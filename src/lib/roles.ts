@@ -16,7 +16,7 @@ import type { AppUser, Person, Role } from "./schema";
 export const ACTIVE_ROLE_COOKIE = "active_role";
 
 // Roles that work through a person in the People tab (handovers are recorded under that person).
-export const ROLES_NEEDING_PERSON: readonly Role[] = ["im", "rig", "qc", "hardware", "internal", "fo"];
+export const ROLES_NEEDING_PERSON: readonly Role[] = ["im", "rig", "qc", "hardware", "internal", "fo", "ic"];
 
 /** The role the app should use now: the secondary role if it was chosen, otherwise the primary role. */
 export function activeRole(primary: Role, secondary: Role | undefined, chosen: string | undefined): Role {
