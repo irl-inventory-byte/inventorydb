@@ -22,6 +22,7 @@ import { mobileHomeHub, rigHomeHub } from "@/lib/rig-hub";
 import BulkAddForm from "./BulkAddForm";
 import { applyCorrection } from "./actions";
 import CorrectionPanel from "./CorrectionPanel";
+import DeleteItemPopup from "./DeleteItemPopup";
 import SearchBox from "./SearchBox";
 
 const PAGE_SIZE = 100;
@@ -141,7 +142,11 @@ function displayAmount(raw: string): string {
 
 export default async function InventoryPage({
   searchParams,
-}: PageProps<"/inventory">) {
+}: {
+  searchParams:
+    | { [key: string]: string | string[] | undefined }
+    | Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
   const user = await requireRole();
 
   // Corrections and Delete links remain Admin-only.
@@ -568,22 +573,7 @@ export default async function InventoryPage({
                       <Link href={itemUrl}>{item.item_id}</Link>
                       {isAdmin && (
                         <div style={{ marginTop: 8 }}>
-                          <Link
-                            href={`${itemUrl}/delete`}
-                            aria-label={`Delete item ${item.item_id}`}
-                            style={{
-                              display: "inline-block",
-                              padding: "5px 10px",
-                              border: "1px solid #b91c1c",
-                              borderRadius: 6,
-                              color: "#b91c1c",
-                              backgroundColor: "#fff7f7",
-                              fontWeight: 600,
-                              textDecoration: "none",
-                            }}
-                          >
-                            Delete
-                          </Link>
+                          <DeleteItemPopup itemId={item.item_id} brand={item.brand} model={item.model} />
                         </div>
                       )}
                     </td>
@@ -810,6 +800,12 @@ export default async function InventoryPage({
       {isAdmin && one(sp.deleted) && (
         <p className={styles.ok}>
           Deleted {one(sp.deleted)} and its associated event history.
+        </p>
+      )}
+
+      {isAdmin && one(sp.bulkDeleted) && Number(one(sp.bulkDeleted)) > 0 && (
+        <p className={styles.ok}>
+          Deleted {one(sp.bulkDeleted)} item(s) and their associated event history.
         </p>
       )}
 
@@ -1162,6 +1158,7 @@ export default async function InventoryPage({
           />
 
           {table}
+
         </form>
       ) : (
         table
