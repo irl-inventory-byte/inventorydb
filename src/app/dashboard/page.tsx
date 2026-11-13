@@ -241,7 +241,7 @@ const HOURLY_KEYS = ["htype", "hperson", "hcity", "hrole", "hfrom", "hto"];
 const MOVE_KEYS = ["mtype", "mperson", "mcity", "mrole", "mfrom", "mto"];
 const TYPE_LABELS: Record<string, string> = { sd_card: "SD cards", rig: "Rigs", mobile: "Mobiles", power_bank: "Power Banks" };
 
-export default async function DashboardPage({ searchParams }: PageProps<"/dashboard">) {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requireRole();
   const sp = await searchParams;
   // Filter values: a multi-select sends ?x=a&x=b, links carry "a,b"; both are read as a list.
@@ -837,12 +837,18 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
       .filter((k) => k.label !== "With rig team" && k.label !== "Internal" && k.label !== "Broken")
       .map((k) => {
         const isRetired = k.label === "Retired";
+        // k.href may or may not already have a "?" (e.g. "/retired" and "/transit" don't; "/lost?status=lost"
+        // and inventory() links do) — blindly appending "&type=power_bank" to one with no "?" yet produced
+        // an invalid URL like "/retired&type=power_bank" (the whole thing read as one literal path, which
+        // 404s), instead of the intended "/retired?type=power_bank". This is why clicking "Retired" from
+        // the Power Bank tab didn't open the retired-items page.
+        const withType = (href: string) => `${href}${href.includes("?") ? "&" : "?"}type=power_bank`;
         return {
           ...k,
-          href: `${k.href}&type=power_bank`,
+          href: withType(k.href),
           value: isRetired ? powerBankRetiredValue : k.value,
           hint: isRetired ? share(powerBankRetiredValue) : k.hint.replace("of all items", "of all power banks"),
-          cities: k.cities?.map((c) => ({ ...c, href: `${c.href}&type=power_bank` })),
+          cities: k.cities?.map((c) => ({ ...c, href: withType(c.href) })),
           storage: undefined, // SD card capacity breakdown doesn't apply to power banks
           storageOverrideKey: k.storageOverrideKey,
           storageOverrideValue: k.storageOverrideValue,

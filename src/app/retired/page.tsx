@@ -7,7 +7,7 @@ import { formatIst } from "@/lib/time";
 import styles from "../admin/admin.module.css";
 import ReportRetiredScan from "./ReportRetiredScan";
 
-const TYPE_NAME: Record<string, string> = { sd_card: "SD card", rig: "Rig", mobile: "Mobile" };
+const TYPE_NAME: Record<string, string> = { sd_card: "SD card", rig: "Rig", mobile: "Mobile", power_bank: "Power Bank" };
 
 /**
  * RETIRED ITEMS: the detail view behind the dashboard's "Retired" tile. Reuses the same "correct"

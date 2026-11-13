@@ -11,25 +11,6 @@ const howLong = (hours: number) =>
 const dayText = (days: number | null) =>
   days === null ? "" : days === 0 ? "today" : `${days} day${days === 1 ? "" : "s"} ago`;
 
-/** Safely parse the attributes JSON. Missing or invalid JSON is treated as missing details. */
-function readAttributes(raw: string): Record<string, unknown> {
-  try {
-    const parsed: unknown = JSON.parse(raw || "{}");
-    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    // Keep the dashboard working when a record has invalid JSON.
-  }
-  return {};
-}
-
-function attributeText(value: unknown): string {
-  if (typeof value === "string") return value.trim();
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return "";
-}
-
 interface Tile {
   label: string;
   count: number;
@@ -39,34 +20,11 @@ interface Tile {
   text: string;
 }
 
-// Cycled across however many distinct capacities / colours actually show up, so the breakdown is never
-// hard-coded to a fixed set of values the way SD card's 512/256 GB and Black/Green are.
-const CAPACITY_PALETTE = [
-  { bg: "#e0e7ff", border: "#6366f1", text: "#312e81" },
-  { bg: "#dbeafe", border: "#2563eb", text: "#1e3a8a" },
-  { bg: "#cffafe", border: "#0891b2", text: "#164e63" },
-  { bg: "#ede9fe", border: "#7c3aed", text: "#4c1d95" },
-];
-const COLOUR_PALETTE = [
-  { bg: "#dcfce7", border: "#16a34a", text: "#14532d" },
-  { bg: "#fef3c7", border: "#d97706", text: "#78350f" },
-  { bg: "#fce7f3", border: "#db2777", text: "#831843" },
-  { bg: "#e0f2fe", border: "#0284c7", text: "#0c4a6e" },
-];
-
-/** Count power banks by a chosen attribute (capacity or colour), biggest group first, "Unknown" last. */
-function breakdownBy(items: readonly Item[], attr: "capacity" | "color"): { label: string; count: number }[] {
-  const counts = new Map<string, number>();
-  for (const item of items) {
-    if (item.item_type !== "power_bank") continue;
-    const raw = attributeText(readAttributes(item.attributes)[attr]);
-    const label = raw || "Unknown";
-    counts.set(label, (counts.get(label) ?? 0) + 1);
-  }
-  const known = [...counts.entries()].filter(([label]) => label !== "Unknown").sort((a, b) => b[1] - a[1]);
-  const unknown = counts.get("Unknown") ?? 0;
-  return [...known.map(([label, count]) => ({ label, count })), ...(unknown > 0 ? [{ label: "Unknown", count: unknown }] : [])];
-}
+// The capacity ("20000mAh") / colour ("Black") breakdown chips that used to render under the Fleet
+// tile were removed per request. This used to compute them (CAPACITY_PALETTE, COLOUR_PALETTE, and a
+// breakdownBy() helper reading each item's attributes.capacity / attributes.color) — if that breakdown
+// comes back, it previously lived right here, cycling a palette per distinct value so it was never
+// hard-coded to a fixed set the way SD card's 512/256 GB and Black/Green are.
 
 interface SummaryCard {
   key: string;
@@ -123,22 +81,9 @@ export function PowerBankSummary({ d, hubParam, items, attentionHref, brokenCoun
   const unusableTotal = brokenCount + retiredCount;
   const unusableShare = (count: number) => (unusableTotal > 0 ? `${Math.round((count / unusableTotal) * 100)}%` : "");
 
-  const byCapacity = breakdownBy(powerBanks, "capacity").map((row, i) => ({
-    label: row.label === "Unknown" ? "Unknown capacity" : row.label,
-    count: row.count,
-    pct: share(row.count),
-    ...CAPACITY_PALETTE[i % CAPACITY_PALETTE.length],
-  }));
-  const byColour = breakdownBy(powerBanks, "color").map((row, i) => ({
-    label: row.label === "Unknown" ? "Unknown colour" : row.label,
-    count: row.count,
-    pct: share(row.count),
-    ...COLOUR_PALETTE[i % COLOUR_PALETTE.length],
-  }));
-
+  // Capacity (e.g. "20000mAh") and colour ("Black") breakdown chips used to render here, under the
+  // Fleet tile — removed per request (see the comment above these functions' old spot, further up).
   const fleetDetails: Tile[] = [
-    ...byCapacity,
-    ...byColour,
     ...(brokenCount > 0
       ? [{ label: "Broken power banks", count: brokenCount, pct: unusableShare(brokenCount), bg: "#fee2e2", border: "#dc2626", text: "#7f1d1d" }]
       : []),
