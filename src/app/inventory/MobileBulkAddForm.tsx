@@ -141,7 +141,7 @@ export default function MobileBulkAddForm({ homeHubName }: { homeHubName?: strin
       >
         <div style={fieldStyle}>
           <span>Home hub</span>
-          <strong style={{ padding: "10px 0" }}>{homeHubName || "Instawork Robotics Labs"}</strong>
+          <strong style={{ padding: "10px 0" }}>{homeHubName || "Bangalore"}</strong>
           <small className={styles.muted}>Every mobile is added to this hub.</small>
         </div>
 
@@ -223,7 +223,7 @@ export default function MobileBulkAddForm({ homeHubName }: { homeHubName?: strin
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between" }}>
           <span>
             <strong>{ready.length}</strong> mobile{ready.length === 1 ? "" : "s"} will be added to{" "}
-            <strong>{homeHubName || "Instawork Robotics Labs"}</strong>. Only rows marked Ready are added.
+            <strong>{homeHubName || "Bangalore"}</strong>. Only rows marked Ready are added.
           </span>
           <button type="button" disabled={busy || !ready.length} onClick={() => void save()}>
             {saving ? "Saving…" : `Add ${ready.length} mobile${ready.length === 1 ? "" : "s"}`}
@@ -234,7 +234,7 @@ export default function MobileBulkAddForm({ homeHubName }: { homeHubName?: strin
       <div role="status" aria-live="polite" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {!homeHubName && (
           <p className={styles.error} style={{ margin: 0 }}>
-            No active hub named Instawork Robotics Labs. Add it on the Hubs page first.
+            No active hub named Bangalore. Add it on the Hubs page first.
           </p>
         )}
         {checking && <p className={styles.muted} style={{ margin: 0 }}>Looking up mobile details…</p>}

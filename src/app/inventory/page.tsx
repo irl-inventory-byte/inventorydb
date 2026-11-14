@@ -918,7 +918,7 @@ export default async function InventoryPage({
 
           <p className={styles.muted}>
             Scan the QR code on the phone (IMEI), or type its Asset Tag or Serial: all the other details load from
-            the mobile sheet. Every mobile starts in stock at Instawork Robotics Labs.
+            the mobile sheet. Every mobile starts in stock at Bangalore.
           </p>
 
           {mobileView && one(sp.added) && (
@@ -942,7 +942,7 @@ export default async function InventoryPage({
           <p className={styles.muted}>
             Scan the QR codes one after another (one per line), or paste IMEIs, Asset Tags or Serials. Details
             load from the mobile sheet.
-            Every mobile starts in stock at Instawork Robotics Labs.
+            Every mobile starts in stock at Bangalore.
           </p>
           <MobileBulkAddForm homeHubName={mobileHomeHub(hubs)?.name} />
         </details>

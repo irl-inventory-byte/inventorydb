@@ -25,7 +25,7 @@ import { getStore } from "./store";
 
 // NOTE: "power_bank" added back here because other pages (dashboard/page.tsx, inventory/page.tsx) in
 // your deployed app already reference it as an ItemType — this repo clone never had the feature, so it
-// was dropped when access.ts was fully replaced earlier. See the POWER_BANK_ADD_ROLES note below.
+// was dropped when access.ts was fully replaced earlier. See the POWER_BANK_ADD_ROLES note above.
 export const ITEM_TYPES = ["sd_card", "rig", "mobile", "power_bank"] as const;
 export type ItemType = (typeof ITEM_TYPES)[number];
 
@@ -79,7 +79,9 @@ export const QC_ROLES: Role[] = ["admin", "im", "qc"];
 
 /** An item's type. Older rows without a type are SD cards. */
 export function itemType(item: Pick<Item, "item_type">): ItemType {
-  return item.item_type === "rig" ? "rig" : item.item_type === "mobile" ? "mobile" : "sd_card";
+  return item.item_type === "rig" || item.item_type === "mobile" || item.item_type === "power_bank"
+    ? item.item_type
+    : "sd_card";
 }
 
 /** The item types this role may see, in display order. */

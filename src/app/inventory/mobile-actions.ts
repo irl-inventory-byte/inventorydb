@@ -83,7 +83,7 @@ function refresh() {
   revalidatePath("/handover/receipts");
 }
 
-/** Add one mobile: Admin and IM. Home hub Instawork Robotics Labs, in stock. */
+/** Add one mobile: Admin and IM. Home hub Bangalore, in stock. */
 export async function addMobile(formData: FormData) {
   const user = await requireRole(...MOBILE_ADD_ROLES);
   const reject = (message: string): never =>
@@ -195,7 +195,7 @@ export async function checkMobiles(scans: string[]): Promise<{ rows: MobileCheck
 export type MobileBulkResult = { added: string[]; skipped: { imei: string; reason: string }[]; error?: string };
 
 /**
- * Add many mobiles at once, all at Instawork Robotics Labs, in stock. Details come from the mobile sheet
+ * Add many mobiles at once, all at Bangalore, in stock. Details come from the mobile sheet
  * (read again here, not taken from the browser); phones not in the sheet are skipped. One receipt for all.
  */
 export async function addMobiles(scans: string[]): Promise<MobileBulkResult> {

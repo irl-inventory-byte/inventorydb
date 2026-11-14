@@ -59,8 +59,8 @@ export function productivityTeamHubs(hubs: Pick<Hub, "hub_id" | "name" | "active
   return active.filter(is);
 }
 
-/** The home hub of every mobile: "Instawork Robotics Labs" (by ID or name, any letter case). */
-export const MOBILE_HUB_NAME = "Instawork Robotics Labs";
+/** The home hub of every mobile: "Bangalore" (by ID or name, any letter case). */
+export const MOBILE_HUB_NAME = "Bangalore";
 export function mobileHomeHub(hubs: Pick<Hub, "hub_id" | "name" | "active">[]) {
   const active = hubs.filter((h) => h.active !== "false");
   const norm = (v: string) => (v ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");

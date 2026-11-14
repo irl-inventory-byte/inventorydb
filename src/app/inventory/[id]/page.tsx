@@ -11,7 +11,12 @@ import { applyCorrection } from "../actions";
 import CorrectionPanel from "../CorrectionPanel";
 import RigChecks from "./RigChecks";
 
-export default async function ItemPage({ params, searchParams }: PageProps<"/inventory/[id]">) {
+type ItemPageProps = {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+};
+
+export default async function ItemPage({ params, searchParams }: ItemPageProps) {
   const user = await requireRole();
   const { id } = await params;
   const sp = await searchParams;
@@ -21,6 +26,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/inv
   if (!item) notFound();
   const isRig = itemType(item) === "rig";
   const isMobile = itemType(item) === "mobile";
+  const isPowerBank = itemType(item) === "power_bank";
 
   const [hubs, people, history, hardware, qc, audits] = await Promise.all([
     store.list("hubs"),
@@ -91,7 +97,9 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/inv
   return (
     <main className={styles.page}>
       <p className={styles.back}>
-        <Link href={isMobile ? "/inventory?type=mobile" : "/inventory"}>← Inventory</Link>
+        <Link href={isMobile ? "/inventory?type=mobile" : isPowerBank ? "/inventory?type=power_bank" : "/inventory"}>
+          ← Inventory
+        </Link>
       </p>
       <h1>{item.item_id}</h1>
       {one(sp.done) && <p className={styles.ok}>Saved.</p>}
@@ -112,7 +120,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/inv
         <dd>{personName.get(item.current_holder) ?? (item.current_holder || "—")}</dd>
         <dt>Home hub</dt>
         <dd>{hubName.get(item.home_hub) ?? item.home_hub}</dd>
-        {!isMobile && (
+        {!isMobile && !isPowerBank && (
           <>
             <dt>Prism no.</dt>
             <dd>{item.prism_no || "—"}</dd>
@@ -123,6 +131,14 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/inv
             <dt>IMEI</dt>
             <dd>{item.item_id}</dd>
             <dt>Cost</dt>
+            <dd>{item.price ? `₹${Number(item.price).toLocaleString("en-IN")}` : "—"}</dd>
+          </>
+        )}
+        {isPowerBank && (
+          <>
+            <dt>Asset Tag</dt>
+            <dd>{item.item_id}</dd>
+            <dt>Price / Penalty</dt>
             <dd>{item.price ? `₹${Number(item.price).toLocaleString("en-IN")}` : "—"}</dd>
           </>
         )}
@@ -148,7 +164,7 @@ export default async function ItemPage({ params, searchParams }: PageProps<"/inv
       </dl>
 
       {user.role === "admin" && (
-        <form action={applyCorrection} className={styles.list} data-progress="1">
+        <form action={applyCorrection} className={styles.list}>
           <input type="hidden" name="back" value={`/inventory/${item.item_id}`} />
           <input type="hidden" name="ids" value={item.item_id} />
           <CorrectionPanel hubs={hubs} people={people} showScan={false} />

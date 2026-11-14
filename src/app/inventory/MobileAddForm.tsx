@@ -162,7 +162,7 @@ export default function MobileAddForm({ homeHubName }: { homeHubName?: string })
         </div>
         <div style={fieldStyle}>
           <span>Home hub</span>
-          <strong style={{ padding: "10px 0" }}>{homeHubName || "Instawork Robotics Labs"}</strong>
+          <strong style={{ padding: "10px 0" }}>{homeHubName || "Bangalore"}</strong>
         </div>
       </div>
 
@@ -200,7 +200,7 @@ export default function MobileAddForm({ homeHubName }: { homeHubName?: string })
         {busy
           ? "Looking up the phone…"
           : !homeHubName
-            ? "No active hub named Instawork Robotics Labs. Add it on the Hubs page first."
+            ? "No active hub named Bangalore. Add it on the Hubs page first."
             : note ||
               "Scan the QR code, or type the IMEI, Asset Tag or Serial in the first box. Everything else fills in from the mobile sheet."}
       </p>
