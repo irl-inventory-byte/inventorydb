@@ -85,7 +85,15 @@ function readCardDetails(raw: string) {
     cardType = "Green";
   }
 
-  return { storage, cardType };
+  // "New / Old", saved into attributes.condition at Add time (see inventory/actions.ts) — not set on
+  // cards added before that change, which show "Not set" here until re-saved or backfilled.
+  const conditionText = typeof attributes.condition === "string" ? attributes.condition.trim() : "";
+  const normalizedCondition = conditionText.toLowerCase();
+  let condition = conditionText || "Not set";
+  if (normalizedCondition.startsWith("new")) condition = "New";
+  else if (normalizedCondition.startsWith("old")) condition = "Old";
+
+  return { storage, cardType, condition };
 }
 
 /** A mobile's saved details (Asset Tag, Serial, Model No., Category, Storage). */
@@ -389,7 +397,7 @@ export default async function InventoryPage({
     ? 11 + (isAdmin ? 1 : 0)
     : rigView
     ? 7 + (isAdmin ? 1 : 0)
-    : 16 + (isAdmin ? 1 : 0) + (holder ? 1 : 0) + (showQc ? 1 : 0);
+    : 17 + (isAdmin ? 1 : 0) + (holder ? 1 : 0) + (showQc ? 1 : 0);
 
   const table = (
     <div
@@ -461,6 +469,7 @@ export default async function InventoryPage({
             <th scope="col">Model</th>
             <th scope="col">Storage</th>
             <th scope="col">Card type</th>
+            <th scope="col">New / Old</th>
             <th scope="col">Price / Penalty</th>
             <th scope="col">Attributes</th>
             <th scope="col">Status</th>
@@ -695,6 +704,8 @@ export default async function InventoryPage({
                   </td>
 
                   <td>{cardType}</td>
+
+                  <td>{isMobile ? "—" : card.condition}</td>
 
                   <td style={{ whiteSpace: "nowrap" }}>
                     {displayAmount(item.price)}
