@@ -139,10 +139,16 @@ export default function RigAddForm({ homeHub }: { homeHub?: Hub }) {
                   void lookup(e.currentTarget.value);
                 }
               }}
-              placeholder="Scan or type — details load automatically"
+              placeholder="IC-… — details load automatically"
               autoComplete="off"
               spellCheck={false}
               required
+              // Only "IC-" rig IDs are accepted — anything else fails the browser's own validation
+              // before the form can even be submitted. Case-insensitive ("ic-", "Ic-" also pass);
+              // enforced again server-side in addRig (rig-actions.ts) since a pattern mismatch here
+              // is just a UX nicety, not something to rely on alone.
+              pattern="^[Ii][Cc]-.+"
+              title='Rig ID must start with "IC-"'
               style={inputStyle}
             />
           </label>

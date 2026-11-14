@@ -90,6 +90,10 @@ export async function addRig(formData: FormData) {
   const sanitizedText = sanitized === "yes" ? "Yes" : sanitized === "no" ? "No" : "";
 
   if (!rigId) reject("Scan or type the rig ID.");
+  // Only "IC-" rig IDs are accepted (case-insensitive) — anything else is rejected, same rule as the
+  // single-add form's required pattern below, enforced again here since this action can be called
+  // directly, not only through that form.
+  if (!/^IC-/i.test(rigId)) reject(`"${rigId}" doesn't start with "IC-" — only IC- rig IDs are accepted.`);
   if (!penalty || Number(penalty) <= 0) reject("Enter the penalty amount for this rig.");
 
   // Details from the rig sheet are saved with the rig (looked up again on the server).
@@ -255,11 +259,15 @@ const RIG_BULK_LIMIT = 200;
 
 export type RigCheck = {
   rigId: string;
-  status: "ready" | "exists" | "repeated" | "notfound" | "nopenalty";
+  status: "ready" | "exists" | "repeated" | "notfound" | "nopenalty" | "badformat";
   brand: string;
   model: string;
   penalty: string;
 };
+
+// Only "IC-" rig IDs are accepted, case-insensitive — see also RigAddForm.tsx's input pattern and
+// addRig's server-side check below, for the single-add form.
+const isIcId = (rigId: string) => /^IC-/i.test(rigId);
 
 /** Check a list of rig IDs against the inventory and the rig sheet. */
 export async function checkRigs(ids: string[]): Promise<{ rows: RigCheck[]; error?: string }> {
@@ -285,7 +293,8 @@ export async function checkRigs(ids: string[]): Promise<{ rows: RigCheck[]; erro
     const found = findRig(records, rigId);
     const base = { rigId, brand: found?.brand ?? "", model: found?.model ?? "", penalty: found?.penalty ?? "" };
 
-    if (seen.has(key)) rows.push({ ...base, status: "repeated" });
+    if (!isIcId(rigId)) rows.push({ ...base, status: "badformat" });
+    else if (seen.has(key)) rows.push({ ...base, status: "repeated" });
     else if (inInventory.has(key)) rows.push({ ...base, status: "exists" });
     else if (!found) rows.push({ ...base, status: "notfound" });
     else if (!found.penalty) rows.push({ ...base, status: "nopenalty" });
@@ -327,6 +336,10 @@ export async function addRigs(ids: string[]): Promise<RigBulkResult> {
   const now = istTimestamp();
 
   for (const rigId of list) {
+    if (!isIcId(rigId)) {
+      skipped.push({ rigId, reason: 'rig ID must start with "IC-"' });
+      continue;
+    }
     const found = findRig(records, rigId);
     if (!found) {
       skipped.push({ rigId, reason: "not in the rig sheet" });

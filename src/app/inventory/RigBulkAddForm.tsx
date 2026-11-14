@@ -22,6 +22,7 @@ const splitIds = (text: string) =>
 const rupees = (v: string) => (v ? `₹${Number(v).toLocaleString("en-IN")}` : "—");
 
 function checkLabel(row: Row): { text: string; color: string } {
+  if (row.status === "badformat") return { text: 'Must start with "IC-"', color: "#B42318" };
   if (row.status === "exists") return { text: "Already in inventory", color: "#8A4B00" };
   if (row.status === "repeated") return { text: "Repeated in list", color: "#8A4B00" };
   if (row.status === "notfound") return { text: "Not in rig sheet – use Add a rig", color: "#B42318" };
