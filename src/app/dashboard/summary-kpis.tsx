@@ -301,29 +301,8 @@ export async function SummaryKpis({
       border: "#16a34a",
       text: "#14532d",
     },
-    // New / Old, saved on the item itself at Add item time (see countFleet's comment). Always shown
-    // (even as 0) rather than hidden when nothing has that field recorded yet — items added before this
-    // field existed count toward ageUnknown instead, and showing "0" here (instead of hiding the tile)
-    // is how you can tell the save is actually wired up versus just having no new-item data yet.
-    {
-      label: "New cards",
-      count: fleet.newCards,
-      pct: share(fleet.newCards),
-      bg: "#e0f2fe",
-      border: "#0284c7",
-      text: "#0c4a6e",
-    },
-    {
-      // Was a mismatched grey (the same palette "Retired cards" uses, further below) instead of New
-      // cards' own blue — New and Old are one pair (like 512/256 and Black/Green above), so they now
-      // share one palette too.
-      label: "Old cards",
-      count: fleet.oldCards,
-      pct: share(fleet.oldCards),
-      bg: "#e0f2fe",
-      border: "#0284c7",
-      text: "#0c4a6e",
-    },
+    // New / Old card-age tiles removed per request — age is still tracked on each item
+    // (see countFleet / fleet.newCards / fleet.oldCards), just no longer surfaced as its own tile here.
   ];
 
   // Broken and Retired's own percentage is of the two combined (how the unusable pile splits between
