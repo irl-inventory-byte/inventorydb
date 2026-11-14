@@ -5,6 +5,7 @@ import { LATE_AFTER_HOURS, computeDashboard } from "@/lib/dashboard";
 import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
 import type { Status } from "@/lib/schema";
 import { storeFor, typeParam } from "@/lib/access";
+import { rigTeamHubs, productivityTeamHubs } from "@/lib/rig-hub";
 import TypeSwitch from "../../TypeSwitch";
 import { ActivityChart, BarList, n } from "../charts";
 import styles from "../dashboard.module.css";
@@ -145,16 +146,32 @@ export default async function AnalyticsPage({
     ? (hubs.find((h) => h.hub_id === hub)?.name ?? hub)
     : "all hubs";
 
+  // "With rig team" and "In stock" are re-bucketed here the same way the main dashboard's Fleet tile
+  // does it (see dashboard/page.tsx's "teamItemsFor"/"inStockValue"): an item physically in stock at a
+  // Rig team or Productivity team hub counts as "With rig team", not plain "In stock" — otherwise this
+  // page's tiles (built straight from d.byStatus, which only looks at the raw item status) disagree with
+  // the main dashboard's numbers for the same two buckets, even though the total is the same either way.
+  const teamHubIds = new Set<string>([...rigTeamHubs(hubs), ...productivityTeamHubs(hubs)].map((h) => h.hub_id));
+  const withRigTeamValue = items.filter(
+    (i) => i.status === "with_rig" || (i.status === "in_stock" && teamHubIds.has(i.current_hub)),
+  ).length;
+  const inStockValue = items.filter((i) => i.status === "in_stock" && !teamHubIds.has(i.current_hub)).length;
+  const byStatusAdjusted: Record<Status, number> = {
+    ...d.byStatus,
+    with_rig: withRigTeamValue,
+    in_stock: inStockValue,
+  };
+
   const statusRows = TILES.map((t) => t.status)
-    .filter((s) => d.byStatus[s] > 0)
-    .sort((a, b) => d.byStatus[b] - d.byStatus[a])
+    .filter((s) => byStatusAdjusted[s] > 0)
+    .sort((a, b) => byStatusAdjusted[b] - byStatusAdjusted[a])
     .map((s) => ({
       key: s,
       label: STATUS_LABELS[s],
-      value: d.byStatus[s],
+      value: byStatusAdjusted[s],
       href: inventory({ status: s, ...hubScope }),
-      tip: `${STATUS_LABELS[s]}\n${n(d.byStatus[s])} items (${(
-        (d.byStatus[s] / Math.max(1, d.total)) *
+      tip: `${STATUS_LABELS[s]}\n${n(byStatusAdjusted[s])} items (${(
+        (byStatusAdjusted[s] / Math.max(1, d.total)) *
         100
       ).toFixed(1)}%)`,
     }));
@@ -252,7 +269,7 @@ export default async function AnalyticsPage({
                 </span>
 
                 <span className={styles.tileValue}>
-                  {n(d.byStatus[status])}
+                  {n(byStatusAdjusted[status])}
                 </span>
               </Link>
             ))}
