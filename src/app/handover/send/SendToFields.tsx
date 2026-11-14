@@ -34,10 +34,9 @@ export default function SendToFields({
   hubs: { id: string; name: string }[];
   allowInternal?: boolean;
   bangalore?: { id: string; name: string }; // QC and hardware teams always work here
-  rigTeam?: { id: string; name: string }; // the Rig team's own location
-  productivityTeam?: { id: string; name: string }; // the Productivity team's own, separate location —
-  // the two sub-teams used to share one hub; whichever sub-team is chosen below now auto-fills the
-  // matching hub instead of always defaulting to the Rig team's.
+  rigTeam?: { id: string; name: string }; // the rig team's own location
+  productivityTeam?: { id: string; name: string }; // the productivity team's own location — a separate
+  // hub from the rig team's, even though both sub-teams share the same "rig" role (see lib/rig-hub.ts)
   alwaysBangalore?: boolean; // the sender is the QC or hardware team: every send stays at Bangalore
 }) {
   const [role, setRole] = useState("");
@@ -45,14 +44,7 @@ export default function SendToFields({
   const [internalName, setInternalName] = useState("");
   const [hub, setHub] = useState("");
   const [city, setCity] = useState("");
-  // No default: "Rig team" used to be pre-selected here, so a sender who didn't notice this dropdown
-  // (easy to miss — it only appears for the "Rig" category) silently recorded every send as the Rig
-  // team even when it was actually going to the Productivity team. That default is also what the
-  // dashboard's with_rig count falls back to (`i.sub_team || "rig"`), so the two defaults compounded:
-  // nothing ever landed on "Productivity team" unless someone actively changed this dropdown. Starting
-  // blank and requiring a real choice (see the empty disabled option below) stops new sends from being
-  // silently misattributed; it does not correct items already recorded under the old default.
-  const [subTeam, setSubTeam] = useState("");
+  const [subTeam, setSubTeam] = useState("rig");
   const isInternal = role === INTERNAL;
   const isRig = role === "rig";
   const isFo = role === "fo";
@@ -60,6 +52,9 @@ export default function SendToFields({
   // FO only: the cities the field officers are in, and the list narrowed to the chosen city.
   const cities = isFo ? [...new Set(all.map((p) => p.city || "").filter(Boolean))].sort((a, b) => a.localeCompare(b)) : [];
   const people = isFo && city ? all.filter((p) => p.city === city) : all;
+  // Which team's hub applies right now, when the category is "rig".
+  const teamHub = subTeam === "productivity" ? productivityTeam : rigTeam;
+  const teamLabel = subTeam === "productivity" ? "Productivity team" : "Rig team";
 
   return (
     <>
@@ -79,8 +74,8 @@ export default function SendToFields({
                 setPerson(""); // a person from the old category must not stay selected
                 setInternalName("");
                 setCity("");
-                setSubTeam(""); // force an explicit rig/productivity choice again for the new category
-                setHub(""); // the hub now depends on that choice (see the sub_team select below)
+                // Rig team: default the location to their own hub, but it stays a normal, changeable dropdown.
+                if (newRole === "rig" && rigTeam) setHub(rigTeam.id);
               }}
             >
               <option value="">Select a category</option>
@@ -133,22 +128,18 @@ export default function SendToFields({
                 value={subTeam}
                 required
                 onChange={(e) => {
-                  const newSubTeam = e.target.value;
-                  setSubTeam(newSubTeam);
-                  // Each sub-team now has its own hub — fill the location with the right one, but it
-                  // stays a normal, changeable dropdown below in case that's wrong for this send.
-                  if (newSubTeam === "rig" && rigTeam) setHub(rigTeam.id);
-                  else if (newSubTeam === "productivity" && productivityTeam) setHub(productivityTeam.id);
+                  const next = e.target.value;
+                  setSubTeam(next);
+                  // Each team works out of its own hub — switch the location to match, same as picking the category does.
+                  const nextHub = next === "productivity" ? productivityTeam : rigTeam;
+                  if (nextHub) setHub(nextHub.id);
                 }}
               >
-                <option value="" disabled>
-                  Choose rig or productivity team
-                </option>
                 <option value="rig">Rig team</option>
                 <option value="productivity">Productivity team</option>
               </select>
               <span className={styles.hint} style={{ alignSelf: "center", margin: 0 }}>
-                Different hubs for each team now — choose which team this is actually going to today.
+                Same role — choose which team this is actually going to today.
               </span>
             </div>
           )}
@@ -192,14 +183,10 @@ export default function SendToFields({
           Send to (location)
         </label>
         <div className={styles.control}>
-          {isRig && subTeam === "rig" && !rigTeam ? (
+          {isRig && !teamHub ? (
             <p className={styles.error}>
-              No &quot;Rig team&quot; hub found. Add one in Manage hubs (named &quot;Rig team&quot;) before sending to the rig team.
-            </p>
-          ) : isRig && subTeam === "productivity" && !productivityTeam ? (
-            <p className={styles.error}>
-              No &quot;Productivity team&quot; hub found. Add one in Manage hubs (named &quot;Productivity team&quot;) before sending to
-              the productivity team.
+              No &quot;{teamLabel}&quot; hub found. Add one in Manage hubs (named &quot;{teamLabel}&quot;, or starting with{" "}
+              &quot;{subTeam === "productivity" ? "Productivity" : "Rig team"}&quot;) before sending to the {subTeam === "productivity" ? "productivity" : "rig"} team.
             </p>
           ) : bangalore && (alwaysBangalore || role === "qc" || role === "hardware") ? (
             <>

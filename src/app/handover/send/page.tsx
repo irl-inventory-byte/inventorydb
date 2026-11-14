@@ -1,10 +1,4 @@
 import Link from "next/link";
-// Import or define PageProps for route "/handover/send"
-import type { ParsedUrlQueryInput } from "querystring";
-
-type PageProps<Path extends string = string> = {
-  searchParams: Record<string, string | string[] | undefined>;
-};
 import { actorOptions, allowedActors, defaultActor } from "@/lib/actors";
 import { requireRole } from "@/lib/authz";
 import { STATUS_LABELS, one } from "@/lib/labels";
@@ -14,7 +8,7 @@ import styles from "../form.module.css";
 import { sendCards } from "../actions";
 import SendScanFields from "./SendScanFields";
 import { rigCondition } from "@/lib/rig-state";
-import { productivityTeamHub, rigHomeHub, rigTeamHub } from "@/lib/rig-hub";
+import { rigHomeHub, rigTeamHub, productivityTeamHub } from "@/lib/rig-hub";
 import HardwareSendFields from "./HardwareSendFields";
 import QcSendFields from "./QcSendFields";
 import SendToFields from "./SendToFields";
@@ -46,7 +40,11 @@ const SEND_TO: Record<string, Role[]> = {
 // QC and hardware teams send the rigs they are holding.
 const HELD: Partial<Record<Role, Status>> = { qc: "with_qc", hardware: "with_hardware" };
 
-export default async function SendPage({ searchParams }: PageProps<"/handover/send">) {
+export default async function SendPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await requireRole(...SEND_ROLES);
   const sp = await searchParams;
   const store = handoverStoreFor(user.role);
@@ -66,8 +64,7 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
     id: i.item_id,
     status: i.status,
     hub: i.current_hub,
-    type:
-      i.item_type === "rig" || i.item_type === "mobile" || i.item_type === "power_bank" ? i.item_type : "sd_card",
+    type: i.item_type === "rig" || i.item_type === "mobile" ? i.item_type : "sd_card",
     // Mobiles can be scanned by IMEI, Asset Tag or Serial.
     ...(i.item_type === "mobile" && { aliases: mobileAliases(i.attributes) }),
     // Rigs show their condition while scanning, e.g. "QC passed · Idle" or "Repaired · Ready for field".
@@ -84,13 +81,11 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
   // QC and hardware teams always work at Bangalore.
   const bangaloreHub = rigHomeHub(hubs);
   const bangalore = bangaloreHub ? { id: bangaloreHub.hub_id, name: bangaloreHub.name } : undefined;
-  // The Rig team's own location, and — now that the two are tracked as separate physical hubs —
-  // the Productivity team's own location too. Each is undefined (not Bangalore) if that hub hasn't
-  // been added yet (Manage hubs → + Add a hub, named "Rig team" / "Productivity team"); SendToFields
-  // shows an error instead of silently defaulting to the wrong place when the one that's needed is
-  // missing.
+  // The rig team's own location — undefined (not Bangalore) if that hub hasn't been added yet —
+  // SendToFields then shows an error instead of silently using Bangalore.
   const rigTeamHubRow = rigTeamHub(hubs);
   const rigTeam = rigTeamHubRow ? { id: rigTeamHubRow.hub_id, name: rigTeamHubRow.name } : undefined;
+  // The productivity team's own location — a separate hub from the rig team's (see lib/rig-hub.ts).
   const productivityTeamHubRow = productivityTeamHub(hubs);
   const productivityTeam = productivityTeamHubRow
     ? { id: productivityTeamHubRow.hub_id, name: productivityTeamHubRow.name }
@@ -138,7 +133,7 @@ export default async function SendPage({ searchParams }: PageProps<"/handover/se
       </p>
       <h1>Send items</h1>
 
-      <form action={sendCards} className={styles.form} data-progress="1">
+      <form action={sendCards} className={styles.form}>
         <div className={styles.field}>
           <label className={styles.label} htmlFor="by">
             Sent by
