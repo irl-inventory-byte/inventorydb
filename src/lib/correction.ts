@@ -66,27 +66,20 @@ export function planCorrection(
 ): CorrectionPlan {
   const plan: CorrectionPlan = { events: [], items: [], unchanged: [], errors: [] };
 
-  // "" keeps each item's own current status, instead of forcing one status onto every selected item.
-  // This matters for bulk age-tagging in particular: the 1,715-card fleet has cards in many different
-  // statuses (in_stock, with_fo, damaged, retired, …), and the only way to retroactively tag ALL of
-  // them with New/Old in one go is to not also overwrite their real status in the process.
-  const keepStatus = input.status === "";
-  const statusInput = input.status as Status;
-  if (!keepStatus && !STATUSES.includes(statusInput)) plan.errors.push("Choose a status, or leave it on \"Keep current status\".");
+  const status = input.status as Status;
+  if (!STATUSES.includes(status)) plan.errors.push("Choose a status.");
   if (input.note.trim().length < 3) plan.errors.push("Add a note (at least 3 characters) explaining the correction.");
 
   const hubIds = new Set(ctx.hubs.map((h) => h.hub_id));
   if (input.hub && !hubIds.has(input.hub)) plan.errors.push("Unknown hub.");
   if (input.homeHub && !hubIds.has(input.homeHub)) plan.errors.push("Unknown home hub.");
 
-  // In "keep status" mode nothing about holder/hub is forced — status, holder and hub all stay
-  // whatever each item already has — so there's no role to require and nothing to validate here.
-  const needRole = keepStatus ? undefined : HOLDER_ROLE[statusInput];
+  const needRole = HOLDER_ROLE[status];
   const holder = ctx.people.find((p) => p.person_id === input.holder && p.active !== "false");
   if (needRole) {
     if (!holder) plan.errors.push(`Choose who holds the item (a ${needRole.toUpperCase()}).`);
     else if (holder.role !== needRole) {
-      plan.errors.push(`${holder.name} is ${holder.role.toUpperCase()}; "${statusInput}" needs a ${needRole.toUpperCase()}.`);
+      plan.errors.push(`${holder.name} is ${holder.role.toUpperCase()}; "${status}" needs a ${needRole.toUpperCase()}.`);
     }
   }
   if (plan.errors.length) return plan;
@@ -122,13 +115,9 @@ export function planCorrection(
   };
 
   for (const item of targets) {
-    // Keep-status mode: this item's own status, holder and (unless explicitly chosen) hub are left
-    // exactly as they are — only hub/home hub/team/age are ever applied on top.
-    const status = keepStatus ? item.status : statusInput;
-    const newHolder = keepStatus ? item.current_holder : needRole ? holder!.person_id : "";
-    const newHub = keepStatus
-      ? input.hub || item.current_hub
-      : input.hub || (HUB_FROM_HOLDER.has(status) && holder ? holder.hub : item.current_hub);
+    const newHolder = needRole ? holder!.person_id : "";
+    const newHub =
+      input.hub || (HUB_FROM_HOLDER.has(status) && holder ? holder.hub : item.current_hub);
     const newHome = input.homeHub || item.home_hub;
     const newTeam = input.team === "rig" || input.team === "productivity" ? input.team : item.sub_team;
     const ageChanged = (input.age === "new" || input.age === "old") && input.age !== readAge(item.attributes);

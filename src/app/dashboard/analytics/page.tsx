@@ -767,7 +767,7 @@ export default async function AnalyticsPage({
                   {d.longestOut.map((r) => (
                     <tr key={r.item_id}>
                       <td>
-                        <Link href={`/inventory/${r.item_id}`}>
+                        <Link href={`/inventory/${encodeURIComponent(r.item_id)}`}>
                           {r.item_id}
                         </Link>
                       </td>
@@ -814,7 +814,7 @@ export default async function AnalyticsPage({
               <ul className={styles.list}>
                 {d.inconsistencies.slice(0, 20).map((p) => (
                   <li key={p.item_id}>
-                    <Link href={`/inventory/${p.item_id}`}>
+                    <Link href={`/inventory/${encodeURIComponent(p.item_id)}`}>
                       {p.item_id}
                     </Link>
                     : {p.reason}
