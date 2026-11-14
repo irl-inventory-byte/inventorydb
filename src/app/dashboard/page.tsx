@@ -1086,7 +1086,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
     .sort((x, y) => y.hours - x.hours || x.id.localeCompare(y.id));
 
   // Filter by cities and roles (several allowed, comma separated: ?acity=Bangalore,Pune&arole=FO,IFO).
-  const cityOptions = [...new Set(delayed.map((r) => r.city).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  // City list: every hub's city, not just the ones with a delayed item right now — otherwise a city with
+  // nothing currently delayed (e.g. Indore) never shows up as a choice at all.
+  const cityOptions = [...new Set([...hubCity.values(), ...delayed.map((r) => r.city)].filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b),
+  );
   const roleOptions = [...new Set(delayed.map((r) => r.role).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const listParam = (v: string) => v.split(",").map((x) => x.trim()).filter(Boolean);
   const cityFilter = listParam(one(sp.acity));
