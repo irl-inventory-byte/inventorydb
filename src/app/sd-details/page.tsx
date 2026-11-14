@@ -2,8 +2,10 @@ import Link from "next/link";
 import { requireRole } from "@/lib/authz";
 import { one } from "@/lib/labels";
 import { getStore } from "@/lib/store";
-import { formatIst } from "@/lib/time";
+import { formatHms, sumHms } from "@/lib/duration";
+import { formatIst, istDate } from "@/lib/time";
 import styles from "../admin/admin.module.css";
+import BackLink from "../BackLink";
 
 const TEAM_NAME: Record<string, string> = { im: "IM", rig: "Rig team" };
 // For rig-team rows, which hub actually sent it in — "Rig team" or "Productivity team" (same role,
@@ -25,6 +27,13 @@ export default async function SdDetailsPage({
 }) {
   await requireRole("admin", "im", "rig");
   const sp = await searchParams;
+
+  // Hours-by-city day cycle (separate from the "Date from / to" filter below, which filters the row
+  // table). Defaults to today (IST). Shows IM Hours and Rig team Hours (every "SD Card Duration Hour"
+  // entry logged that day for that team), split out by city.
+  const day = one(sp.day) || istDate(new Date());
+  const prevDay = istDate(new Date(new Date(`${day}T00:00:00+05:30`).getTime() - 24 * 3600 * 1000));
+  const nextDay = istDate(new Date(new Date(`${day}T00:00:00+05:30`).getTime() + 24 * 3600 * 1000));
 
   const teamFilter = one(sp.team); // "" (all), "im" or "rig"
   const subTeamFilter = one(sp.subteam); // "" (all), "rig" or "productivity" — only meaningful within team=rig
@@ -73,6 +82,22 @@ export default async function SdDetailsPage({
     })
     .sort((a, b) => b.total - a.total);
 
+  // Hours by city, for the selected day: IM Hours and Rig team Hours (every entry that day for that team).
+  const dayRows = all.filter((r) => r.card_date === day);
+  const hoursByCity = (rowsForDay: typeof dayRows) =>
+    cities
+      .map((city) => {
+        const cityRows = rowsForDay.filter((r) => r.city === city);
+        // Total IC-Number: every entry that day with an IC-Number filled in — not deduped, so an IC
+        // logged on several cards that day counts once per card, same as the hours total beside it.
+        const icCount = cityRows.filter((r) => r.ic_number).length;
+        return { city, icCount, seconds: sumHms(cityRows.map((r) => r.duration)), rowCount: cityRows.length };
+      })
+      .filter((c) => c.rowCount > 0);
+
+  const imHoursByCity = hoursByCity(dayRows.filter((r) => r.team === "im"));
+  const rigHoursByCity = hoursByCity(dayRows.filter((r) => r.team === "rig"));
+
   let rows = all;
   if (teamFilter) rows = rows.filter((r) => r.team === teamFilter);
   if (subTeamFilter) rows = rows.filter((r) => r.team === "rig" && (r.sub_team || "rig") === subTeamFilter);
@@ -95,6 +120,7 @@ export default async function SdDetailsPage({
 
   const keep = (extra: Record<string, string>) =>
     `/sd-details?${new URLSearchParams({
+      ...(day && { day }),
       ...(teamFilter && { team: teamFilter }),
       ...(subTeamFilter && { subteam: subTeamFilter }),
       ...(cityFilter && { city: cityFilter }),
@@ -137,7 +163,7 @@ export default async function SdDetailsPage({
   return (
     <main className={styles.pageWide}>
       <p className={styles.back}>
-        <Link href="/">← Back</Link> · <Link href="/dashboard">Dashboard</Link>
+        <BackLink /> · <Link href="/dashboard">Dashboard</Link>
       </p>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0 }}>SD card details ({all.length})</h1>
@@ -178,6 +204,61 @@ export default async function SdDetailsPage({
           <div key={`${t.team}-${t.subteam}`} style={card}>
             <div style={cardValue}>{t.count}</div>
             <div style={cardLabel}>{t.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ margin: "0 0 22px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "0 0 10px" }}>
+          <h2 style={{ fontSize: "1rem", margin: 0 }}>Hours by city</h2>
+          <form method="get" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {teamFilter && <input type="hidden" name="team" value={teamFilter} />}
+            {subTeamFilter && <input type="hidden" name="subteam" value={subTeamFilter} />}
+            {cityFilter && <input type="hidden" name="city" value={cityFilter} />}
+            <Link href={keep({ day: prevDay })} style={chip(false)}>
+              ← Prev day
+            </Link>
+            <input type="date" name="day" defaultValue={day} aria-label="Day" />
+            <button type="submit">Go</button>
+            <Link href={keep({ day: nextDay })} style={chip(false)}>
+              Next day →
+            </Link>
+          </form>
+          <span style={{ fontSize: "0.85rem", color: "#64748b" }}>{day}</span>
+        </div>
+
+        {[
+          { title: "IM Hours", data: imHoursByCity },
+          { title: "Rig team Hours", data: rigHoursByCity },
+        ].map(({ title, data }) => (
+          <div key={title} style={{ margin: "0 0 14px" }}>
+            <h3 style={{ fontSize: "0.9rem", margin: "0 0 6px", color: "#334155" }}>{title}</h3>
+            {data.length === 0 ? (
+              <p className={styles.muted} style={{ margin: "0 0 6px" }}>
+                No entries for this day.
+              </p>
+            ) : (
+              <div role="region" aria-label={title} tabIndex={0} style={{ overflowX: "auto" }}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>City</th>
+                      <th>Total IC-Number</th>
+                      <th>Total hrs</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.map((c) => (
+                      <tr key={c.city}>
+                        <td>{c.city}</td>
+                        <td>{c.icCount}</td>
+                        <td>{formatHms(c.seconds)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         ))}
       </div>
