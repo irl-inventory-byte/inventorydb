@@ -350,13 +350,17 @@ export async function buildReceiptPdf(
   // e.g. "5 items" then, when rigs are present, "3 SD cards · 2 Rigs" beside it.
   const rigCount = summary.items.filter((i) => i.itemType === "rig").length;
   const mobileCount = summary.items.filter((i) => i.itemType === "mobile").length;
-  const sdCount = summary.items.length - rigCount - mobileCount;
+  const powerBankCount = summary.items.filter((i) => i.itemType === "power_bank").length;
+  // SD cards are whatever is left over, but only after rigs, mobiles AND power banks are taken out —
+  // power banks are a distinct item type and must never be folded into the SD card count.
+  const sdCount = summary.items.length - rigCount - mobileCount - powerBankCount;
   text(itemCountLabel, margin, 13, bold);
-  if (rigCount > 0 || mobileCount > 0) {
+  if (rigCount > 0 || mobileCount > 0 || powerBankCount > 0) {
     const parts = [
       sdCount ? `${sdCount} SD card${sdCount === 1 ? "" : "s"}` : "",
       rigCount ? `${rigCount} Rig${rigCount === 1 ? "" : "s"}` : "",
       mobileCount ? `${mobileCount} Mobile${mobileCount === 1 ? "" : "s"}` : "",
+      powerBankCount ? `${powerBankCount} Power Bank${powerBankCount === 1 ? "" : "s"}` : "",
     ].filter(Boolean);
     text(parts.join("  ·  "), margin + bold.widthOfTextAtSize(itemCountLabel, 13) + 14, 10.5, regular, grey);
   }

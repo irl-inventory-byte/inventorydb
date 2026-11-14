@@ -155,7 +155,9 @@ async function baseUrl() {
 
 export default async function ReceiptPage({
   params,
-}: PageProps<"/handover/receipt/[batch]">) {
+}: {
+  params: Promise<{ batch: string }>;
+}) {
   const me = await requireRole(...VIEW_ROLES);
 
   const { batch } = await params;
@@ -234,6 +236,7 @@ export default async function ReceiptPage({
       ["sd_card", "SD cards"],
       ["rig", "Rigs"],
       ["mobile", "Mobiles"],
+      ["power_bank", "Power banks"],
     ] as const
   )
     .map(([type, label]) => {
