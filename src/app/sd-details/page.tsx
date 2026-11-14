@@ -7,6 +7,10 @@ import { formatIst, istDate } from "@/lib/time";
 import styles from "../admin/admin.module.css";
 import BackLink from "../BackLink";
 
+type SdDetailsPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined>;
+};
+
 const TEAM_NAME: Record<string, string> = { im: "IM", rig: "Rig team" };
 // For rig-team rows, which hub actually sent it in — "Rig team" or "Productivity team" (same role,
 // two hubs). Blank sub_team on an older rig row (saved before this field existed) falls back to "Rig team".
@@ -20,13 +24,9 @@ const subTeamLabel = (r: { team: string; sub_team?: string }) =>
  * entry forms, which only show each team their own recent entries. Also reachable from the Dashboard
  * (see dashboard/page.tsx), not just the home page.
  */
-export default async function SdDetailsPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps) {
   await requireRole("admin", "im", "rig");
-  const sp = await searchParams;
+  const sp = (await searchParams) ?? {};
 
   // Hours-by-city day cycle (separate from the "Date from / to" filter below, which filters the row
   // table). Defaults to today (IST). Shows IM Hours and Rig team Hours (every "SD Card Duration Hour"
@@ -91,7 +91,13 @@ export default async function SdDetailsPage({
         // Total IC-Number: every entry that day with an IC-Number filled in — not deduped, so an IC
         // logged on several cards that day counts once per card, same as the hours total beside it.
         const icCount = cityRows.filter((r) => r.ic_number).length;
-        return { city, icCount, seconds: sumHms(cityRows.map((r) => r.duration)), rowCount: cityRows.length };
+        // Total SD cards: one entry = one SD card logged that day for that city, so this is just the
+        // row count — same number already used as rowCount below, named for what it means in the table.
+        const cardCount = cityRows.length;
+        // Total clips: raw_clips summed across the day's entries for that city. It's a free-text number
+        // field (see schema.ts), so non-numeric/blank values are treated as 0 rather than breaking the sum.
+        const clipsTotal = cityRows.reduce((sum, r) => sum + (Number(r.raw_clips) || 0), 0);
+        return { city, icCount, cardCount, clipsTotal, seconds: sumHms(cityRows.map((r) => r.duration)), rowCount: cityRows.length };
       })
       .filter((c) => c.rowCount > 0);
 
@@ -244,6 +250,8 @@ export default async function SdDetailsPage({
                     <tr>
                       <th>City</th>
                       <th>Total IC-Number</th>
+                      <th>Total SD cards</th>
+                      <th>Total clips</th>
                       <th>Total hrs</th>
                     </tr>
                   </thead>
@@ -252,6 +260,8 @@ export default async function SdDetailsPage({
                       <tr key={c.city}>
                         <td>{c.city}</td>
                         <td>{c.icCount}</td>
+                        <td>{c.cardCount}</td>
+                        <td>{c.clipsTotal}</td>
                         <td>{formatHms(c.seconds)}</td>
                       </tr>
                     ))}
