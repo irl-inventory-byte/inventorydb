@@ -18,7 +18,11 @@ const FORM_ID = "audit-select-form";
  * for MIN_DAYS+ days, grouped by city and hub. Tick items that were physically checked and confirm
  * them — that's logged (who, when) and shows up in the item's History, without changing its status.
  */
-export default async function AuditPage({ searchParams }: PageProps<"/audit">) {
+export default async function AuditPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   // VIEW_ROLES minus "internal" — Internal doesn't get City / Hub Audit (per request); kept in sync
   // with the tile's own roles list on the home page (src/app/page.tsx).
   const user = await requireRole(...VIEW_ROLES.filter((r) => r !== "internal"));

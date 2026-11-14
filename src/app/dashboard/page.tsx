@@ -420,6 +420,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
     cities?: { city: string; count: number; pct: number; href: string }[]; // city-wise list, opened from the tile
     citiesLabel?: string; // dropdown summary text for `cities`, default "City wise" — e.g. "Coming to" for In transit,
     // where "City wise" alone didn't say whether it meant where items currently are or where they're headed.
+    routes?: { label: string; fullLabel: string; count: number; pct: number; href: string }[]; // From → To
+    // breakdown (origin city → destination city), opened from the tile — see routesFor above. Used instead
+    // of `cities` for In transit, where a destination-only list didn't say where items were moving FROM.
+    routesLabel?: string; // dropdown summary text for `routes`, default "Routes"
     storage?: { storage: string; count: number; pct: number; href: string }[]; // SD card 256/512 GB breakdown, opened from the tile
     hubs?: { hub: string; count: number; pct: number; href: string }[]; // hub-wise breakdown, opened from the tile
     teams?: {
@@ -441,6 +445,40 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   // pct = share of that tile's items in the city (whole numbers, e.g. 42%).
   // `excludeHubs`: used only for "In stock" (see inStockValue below) so it doesn't double-count items
   // that are also shown under "With rig team" — those sit in_stock at the Rig/Productivity hub.
+  // From → To breakdown for in-transit items: which city each item was sent FROM and which city it's
+  // headed TO, using the item's last handover event (from_hub) and its current_hub (already the
+  // DESTINATION the moment it's sent — see the "Coming to" note below). A plain destination-only city
+  // list ("Coming to Bangalore (40)") didn't tell anyone where those items actually started from, so a
+  // viewer couldn't picture the move — this pairs origin and destination into one readable row instead.
+  // City names are shortened when long so the "City A → City B" row still fits on one line; the full
+  // names are kept in the link's title (hover) and in the filtered inventory it opens.
+  const eventByIdForRoutes = new Map(events.map((e) => [e.event_id, e]));
+  const shortCity = (name: string) => (name.length > 10 ? `${name.slice(0, 8)}…` : name);
+  const routesFor = (status: Status | Status[]) => {
+    const wanted = new Set<string>(Array.isArray(status) ? status : [status]);
+    const count = new Map<string, { from: string; to: string; n: number }>();
+    for (const i of items) {
+      if (!wanted.has(i.status)) continue;
+      const e = eventByIdForRoutes.get(i.last_event_id);
+      const fromCity = (e && cityOfHub.get(e.from_hub)) || e?.from_hub || "Unknown";
+      const toCity = cityOfHub.get(i.current_hub) || i.current_hub || "Not set";
+      const key = `${fromCity}→${toCity}`;
+      const row = count.get(key) ?? { from: fromCity, to: toCity, n: 0 };
+      row.n += 1;
+      count.set(key, row);
+    }
+    const all = [...count.values()];
+    const total = all.reduce((t, r) => t + r.n, 0);
+    return all
+      .sort((a, b) => b.n - a.n || a.from.localeCompare(b.from))
+      .map((r) => ({
+        label: `${shortCity(r.from)} → ${shortCity(r.to)}`,
+        fullLabel: `${r.from} → ${r.to}`,
+        count: r.n,
+        pct: total ? Math.round((r.n / total) * 100) : 0,
+        href: inventory({ status: [...wanted].join(","), city: r.to.toLowerCase() }),
+      }));
+  };
   const citiesFor = (status: Status | Status[], onlyType?: string, excludeHubs?: Set<string>) => {
     const wanted = new Set<string>(Array.isArray(status) ? status : [status]);
     const count = new Map<string, number>();
@@ -748,12 +786,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
       href: "/transit",
       icon: "truck",
       color: "var(--series-4)",
-      // "Coming to", not "City wise": citiesFor groups by current_hub, which is set to the DESTINATION
-      // hub the moment an item is sent (lib/handover.ts's planSend), before it's received — so this
-      // breakdown is already which city each in-transit item is headed to, not where it is now. The
-      // generic "City wise" label didn't make that clear.
-      cities: citiesFor(["traveling", "pending"]),
-      citiesLabel: "Coming to",
+      // Route breakdown (From → To), not a plain destination list: current_hub is set to the DESTINATION
+      // hub the moment an item is sent (lib/handover.ts's planSend), before it's received, so a bare
+      // city list here ("Coming to Bangalore (40)") only ever showed where items were headed — never
+      // where they'd come from — and that's what made the split hard to read at a glance.
+      routes: routesFor(["traveling", "pending"]),
+      routesLabel: "Routes",
       storage: storageFor(["traveling", "pending"]),
     },
     {
@@ -1389,7 +1427,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
 .kpi-tile > a{flex:1;min-width:0}
 `}</style>
           {kpis.map((k) =>
-            k.cities || k.storage || k.hubs || k.teams || k.baselineKey || k.dupes ? (
+            k.cities || k.routes || k.storage || k.hubs || k.teams || k.baselineKey || k.dupes ? (
               <div key={k.label} className={styles.kpi} style={{ "--kpi": k.color, overflow: "visible" } as CSSProperties}>
                 <span className={styles.kpiIcon}>
                   <Icon name={k.icon} size={22} />
@@ -1413,6 +1451,22 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
                             <span style={{ display: "inline-flex", gap: 10, alignItems: "baseline" }}>
                               <b>{n(c.count)}</b>
                               <span style={{ minWidth: 38, textAlign: "right", color: "#64748b", fontSize: "0.8rem" }}>{c.pct}%</span>
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                  {k.routes && k.routes.length > 0 && (
+                    <details className="kpi-city" name="kpi-dropdown">
+                      <summary>{k.routesLabel ?? "Routes"} ({k.routes.length}) ▾</summary>
+                      <div>
+                        {k.routes.map((r) => (
+                          <Link key={r.label} href={r.href} title={r.fullLabel}>
+                            <span>{r.label}</span>
+                            <span style={{ display: "inline-flex", gap: 10, alignItems: "baseline" }}>
+                              <b>{n(r.count)}</b>
+                              <span style={{ minWidth: 38, textAlign: "right", color: "#64748b", fontSize: "0.8rem" }}>{r.pct}%</span>
                             </span>
                           </Link>
                         ))}
