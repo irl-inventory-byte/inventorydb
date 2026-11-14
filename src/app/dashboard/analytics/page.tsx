@@ -118,12 +118,13 @@ export default async function AnalyticsPage({
 
   const rigView = type === "rig";
 
-  const [items, events, people, hubs, qcChecks] = await Promise.all([
+  const [items, events, people, hubs, qcChecks, settings] = await Promise.all([
     store.list("items"),
     store.list("events"),
     store.list("people"),
     store.list("hubs"),
     rigView ? store.list("qc_checks") : Promise.resolve([] as QcCheck[]),
+    store.list("settings"),
   ]);
 
   const hub = hubs.some((h) => h.hub_id === one(sp.hub))
@@ -169,10 +170,28 @@ export default async function AnalyticsPage({
     (i) => i.status === "with_rig" || (i.status === "in_stock" && teamHubIds.has(i.current_hub)),
   ).length;
   const inStockValue = items.filter((i) => i.status === "in_stock" && !teamHubIds.has(i.current_hub)).length;
+  // "Broken" is also adjusted here, the same way as the main dashboard's Broken tile (dashboard/page.tsx):
+  // the raw status count alone (d.byStatus.damaged) leaves out the admin's manual "starting count" baseline
+  // for cards broken before this system tracked them — which is why this page's Broken tile could read a
+  // small live count (e.g. 1) while the main dashboard showed a much bigger number (e.g. 89) for the same
+  // thing. storageOverride is read from the "broken_storage" setting, same key the dashboard uses.
+  let brokenStorageOverride: { gb256: number; gb512: number } | undefined;
+  try {
+    const raw = settings.find((s) => s.key === "broken_storage")?.value;
+    const parsed = raw ? JSON.parse(raw) : undefined;
+    if (parsed && Number.isFinite(parsed.gb256) && Number.isFinite(parsed.gb512)) brokenStorageOverride = parsed;
+  } catch {
+    // Malformed stored value — fall back to the live count.
+  }
+  const brokenBaselineTotal = (brokenStorageOverride?.gb256 ?? 0) + (brokenStorageOverride?.gb512 ?? 0);
+  const brokenSdOnly = items.filter((i) => i.item_type === "sd_card" && i.status === "damaged").length;
+  const brokenValue = brokenStorageOverride ? brokenSdOnly + brokenBaselineTotal : brokenSdOnly;
+
   const byStatusAdjusted: Record<Status, number> = {
     ...d.byStatus,
     with_rig: withRigTeamValue,
     in_stock: inStockValue,
+    damaged: brokenValue,
   };
 
   // Rigs have their own, richer breakdown (same as the main dashboard's Rig tab, lib/rig-state.ts):
