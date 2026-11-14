@@ -26,6 +26,12 @@ export default function SdDetailsForm({
   error: string;
   recent: SdCardDuration[];
   defaultMember?: string;
+  // NOTE: accepted-but-unused — your deployed sd-details/im/page.tsx and sd-details/rig/page.tsx pass a
+  // `filters` prop (build error TS2322, 2026-11-14) that this component never had in this repo clone, so
+  // there's no ground truth for what it should render/do. Typed loosely here just so the build passes.
+  // Paste the real im/page.tsx or rig/page.tsx (or describe what the filter should do, e.g. date range on
+  // the "recent" table) and I'll wire it in properly.
+  filters?: unknown;
 }) {
   // These six are copied forward from the most recent prior entry for the same serial (see
   // lookupSdDetailsBySerial in ./actions) once the serial field loses focus — kept as controlled state
