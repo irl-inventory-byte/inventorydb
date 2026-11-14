@@ -70,14 +70,20 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
   const members = [...new Set(all.map((r) => r.team_member).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
   // City-wise matrix: total / IM / Rig counts per city, always over the full set (not the active filters).
+  // Also totals SD cards (= row count, same number as "total"), clips and duration per city, same
+  // sums "Hours by city" above uses, but over every entry ever logged for that city (not just one day).
   const cityMatrix = cities
     .map((city) => {
       const cityRows = all.filter((r) => r.city === city);
+      const clipsTotal = cityRows.reduce((sum, r) => sum + (Number(r.raw_clips) || 0), 0);
       return {
         city,
         total: cityRows.length,
         im: cityRows.filter((r) => r.team === "im").length,
         rig: cityRows.filter((r) => r.team === "rig").length,
+        cardCount: cityRows.length,
+        clipsTotal,
+        seconds: sumHms(cityRows.map((r) => r.duration)),
       };
     })
     .sort((a, b) => b.total - a.total);
@@ -284,6 +290,9 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
                   <th>Total</th>
                   <th>IM</th>
                   <th>Rig team</th>
+                  <th>Total SD cards</th>
+                  <th>Total clips</th>
+                  <th>Total duration</th>
                 </tr>
               </thead>
               <tbody>
@@ -295,6 +304,9 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
                     <td>{c.total}</td>
                     <td>{c.im}</td>
                     <td>{c.rig}</td>
+                    <td>{c.cardCount}</td>
+                    <td>{c.clipsTotal}</td>
+                    <td>{formatHms(c.seconds)}</td>
                   </tr>
                 ))}
               </tbody>

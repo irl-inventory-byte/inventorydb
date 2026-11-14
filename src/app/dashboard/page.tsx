@@ -1207,7 +1207,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   const ackCity = one(sp.ackCity); // narrows to recipients in this one city, on top of everything else
   const ackCityOf = new Map(hubs.map((h) => [h.hub_id, (h.city || h.name || h.hub_id).trim()]));
   const ackPersonHub = new Map(people.map((p) => [p.person_id, p.hub]));
-  const ackCities = [...new Set(people.map((p) => ackCityOf.get(ackPersonHub.get(p.person_id) ?? "")).filter((c): c is string => !!c))].sort((a, b) =>
+  // Every hub's city, not just cities that already have a person assigned — a hub with no FO/IFO
+  // assigned yet (e.g. a newly added city like Indore) still needs to show up as a filter option,
+  // even though it will read "No acknowledgments recorded yet" until someone is added there.
+  const ackCities = [...new Set(hubs.map((h) => (h.city || h.name || h.hub_id).trim()).filter(Boolean))].sort((a, b) =>
     a.localeCompare(b),
   );
   const ackInRange = acknowledgments.filter((a) => {
