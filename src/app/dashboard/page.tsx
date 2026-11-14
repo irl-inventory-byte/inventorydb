@@ -418,6 +418,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
     icon: IconName;
     color: string;
     cities?: { city: string; count: number; pct: number; href: string }[]; // city-wise list, opened from the tile
+    citiesLabel?: string; // dropdown summary text for `cities`, default "City wise" — e.g. "Coming to" for In transit,
+    // where "City wise" alone didn't say whether it meant where items currently are or where they're headed.
     storage?: { storage: string; count: number; pct: number; href: string }[]; // SD card 256/512 GB breakdown, opened from the tile
     hubs?: { hub: string; count: number; pct: number; href: string }[]; // hub-wise breakdown, opened from the tile
     teams?: {
@@ -746,7 +748,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
       href: "/transit",
       icon: "truck",
       color: "var(--series-4)",
+      // "Coming to", not "City wise": citiesFor groups by current_hub, which is set to the DESTINATION
+      // hub the moment an item is sent (lib/handover.ts's planSend), before it's received — so this
+      // breakdown is already which city each in-transit item is headed to, not where it is now. The
+      // generic "City wise" label didn't make that clear.
       cities: citiesFor(["traveling", "pending"]),
+      citiesLabel: "Coming to",
       storage: storageFor(["traveling", "pending"]),
     },
     {
@@ -1398,7 +1405,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
                   )}
                   {k.cities && k.cities.length > 0 && (
                     <details className="kpi-city" name="kpi-dropdown">
-                      <summary>City wise ({k.cities.length}) ▾</summary>
+                      <summary>{k.citiesLabel ?? "City wise"} ({k.cities.length}) ▾</summary>
                       <div>
                         {k.cities.map((c) => (
                           <Link key={c.city} href={c.href}>

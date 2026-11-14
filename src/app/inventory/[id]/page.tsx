@@ -11,18 +11,35 @@ import { applyCorrection } from "../actions";
 import CorrectionPanel from "../CorrectionPanel";
 import RigChecks from "./RigChecks";
 
-type ItemPageProps = {
+type InventoryItemPageProps = {
   params: Promise<{ id: string }>;
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-export default async function ItemPage({ params, searchParams }: ItemPageProps) {
+export default async function ItemPage({ params, searchParams }: InventoryItemPageProps) {
   const user = await requireRole();
   const { id } = await params;
-  const sp = await searchParams;
+  const sp = (await searchParams) ?? {};
   // Only items of a type this login may see; anything else is "not found".
   const store = storeForAll(user.role);
-  const item = await store.getItem(id);
+  // store.getItem() is an exact, case-sensitive match on item_id — which 404s on a perfectly real item
+  // whenever the id in the URL doesn't match byte-for-byte: different letter case, stray leading/trailing
+  // whitespace, or the browser/another page encoding a space or special character differently than this
+  // route decodes it. decodeURIComponent is tried too, since an id with a space or "-" sometimes arrives
+  // double-encoded from a Link built with a template string instead of encodeURIComponent. Falls back to
+  // a case-insensitive, trimmed match across every item before finally giving up with notFound().
+  let item = await store.getItem(id);
+  if (!item) {
+    let decoded = id;
+    try {
+      decoded = decodeURIComponent(id);
+    } catch {
+      // Not valid percent-encoding — fall through and try the raw id as-is below.
+    }
+    const wanted = decoded.trim().toUpperCase();
+    const items = await store.list("items");
+    item = items.find((i) => i.item_id.trim().toUpperCase() === wanted);
+  }
   if (!item) notFound();
   const isRig = itemType(item) === "rig";
   const isMobile = itemType(item) === "mobile";
@@ -31,7 +48,7 @@ export default async function ItemPage({ params, searchParams }: ItemPageProps) 
   const [hubs, people, history, hardware, qc, audits] = await Promise.all([
     store.list("hubs"),
     store.list("people"),
-    store.getHistory(id),
+    store.getHistory(item.item_id), // the resolved item's real id, not the raw URL param — see the tolerant lookup above
     isRig ? store.list("hardware_updates") : Promise.resolve([] as HardwareUpdate[]),
     isRig ? store.list("qc_checks") : Promise.resolve([] as QcCheck[]),
     store.list("audits"),
