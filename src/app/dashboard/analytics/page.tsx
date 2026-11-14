@@ -3,9 +3,10 @@ import type { CSSProperties } from "react";
 import { requireRole } from "@/lib/authz";
 import { LATE_AFTER_HOURS, computeDashboard } from "@/lib/dashboard";
 import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
-import type { Status } from "@/lib/schema";
+import type { QcCheck, Status } from "@/lib/schema";
 import { storeFor, typeParam } from "@/lib/access";
 import { rigTeamHubs, productivityTeamHubs } from "@/lib/rig-hub";
+import { RIG_STATES, RIG_STATE_LABELS, rigState } from "@/lib/rig-state";
 import TypeSwitch from "../../TypeSwitch";
 import { ActivityChart, BarList, n } from "../charts";
 import styles from "../dashboard.module.css";
@@ -32,6 +33,13 @@ const TILES: {
   { status: "with_rig" },
   { status: "with_internal" },
   { status: "pending" },
+  // Rig-only statuses (see lib/schema.ts) — without these, rig items sent to/with QC or hardware simply
+  // vanish from this page's tiles and total instead of being counted anywhere, which is why this page's
+  // "items in total" could disagree with the main dashboard's own total for the same type.
+  { status: "pending_qc" },
+  { status: "with_qc" },
+  { status: "pending_hardware" },
+  { status: "with_hardware" },
   { status: "lost", icon: { glyph: "✕", tone: "critical" } },
   { status: "damaged", icon: { glyph: "▲", tone: "warning" } },
   { status: "retired", icon: { glyph: "●", tone: "muted" } },
@@ -99,18 +107,23 @@ const fullNameStyle: CSSProperties = {
 
 export default async function AnalyticsPage({
   searchParams,
-}: PageProps<"/dashboard/analytics">) {
+}: {
+  searchParams: { [key: string]: string | string[] | undefined } | Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
   const user = await requireRole();
 
   const sp = await searchParams;
   const type = typeParam(one(sp.type), user.role);
   const store = storeFor(user.role, type);
 
-  const [items, events, people, hubs] = await Promise.all([
+  const rigView = type === "rig";
+
+  const [items, events, people, hubs, qcChecks] = await Promise.all([
     store.list("items"),
     store.list("events"),
     store.list("people"),
     store.list("hubs"),
+    rigView ? store.list("qc_checks") : Promise.resolve([] as QcCheck[]),
   ]);
 
   const hub = hubs.some((h) => h.hub_id === one(sp.hub))
@@ -161,6 +174,45 @@ export default async function AnalyticsPage({
     with_rig: withRigTeamValue,
     in_stock: inStockValue,
   };
+
+  // Rigs have their own, richer breakdown (same as the main dashboard's Rig tab, lib/rig-state.ts):
+  // In stock, With hardware team, With field officer, In transit, Internal, QC pending/passed/fail,
+  // RTD, Dead/Retired, R&D — a much finer split than the plain Status column rigs otherwise share with
+  // SD cards, mobiles and power banks. Built the same way as dashboard/page.tsx's rigKpis, so the two
+  // pages' numbers agree for every one of these states, not just "With rig team"/"In stock".
+  const latestQc = new Map<string, string>();
+  for (const c of qcChecks) latestQc.set(c.item_id, c.qc_status);
+  const rigCount = Object.fromEntries(RIG_STATES.map((k) => [k, 0])) as Record<(typeof RIG_STATES)[number], number>;
+  if (rigView) {
+    for (const i of items) {
+      const st = rigState(i.status, latestQc.get(i.item_id));
+      if (st === "lost" || st === "other") continue; // not part of RIG_STATES, shown via the Lost/Damaged tile below
+      rigCount[st] = (rigCount[st] ?? 0) + 1;
+    }
+  }
+  const rigLostCount = items.filter((i) => i.item_type === "rig" && (i.status === "lost" || i.status === "damaged")).length;
+  const RIG_STATE_HREF: Record<(typeof RIG_STATES)[number], Status[]> = {
+    in_stock: ["in_stock", "pending"],
+    hardware: ["with_hardware"],
+    fo: ["with_fo"],
+    transit: ["traveling"],
+    internal: ["with_internal"],
+    qc_pending: ["pending_qc", "with_qc"],
+    qc_pass: ["pending"],
+    qc_fail: ["with_qc", "pending_hardware"],
+    rtd: ["pending", "with_hardware"],
+    dead: ["retired"],
+    rnd: ["rnd"],
+  };
+  const rigStatusRows = RIG_STATES.filter((k) => rigCount[k] > 0)
+    .sort((a, b) => rigCount[b] - rigCount[a])
+    .map((k) => ({
+      key: k,
+      label: RIG_STATE_LABELS[k],
+      value: rigCount[k],
+      href: inventory({ status: RIG_STATE_HREF[k].join(","), type: "rig", ...hubScope }),
+      tip: `${RIG_STATE_LABELS[k]}\n${n(rigCount[k])} rigs (${((rigCount[k] / Math.max(1, d.total)) * 100).toFixed(1)}%)`,
+    }));
 
   const statusRows = TILES.map((t) => t.status)
     .filter((s) => byStatusAdjusted[s] > 0)
@@ -236,43 +288,112 @@ export default async function AnalyticsPage({
             </div>
 
             <div className={styles.heroSide}>
-              <div>
-                <strong>{n(d.outCount)}</strong>
-                <span>out with someone</span>
-              </div>
+              {rigView ? (
+                <>
+                  <div>
+                    <strong>{n(d.usable)}</strong>
+                    <span>usable rigs</span>
+                  </div>
+
+                  <div>
+                    <strong>{d.utilization === null ? "—" : `${d.utilization}%`}</strong>
+                    <span>
+                      utilization ({n(d.outCount)} out of {n(d.usable)} usable)
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <strong>{n(d.outCount)}</strong>
+                  <span>out with someone</span>
+                </div>
+              )}
 
               <div>
                 <strong>{n(d.lateCards)}</strong>
                 <span>late (over {LATE_AFTER_HOURS} hours)</span>
               </div>
+
+              {rigView && (
+                <div>
+                  <strong>{n(d.waiting)}</strong>
+                  <span>
+                    waiting to be received
+                    {d.oldestWaitingDays !== null && `, oldest ${days(d.oldestWaitingDays)} ago`}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
+          {/* Utilization = items in use ÷ usable items. In use = out of the hub: with an FO, IFO, rig team
+              or internal person, or sent and not received yet. Usable = every item except lost, damaged
+              and retired. Matches dashboard/page.tsx's own definition text, word for word, so the two
+              pages never disagree about what this percentage means. */}
+          {rigView && d.utilization !== null && (
+            <p className={styles.heroNote}>
+              Utilization = items in use ÷ usable items. In use = out of the hub: with an FO, IFO, rig team
+              or internal person, or sent and not received yet. Usable = every item except lost, damaged and
+              retired.
+            </p>
+          )}
+
           <div className={styles.tiles}>
-            {TILES.map(({ status, icon }) => (
-              <Link
-                key={status}
-                href={inventory({ status, ...hubScope })}
-                className={styles.tile}
-              >
-                <span className={styles.tileLabel}>
-                  {icon && (
-                    <span
-                      className={`${styles.icon} ${TONE[icon.tone]}`}
-                      aria-hidden
-                    >
-                      {icon.glyph}
+            {rigView
+              ? [
+                  ...RIG_STATES.map((k) => ({
+                    key: k,
+                    label: RIG_STATE_LABELS[k],
+                    value: rigCount[k] ?? 0,
+                    href: inventory({ status: RIG_STATE_HREF[k].join(","), type: "rig", ...hubScope }),
+                    icon: k === "qc_fail" ? { glyph: "✕", tone: "critical" as const } : undefined,
+                  })),
+                  {
+                    key: "lost",
+                    label: "Lost / damaged",
+                    value: rigLostCount,
+                    href: inventory({ status: "lost,damaged", type: "rig", ...hubScope }),
+                    icon: { glyph: "✕", tone: "critical" as const },
+                  },
+                ].map(({ key, label, value, href, icon }) => (
+                  <Link key={key} href={href} className={styles.tile}>
+                    <span className={styles.tileLabel}>
+                      {icon && (
+                        <span className={`${styles.icon} ${TONE[icon.tone]}`} aria-hidden>
+                          {icon.glyph}
+                        </span>
+                      )}
+
+                      {label}
                     </span>
-                  )}
 
-                  {STATUS_LABELS[status]}
-                </span>
+                    <span className={styles.tileValue}>{n(value)}</span>
+                  </Link>
+                ))
+              : TILES.map(({ status, icon }) => (
+                  <Link
+                    key={status}
+                    href={inventory({ status, ...hubScope })}
+                    className={styles.tile}
+                  >
+                    <span className={styles.tileLabel}>
+                      {icon && (
+                        <span
+                          className={`${styles.icon} ${TONE[icon.tone]}`}
+                          aria-hidden
+                        >
+                          {icon.glyph}
+                        </span>
+                      )}
 
-                <span className={styles.tileValue}>
-                  {n(byStatusAdjusted[status])}
-                </span>
-              </Link>
-            ))}
+                      {STATUS_LABELS[status]}
+                    </span>
+
+                    <span className={styles.tileValue}>
+                      {n(byStatusAdjusted[status])}
+                    </span>
+                  </Link>
+                ))}
           </div>
         </section>
 
@@ -283,8 +404,8 @@ export default async function AnalyticsPage({
           >
             <h2>Where items are now</h2>
 
-            {statusRows.length ? (
-              <BarList rows={statusRows} />
+            {(rigView ? rigStatusRows : statusRows).length ? (
+              <BarList rows={rigView ? rigStatusRows : statusRows} />
             ) : (
               <p className={styles.muted}>No items.</p>
             )}

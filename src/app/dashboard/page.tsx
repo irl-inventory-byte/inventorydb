@@ -786,9 +786,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
     },
   ];
 
-  // Mobiles: the SD card tiles, without the rig team and internal ones (mobiles go only to IMs, FOs and IFOs),
-  // and every tile opens the Mobile list.
-  // Six even tiles (3 + 3): Total, In stock, With field officers, In transit, Lost or damaged, Retired.
+  // Mobiles: the SD card tiles, without the rig team one (mobiles don't go to a rig team) — "Internal" is
+  // included, mobiles do get handed to internal staff same as SD cards and rigs — and every tile opens
+  // the Mobile list.
   // Broken mobiles: computed separately from the SD card Broken tile, which combines the admin's
   // SD-only "starting count" baseline with the live SD damaged count — neither of which has anything
   // to do with mobiles. Mobiles just get their own live count of item_type "mobile" + status "damaged".
@@ -807,7 +807,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
       color: "var(--series-1)",
     },
     ...sdKpis
-      .filter((k) => k.label !== "With rig team" && k.label !== "Internal")
+      .filter((k) => k.label !== "With rig team")
       .map((k) => {
         const isBroken = k.label === "Broken";
         const isRetired = k.label === "Retired";
