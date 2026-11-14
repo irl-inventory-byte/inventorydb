@@ -117,6 +117,8 @@ export default async function AnalyticsPage({
   const store = storeFor(user.role, type);
 
   const rigView = type === "rig";
+  const mobileView = type === "mobile";
+  const powerBankView = type === "power_bank";
 
   const [items, events, people, hubs, qcChecks, settings] = await Promise.all([
     store.list("items"),
@@ -231,6 +233,58 @@ export default async function AnalyticsPage({
       value: rigCount[k],
       href: inventory({ status: RIG_STATE_HREF[k].join(","), type: "rig", ...hubScope }),
       tip: `${RIG_STATE_LABELS[k]}\n${n(rigCount[k])} rigs (${((rigCount[k] / Math.max(1, d.total)) * 100).toFixed(1)}%)`,
+    }));
+
+  // Mobiles and power banks don't go through the rig/QC/hardware flow or the rig team, so most of the
+  // generic TILES list (With rig team, Internal, Pending receipt, R&D, and — for power banks — Broken,
+  // which has no meaning there either, see dashboard/page.tsx) never applies to them and was showing up
+  // here anyway with meaningless zeroes. Same tile set as the main dashboard's Mobile/Power bank tabs,
+  // with "In transit" folding traveling + pending into one number like the dashboard does.
+  type SimpleTile = {
+    key: string;
+    label: string;
+    value: number;
+    href: string;
+    icon?: { glyph: string; tone: "critical" | "warning" | "muted" };
+  };
+  const simpleTiles: SimpleTile[] | null = mobileView
+    ? [
+        { key: "in_stock", label: "In stock", value: d.byStatus.in_stock, href: inventory({ status: "in_stock", ...hubScope }) },
+        { key: "with_fo", label: "With field officers", value: d.byStatus.with_fo, href: inventory({ status: "with_fo", ...hubScope }) },
+        { key: "with_internal", label: "Internal", value: d.byStatus.with_internal, href: inventory({ status: "with_internal", ...hubScope }) },
+        {
+          key: "transit",
+          label: "In transit",
+          value: d.byStatus.traveling + d.byStatus.pending,
+          href: inventory({ status: "traveling,pending", ...hubScope }),
+        },
+        { key: "lost", label: "Lost", value: d.byStatus.lost, href: inventory({ status: "lost", ...hubScope }), icon: { glyph: "✕", tone: "critical" } },
+        { key: "damaged", label: "Broken", value: d.byStatus.damaged, href: inventory({ status: "damaged", ...hubScope }), icon: { glyph: "▲", tone: "warning" } },
+        { key: "retired", label: "Retired", value: d.byStatus.retired, href: inventory({ status: "retired", ...hubScope }), icon: { glyph: "●", tone: "muted" } },
+      ]
+    : powerBankView
+      ? [
+          { key: "in_stock", label: "In stock", value: d.byStatus.in_stock, href: inventory({ status: "in_stock", ...hubScope }) },
+          { key: "with_fo", label: "With field officers", value: d.byStatus.with_fo, href: inventory({ status: "with_fo", ...hubScope }) },
+          {
+            key: "transit",
+            label: "In transit",
+            value: d.byStatus.traveling + d.byStatus.pending,
+            href: inventory({ status: "traveling,pending", ...hubScope }),
+          },
+          { key: "lost", label: "Lost", value: d.byStatus.lost, href: inventory({ status: "lost", ...hubScope }), icon: { glyph: "✕", tone: "critical" } },
+          { key: "retired", label: "Retired", value: d.byStatus.retired, href: inventory({ status: "retired", ...hubScope }), icon: { glyph: "●", tone: "muted" } },
+        ]
+      : null;
+  const simpleStatusRows = simpleTiles
+    ?.filter((t) => t.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .map((t) => ({
+      key: t.key,
+      label: t.label,
+      value: t.value,
+      href: t.href,
+      tip: `${t.label}\n${n(t.value)} items (${((t.value / Math.max(1, d.total)) * 100).toFixed(1)}%)`,
     }));
 
   const statusRows = TILES.map((t) => t.status)
@@ -389,7 +443,23 @@ export default async function AnalyticsPage({
                     <span className={styles.tileValue}>{n(value)}</span>
                   </Link>
                 ))
-              : TILES.map(({ status, icon }) => (
+              : simpleTiles
+                ? simpleTiles.map(({ key, label, value, href, icon }) => (
+                    <Link key={key} href={href} className={styles.tile}>
+                      <span className={styles.tileLabel}>
+                        {icon && (
+                          <span className={`${styles.icon} ${TONE[icon.tone]}`} aria-hidden>
+                            {icon.glyph}
+                          </span>
+                        )}
+
+                        {label}
+                      </span>
+
+                      <span className={styles.tileValue}>{n(value)}</span>
+                    </Link>
+                  ))
+                : TILES.map(({ status, icon }) => (
                   <Link
                     key={status}
                     href={inventory({ status, ...hubScope })}
@@ -423,8 +493,8 @@ export default async function AnalyticsPage({
           >
             <h2>Where items are now</h2>
 
-            {(rigView ? rigStatusRows : statusRows).length ? (
-              <BarList rows={rigView ? rigStatusRows : statusRows} />
+            {(rigView ? rigStatusRows : simpleStatusRows ?? statusRows).length ? (
+              <BarList rows={rigView ? rigStatusRows : simpleStatusRows ?? statusRows} />
             ) : (
               <p className={styles.muted}>No items.</p>
             )}
