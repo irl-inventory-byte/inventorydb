@@ -60,16 +60,30 @@ export default async function SendPage({
   const latestQc = new Map<string, string>();
   for (const c of qcChecks) latestQc.set(c.item_id, c.qc_status);
   const held = HELD[user.role as Role];
+  // Power Bank: Brand, Model, Capacity, saved as JSON on `attributes` (see PowerBankAddForm). Shown
+  // while scanning the same way a rig's condition is, below.
+  const powerBankDetail = (raw: string): string | undefined => {
+    try {
+      const a = JSON.parse(raw || "{}") as Record<string, unknown>;
+      const parts = [a.brand, a.model, a.capacity].map((v) => (typeof v === "string" ? v.trim() : "")).filter(Boolean);
+      return parts.length > 0 ? parts.join(" · ") : undefined;
+    } catch {
+      return undefined;
+    }
+  };
   const scanItems = items.map((i) => ({
     id: i.item_id,
     status: i.status,
     hub: i.current_hub,
-    type: i.item_type === "rig" || i.item_type === "mobile" ? i.item_type : "sd_card",
+    type:
+      i.item_type === "rig" || i.item_type === "mobile" || i.item_type === "power_bank" ? i.item_type : "sd_card",
     // Mobiles can be scanned by IMEI, Asset Tag or Serial.
     ...(i.item_type === "mobile" && { aliases: mobileAliases(i.attributes) }),
     // Rigs show their condition while scanning, e.g. "QC passed · Idle" or "Repaired · Ready for field".
     // (Not for the hardware team: they only see where the rig is, e.g. "With hardware team".)
     ...(i.item_type === "rig" && user.role !== "hardware" && { note: rigCondition(i.status, latestQc.get(i.item_id)).label }),
+    // Power banks show their brand/model/capacity while scanning, e.g. "Portronics · 20000 20000mAh".
+    ...(i.item_type === "power_bank" && powerBankDetail(i.attributes) && { note: powerBankDetail(i.attributes) }),
   }));
   const hubName = new Map(hubs.map((h) => [h.hub_id, h.name]));
   const recipients = people.filter((p) => p.active !== "false").sort((a, b) => a.name.localeCompare(b.name));
