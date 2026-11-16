@@ -7,6 +7,7 @@ import { requireRole } from "@/lib/authz";
 import { formatPrice, summarizeBatch } from "@/lib/receipt";
 import { VIEW_ROLES, storeForAll } from "@/lib/access";
 import { formatIst } from "@/lib/time";
+import { ITEM_TYPE_LABELS } from "@/lib/labels";
 import { RECEIPT_TYPE_TITLE, byReceiptType, receiptColumns } from "@/lib/receipt-columns";
 import styles from "../../form.module.css";
 import PrintButton from "./PrintButton";
@@ -193,15 +194,19 @@ export default async function ReceiptPage({
     (item) => formatPrice(item.price) === ""
   ).length;
 
-  // Count by storage size, e.g. "256 GB × 20, 512 GB × 6".
+  // Count by item type + storage, e.g. "SD card 256 GB × 20, Power bank 20000mAh × 30, Rig × 8".
+  // Grouping by storage alone (the old behaviour) mixed unrelated types together whenever their
+  // storage/capacity values happened to collide or were both missing — e.g. every rig and every
+  // mobile with no storage recorded landed in one "Not set" bucket with no way to tell them apart.
   const storageCounts = new Map<string, number>();
   for (const item of summary.items) {
-    const key = item.storage || "Not set";
+    const typeLabel = ITEM_TYPE_LABELS[item.itemType] ?? item.itemType;
+    const key = item.storage ? `${typeLabel} ${item.storage}` : typeLabel;
     storageCounts.set(key, (storageCounts.get(key) ?? 0) + 1);
   }
   const storageBreakdown = [...storageCounts.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([size, count]) => `${size} × ${count}`)
+    .map(([label, count]) => `${label} × ${count}`)
     .join(", ");
 
   const itemCountLabel = `${summary.items.length} item${
