@@ -26,6 +26,7 @@ interface NotReceivedRow {
   item_type: string;
   sentBy: string;
   sentTo: string;
+  personId: string; // current_holder's person_id, for the "click to see their details" link
   role: string;
   roleKey: string;
   city: string;
@@ -33,6 +34,17 @@ interface NotReceivedRow {
   mobile: string;
   sentAt: string;
   hoursOut: number | null; // for sorting and for the "Out for" column; null when the send time is unknown
+  outFor: string;
+  status: string;
+}
+
+interface PersonItemRow {
+  item_id: string;
+  item_type: string;
+  sentBy: string;
+  city: string;
+  sentAt: string;
+  hoursOut: number | null;
   outFor: string;
   status: string;
 }
@@ -76,6 +88,7 @@ export default async function EventsPage({
   const personById = new Map(people.map((p) => [p.person_id, p]));
   const hubName = new Map(hubs.map((h) => [h.hub_id, h.name]));
   const itemById = new Map(items.map((i) => [i.item_id, i]));
+  const eventById = new Map(events.map((e) => [e.event_id, e]));
 
   // Choices for the City / Role dropdowns: only ones that actually appear in this date range's events.
   const options = moveFilterOptions(events, hubs, people, range);
@@ -129,6 +142,7 @@ export default async function EventsPage({
         item_type: TYPE_LABELS[i.item_type] ?? i.item_type,
         sentBy: sendEvent?.from_person || "—",
         sentTo: personName.get(i.current_holder) || sendEvent?.to_person || "—",
+        personId: i.current_holder || "",
         role: ROLE_LABELS[holderRole as Role] ?? (holderRole || "—"),
         roleKey: holderRole,
         city: city.get(i.current_hub) ?? i.current_hub ?? "—",
@@ -146,6 +160,48 @@ export default async function EventsPage({
   const otherNotReceived = notReceivedRows.filter((r) => r.roleKey !== "fo" && r.roleKey !== "ifo");
 
   const filtersActive = Boolean(one(sp.efrom) || one(sp.eto) || cityFilter.length || roleFilter.length);
+
+  // Clicking a name in "Sent to" opens that person's own details below, keeping the current filters in
+  // the URL so "Apply"/"Reset" still work when they're done looking.
+  const qs = new URLSearchParams();
+  if (one(sp.efrom)) qs.set("efrom", one(sp.efrom));
+  if (one(sp.eto)) qs.set("eto", one(sp.eto));
+  if (cityFilter[0]) qs.set("ecity", cityFilter[0]);
+  if (roleFilter[0]) qs.set("erole", roleFilter[0]);
+  const personHref = (personId: string) => {
+    const p = new URLSearchParams(qs);
+    p.set("person", personId);
+    return `/dashboard/events?${p.toString()}`;
+  };
+
+  // Selected person (from ?person=): everything CURRENTLY out with them and not yet received, across
+  // all time — not limited to the date range above, since "show me this FO's details" means their whole
+  // open workload, not just what moved today.
+  const selectedPersonId = one(sp.person);
+  const selectedPerson = selectedPersonId ? personById.get(selectedPersonId) : undefined;
+  const personRows: PersonItemRow[] = selectedPerson
+    ? items
+        .filter(
+          (i) =>
+            i.current_holder === selectedPersonId && (AWAITING_RECEIPT as readonly string[]).includes(i.status),
+        )
+        .map((i) => {
+          const sendEvent = eventById.get(i.last_event_id);
+          const sentAtMs = sendEvent ? Date.parse(sendEvent.occurred_at) : NaN;
+          const hoursOut = Number.isNaN(sentAtMs) ? null : Math.max(0, (now.getTime() - sentAtMs) / 3_600_000);
+          return {
+            item_id: i.item_id,
+            item_type: TYPE_LABELS[i.item_type] ?? i.item_type,
+            sentBy: sendEvent?.from_person || "—",
+            city: city.get(i.current_hub) ?? i.current_hub ?? "—",
+            sentAt: sendEvent ? formatIst(sendEvent.occurred_at) : "—",
+            hoursOut,
+            outFor: hoursOut === null ? "—" : howLong(hoursOut),
+            status: STATUS_LABELS[i.status] ?? i.status,
+          };
+        })
+        .sort((a, b) => (b.hoursOut ?? -1) - (a.hoursOut ?? -1))
+    : [];
 
   return (
     <div className={styles.root}>
@@ -191,6 +247,70 @@ export default async function EventsPage({
             </Link>
           )}
         </form>
+
+        {selectedPersonId && (
+          <section className={styles.card} aria-label="Person details">
+            <div className={styles.sectionHead}>
+              <h2>{selectedPerson ? selectedPerson.name : selectedPersonId}</h2>
+              <Link href={`/dashboard/events?${qs.toString()}`} className={styles.link}>
+                Close
+              </Link>
+            </div>
+            {selectedPerson ? (
+              <p className={styles.muted}>
+                {ROLE_LABELS[selectedPerson.role as Role] ?? selectedPerson.role}
+                {selectedPerson.hub && <> · Base hub: {hubName.get(selectedPerson.hub) ?? selectedPerson.hub}</>}
+                {selectedPerson.mobile?.trim() && (
+                  <>
+                    {" "}
+                    ·{" "}
+                    <a href={`tel:${selectedPerson.mobile.trim()}`} className={styles.link}>
+                      {selectedPerson.mobile.trim()}
+                    </a>
+                  </>
+                )}
+              </p>
+            ) : (
+              <p className={styles.muted}>No people-sheet record found for this person ID.</p>
+            )}
+            {personRows.length === 0 ? (
+              <p className={styles.ok}>Nothing currently out with them awaiting receipt.</p>
+            ) : (
+              <div className={styles.tableScroll} style={{ marginTop: 8 }}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th scope="col">Item</th>
+                      <th scope="col">Type</th>
+                      <th scope="col">Sent by</th>
+                      <th scope="col">City</th>
+                      <th scope="col">Sent at</th>
+                      <th scope="col">Out for</th>
+                      <th scope="col">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {personRows.map((r) => (
+                      <tr key={r.item_id}>
+                        <td>
+                          <Link href={`/inventory/${encodeURIComponent(r.item_id)}`} className={styles.link}>
+                            {r.item_id}
+                          </Link>
+                        </td>
+                        <td>{r.item_type}</td>
+                        <td>{r.sentBy}</td>
+                        <td>{r.city}</td>
+                        <td>{r.sentAt}</td>
+                        <td>{r.outFor}</td>
+                        <td>{r.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
 
         <section className={styles.card} aria-label="Counts by item type">
           <h2>Sent &amp; received</h2>
@@ -248,13 +368,13 @@ export default async function EventsPage({
                   <p className={styles.muted} style={{ margin: "2px 0 0", fontSize: "0.82rem" }}>
                     Longest-out first — mobile number and base hub included so they're easy to chase.
                   </p>
-                  <NotReceivedTable rows={foIfoNotReceived} showContact />
+                  <NotReceivedTable rows={foIfoNotReceived} showContact personHref={personHref} />
                 </>
               )}
               {otherNotReceived.length > 0 && (
                 <>
                   <h3 style={{ margin: "14px 0 0", fontSize: "0.95rem" }}>Everyone else ({otherNotReceived.length})</h3>
-                  <NotReceivedTable rows={otherNotReceived} />
+                  <NotReceivedTable rows={otherNotReceived} personHref={personHref} />
                 </>
               )}
             </>
@@ -265,7 +385,15 @@ export default async function EventsPage({
   );
 }
 
-function NotReceivedTable({ rows, showContact = false }: { rows: NotReceivedRow[]; showContact?: boolean }) {
+function NotReceivedTable({
+  rows,
+  showContact = false,
+  personHref,
+}: {
+  rows: NotReceivedRow[];
+  showContact?: boolean;
+  personHref?: (personId: string) => string;
+}) {
   return (
     <div className={styles.tableScroll} style={{ marginTop: 8 }}>
       <table className={styles.table}>
@@ -294,7 +422,15 @@ function NotReceivedTable({ rows, showContact = false }: { rows: NotReceivedRow[
               </td>
               <td>{r.item_type}</td>
               <td>{r.sentBy}</td>
-              <td>{r.sentTo}</td>
+              <td>
+                {r.personId && personHref ? (
+                  <Link href={personHref(r.personId)} className={styles.link}>
+                    {r.sentTo}
+                  </Link>
+                ) : (
+                  r.sentTo
+                )}
+              </td>
               <td>{r.role}</td>
               {showContact && (
                 <td>
