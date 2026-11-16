@@ -66,22 +66,10 @@ export default async function IcTransferPage({
             Name
           </label>
           <div className={styles.control}>
-            {user.role === "admin" ? (
-              <>
-                <select id="by" name="by" defaultValue={defaultActor(user)} required>
-                  {byOptions.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-                <p className={styles.hint}>
-                  As an admin you can transfer on behalf of any IC. Your own sign-in is always saved on the record too.
-                </p>
-              </>
-            ) : byOptions.length ? (
+            {byOptions.length ? (
               <>
                 <strong id="by">{byOptions[0].label}</strong>
+                <input type="hidden" name="by" value={byOptions[0].value} />
                 <p className={styles.hint}>Transfers are recorded under your name.</p>
               </>
             ) : (
