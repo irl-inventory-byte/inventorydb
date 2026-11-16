@@ -54,6 +54,10 @@ export async function saveSdDetails(formData: FormData) {
   const failedHours = String(formData.get("failed_hours") ?? "").trim();
   const failedRawClips = String(formData.get("failed_raw_clips") ?? "").trim();
   const rawClips = String(formData.get("raw_clips") ?? "").trim();
+  // IM form only: "detected" | "not_detected". Rig form only: free-text note. Each is blank on the
+  // other form's entries — see sd-details/SdDetailsForm.tsx.
+  const detected = team === "im" ? String(formData.get("detected") ?? "").trim() : "";
+  const note = team === "rig" ? String(formData.get("note") ?? "").trim() : "";
   // Rig form only: not asked on the form anymore (removed per request) — every Rig-form entry is just
   // recorded as "Rig team". Still "" for IM entries. See sd-details/SdDetailsForm.tsx.
   const subTeam = team === "rig" ? "rig" : "";
@@ -85,6 +89,8 @@ export async function saveSdDetails(formData: FormData) {
     failed_hours: failedHours,
     failed_raw_clips: failedRawClips,
     raw_clips: rawClips,
+    detected,
+    note,
     recorded_by: user.email ?? "unknown",
     recorded_by_name: recordedByName,
     recorded_at: istTimestamp(),

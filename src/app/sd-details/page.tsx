@@ -29,9 +29,11 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
   const sp = (await searchParams) ?? {};
 
   // Hours-by-city date range (separate from the "Date from / to" filter further down, which filters the
-  // row table at the bottom). Defaults to today (IST) on both ends. Shows IM Hours and Rig team Hours
-  // (every "SD Card Duration Hour" entry logged in that range for that team), split out by city, and
-  // narrowed to one city when the city filter below is set.
+  // row table at the bottom). Shows IM Hours and Rig team Hours (every "SD Card Duration Hour" entry in
+  // that range for that team), split out by city, and narrowed to one city when the city filter below
+  // is set. Nothing filtered at all (no ?hfrom/?hto/?city in the URL) → every entry ever logged, by
+  // city, instead of just today (which was usually empty) — this is what used to be the "By city" table.
+  const hFiltered = Boolean(one(sp.hfrom) || one(sp.hto) || one(sp.city));
   const hFrom = one(sp.hfrom) || istDate(new Date());
   const hTo = one(sp.hto) || istDate(new Date());
 
@@ -69,46 +71,25 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
   const ics = [...new Set(all.map((r) => r.ic_name).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const members = [...new Set(all.map((r) => r.team_member).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
-  // City-wise matrix: IM count, Rig team count, Total SD cards (= row count) per city, always over the
-  // full set (not the active filters) — except the "Instawork Robotics Labs" placeholder city, which
-  // isn't a real location and is dropped from this table. Total clips and Total duration here are the
-  // Rig team's own clips/hours for that city, not the IM team's.
-  const cityMatrix = cities
-    .filter((city) => city !== "Instawork Robotics Labs")
-    .map((city) => {
-      const cityRows = all.filter((r) => r.city === city);
-      const rigRows = cityRows.filter((r) => r.team === "rig");
-      const clipsTotal = rigRows.reduce((sum, r) => sum + (Number(r.raw_clips) || 0), 0);
-      return {
-        city,
-        im: cityRows.filter((r) => r.team === "im").length,
-        rig: rigRows.length,
-        cardCount: cityRows.length,
-        clipsTotal,
-        seconds: sumHms(rigRows.map((r) => r.duration)),
-      };
-    })
-    .sort((a, b) => b.cardCount - a.cardCount);
-
-  // Hours by city, for the selected date range (and narrowed to one city when the city filter is set):
-  // IM Hours and Rig team Hours — every entry in range for that team (and, if chosen, that city).
-  const dayRows = all.filter((r) => r.card_date >= hFrom && r.card_date <= hTo && (!cityFilter || r.city === cityFilter));
+  // Hours by city: IM Hours and Rig team Hours — every entry for that team (and, if chosen, that
+  // city), narrowed to the date range only once one's actually been set (see hFiltered above).
+  const dayRows = (hFiltered ? all.filter((r) => r.card_date >= hFrom && r.card_date <= hTo) : all).filter(
+    (r) => !cityFilter || r.city === cityFilter,
+  );
   const hoursByCity = (rowsForRange: typeof dayRows) =>
     cities
       .map((city) => {
         const cityRows = rowsForRange.filter((r) => r.city === city);
-        // Total IC-Number: every entry in range with an IC-Number filled in — not deduped, so an IC
-        // logged on several cards counts once per card, same as the hours total beside it.
-        const icCount = cityRows.filter((r) => r.ic_number).length;
-        // Total SD cards: one entry = one SD card logged in range for that city, so this is just the
-        // row count — same number already used as rowCount below, named for what it means in the table.
+        // Total SD cards: one entry = one SD card logged for that city, so this is just the row count —
+        // same number already used as rowCount below, named for what it means in the table.
         const cardCount = cityRows.length;
         // Total clips: raw_clips summed across this range's entries for that city. It's a free-text number
         // field (see schema.ts), so non-numeric/blank values are treated as 0 rather than breaking the sum.
         const clipsTotal = cityRows.reduce((sum, r) => sum + (Number(r.raw_clips) || 0), 0);
-        return { city, icCount, cardCount, clipsTotal, seconds: sumHms(cityRows.map((r) => r.duration)), rowCount: cityRows.length };
+        return { city, cardCount, clipsTotal, seconds: sumHms(cityRows.map((r) => r.duration)), rowCount: cityRows.length };
       })
-      .filter((c) => c.rowCount > 0);
+      .filter((c) => c.rowCount > 0)
+      .sort((a, b) => b.cardCount - a.cardCount);
 
   const imHoursByCity = hoursByCity(dayRows.filter((r) => r.team === "im"));
   const rigHoursByCity = hoursByCity(dayRows.filter((r) => r.team === "rig"));
@@ -247,7 +228,7 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
             <button type="submit">Go</button>
           </form>
           <span style={{ fontSize: "0.85rem", color: "#64748b" }}>
-            {hFrom === hTo ? hFrom : `${hFrom} to ${hTo}`}
+            {hFiltered ? (hFrom === hTo ? hFrom : `${hFrom} to ${hTo}`) : "All time"}
             {cityFilter && ` · ${cityFilter}`}
           </span>
         </div>
@@ -260,7 +241,7 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
             <h3 style={{ fontSize: "0.9rem", margin: "0 0 6px", color: "#334155" }}>{title}</h3>
             {data.length === 0 ? (
               <p className={styles.muted} style={{ margin: "0 0 6px" }}>
-                No entries for this range.
+                {hFiltered ? "No entries for this range." : "No entries."}
               </p>
             ) : (
               <div role="region" aria-label={title} tabIndex={0} style={{ overflowX: "auto" }}>
@@ -268,7 +249,6 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
                   <thead>
                     <tr>
                       <th>City</th>
-                      <th>Total IC-Number</th>
                       <th>Total SD cards</th>
                       <th>Total clips</th>
                       <th>Total hrs</th>
@@ -278,7 +258,6 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
                     {data.map((c) => (
                       <tr key={c.city}>
                         <td>{c.city}</td>
-                        <td>{c.icCount}</td>
                         <td>{c.cardCount}</td>
                         <td>{c.clipsTotal}</td>
                         <td>{formatHms(c.seconds)}</td>
@@ -291,40 +270,6 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
           </div>
         ))}
       </div>
-
-      {cityMatrix.length > 0 && (
-        <div style={{ margin: "0 0 18px" }}>
-          <h2 style={{ fontSize: "1rem", margin: "0 0 8px" }}>By city</h2>
-          <div role="region" aria-label="By city" tabIndex={0} style={{ overflowX: "auto" }}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>City</th>
-                  <th>IM</th>
-                  <th>Rig team</th>
-                  <th>Total SD cards</th>
-                  <th>Rig team clips</th>
-                  <th>Rig team duration</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cityMatrix.map((c) => (
-                  <tr key={c.city}>
-                    <td>
-                      <Link href={keep({ city: c.city })}>{c.city}</Link>
-                    </td>
-                    <td>{c.im}</td>
-                    <td>{c.rig}</td>
-                    <td>{c.cardCount}</td>
-                    <td>{c.clipsTotal}</td>
-                    <td>{formatHms(c.seconds)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       <nav aria-label="Filter by team" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "4px 0 10px" }}>
         <Link href={keep({ team: "" })} aria-current={!teamFilter ? "true" : undefined} style={chip(!teamFilter)}>

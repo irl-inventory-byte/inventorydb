@@ -151,6 +151,8 @@ export const TABS = {
     "failed_hours", // how much of the duration failed/was unusable, HH:MM:SS — optional, "" if none
     "failed_raw_clips", // how many of the raw clips failed/were unusable — optional, "" if none
     "raw_clips", // No. of raw clips
+    "detected", // IM form only: "detected" | "not_detected" | "" (blank on Rig-form entries)
+    "note", // Rig form only: free text, optional — "" if none given (blank on IM-form entries)
     "recorded_by", // login email
     "recorded_by_name",
     "recorded_at",
@@ -420,6 +422,8 @@ export interface SdCardDuration extends Row {
   failed_hours: string;
   failed_raw_clips: string;
   raw_clips: string;
+  detected: string; // "detected" | "not_detected" | "" — IM form only
+  note: string; // free text, optional — Rig form only
   recorded_by: string;
   recorded_by_name: string;
   recorded_at: string;

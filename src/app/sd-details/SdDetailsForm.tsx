@@ -13,8 +13,13 @@ const IC_NAMES = [
   "vinay", "Nandadeep", "Nikshitha", "Nancy", "Franklin", "Akshay", "Guru",
 ];
 
+// The "recent entries" filter bar (date range + city, plus member/FO-IFO/IC): both im/page.tsx and
+// rig/page.tsx already compute these from the URL and filter `recent` server-side before it ever
+// reaches this component — this just renders the GET form that sets them.
+type Filters = { from: string; to: string; member: string; foIfo: string; city: string; ic: string };
+
 export default function SdDetailsForm({
-  team, action, memberLabel, memberOptions, foIfoOptions, cities, saved, error, recent, defaultMember,
+  team, action, memberLabel, memberOptions, foIfoOptions, cities, saved, error, recent, defaultMember, filters,
 }: {
   team: "im" | "rig";
   action: (formData: FormData) => void;
@@ -26,12 +31,7 @@ export default function SdDetailsForm({
   error: string;
   recent: SdCardDuration[];
   defaultMember?: string;
-  // NOTE: accepted-but-unused — your deployed sd-details/im/page.tsx and sd-details/rig/page.tsx pass a
-  // `filters` prop (build error TS2322, 2026-11-14) that this component never had in this repo clone, so
-  // there's no ground truth for what it should render/do. Typed loosely here just so the build passes.
-  // Paste the real im/page.tsx or rig/page.tsx (or describe what the filter should do, e.g. date range on
-  // the "recent" table) and I'll wire it in properly.
-  filters?: unknown;
+  filters: Filters;
 }) {
   // These six are copied forward from the most recent prior entry for the same serial (see
   // lookupSdDetailsBySerial in ./actions) once the serial field loses focus — kept as controlled state
@@ -42,6 +42,7 @@ export default function SdDetailsForm({
   const [city, setCity] = useState("");
   const [duration, setDuration] = useState("0:00:00");
   const [rawClips, setRawClips] = useState("");
+  const [detected, setDetected] = useState("");
   const [autofillStatus, setAutofillStatus] = useState<"" | "looking" | "filled" | "none">("");
   // So the SD card date field can trigger the same lookup as the serial field — see its onBlur below.
   const serialRef = useRef<HTMLInputElement>(null);
@@ -144,6 +145,18 @@ export default function SdDetailsForm({
           )}
           {autofillStatus === "none" && <span style={{ fontSize: "0.72rem", color: "#64748b" }}>No earlier entry found for this card.</span>}
         </label>
+        {team === "im" && (
+          <label style={field}>
+            Detected *
+            <select name="detected" required style={input} value={detected} onChange={(e) => setDetected(e.target.value)}>
+              <option value="" disabled>
+                Detected or Not detected
+              </option>
+              <option value="detected">Detected</option>
+              <option value="not_detected">Not detected</option>
+            </select>
+          </label>
+        )}
         <label style={field}>
           FO / IFO *
           <input
@@ -239,6 +252,12 @@ export default function SdDetailsForm({
             <input type="number" name="failed_raw_clips" min={0} placeholder="e.g. 2, leave blank if none" style={input} />
           </label>
         )}
+        {team === "rig" && (
+          <label style={field}>
+            Note
+            <input type="text" name="note" placeholder="Optional note, leave blank if none" style={input} />
+          </label>
+        )}
         <label style={field}>
           No. of raw clips *
           <input
@@ -262,6 +281,37 @@ export default function SdDetailsForm({
         </div>
       </form>
 
+      <form
+        method="get"
+        style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", margin: "0 0 12px", fontSize: "0.85rem", color: "#334155" }}
+      >
+        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          From <input type="date" name="from" defaultValue={filters.from} style={input} />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          To <input type="date" name="to" defaultValue={filters.to} style={input} />
+        </label>
+        <select name="city" defaultValue={filters.city} style={input} aria-label="City">
+          <option value="">All cities</option>
+          {cities.map(([c]) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        <button
+          type="submit"
+          style={{ fontSize: "0.85rem", padding: "7px 14px", borderRadius: 6, border: "1px solid #1e293b", background: "#1e293b", color: "#fff", cursor: "pointer" }}
+        >
+          Filter
+        </button>
+        {(filters.from || filters.to || filters.city || filters.member || filters.foIfo || filters.ic) && (
+          <a href={`/sd-details/${team}`} style={{ fontSize: "0.85rem", color: "#1e293b" }}>
+            Clear filters
+          </a>
+        )}
+      </form>
+
       {recent.length > 0 && (
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
@@ -278,6 +328,8 @@ export default function SdDetailsForm({
                 {team === "rig" && <th style={{ padding: "6px 8px" }}>Failed</th>}
                 {team === "rig" && <th style={{ padding: "6px 8px" }}>Failed clips</th>}
                 <th style={{ padding: "6px 8px" }}>Clips</th>
+                {team === "im" && <th style={{ padding: "6px 8px" }}>Detected</th>}
+                {team === "rig" && <th style={{ padding: "6px 8px" }}>Note</th>}
                 <th style={{ padding: "6px 8px" }}>Submitted</th>
               </tr>
             </thead>
@@ -299,6 +351,10 @@ export default function SdDetailsForm({
                   {team === "rig" && <td style={{ padding: "6px 8px" }}>{r.failed_hours || "—"}</td>}
                   {team === "rig" && <td style={{ padding: "6px 8px" }}>{r.failed_raw_clips || "—"}</td>}
                   <td style={{ padding: "6px 8px" }}>{r.raw_clips}</td>
+                  {team === "im" && (
+                    <td style={{ padding: "6px 8px" }}>{r.detected === "detected" ? "Detected" : r.detected === "not_detected" ? "Not detected" : "—"}</td>
+                  )}
+                  {team === "rig" && <td style={{ padding: "6px 8px" }}>{r.note || "—"}</td>}
                   <td style={{ padding: "6px 8px", color: "#64748b" }}>{r.recorded_at ? formatIst(r.recorded_at) : "—"}</td>
                 </tr>
               ))}
