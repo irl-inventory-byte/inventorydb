@@ -548,23 +548,20 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
 
   // RIGS: one tile per rig state (see RIG_STATES in lib/rig-state.ts). Each opens Rig checks filtered to it.
   const rigCount = Object.fromEntries(RIG_STATES.map((k) => [k, 0])) as Record<RigState, number>;
-  // QC passed tile: who passed those rigs (the QC person on each rig's latest result).
-  const latestQcBy = new Map<string, string>();
-  for (const c of qcChecks) latestQcBy.set(c.item_id, c.recorded_by_name || c.recorded_by);
-  const passedBy = new Map<string, number>();
   for (const i of items) {
     if (i.item_type !== "rig") continue;
     const st = rigState(i.status, latestQc.get(i.item_id));
     rigCount[st] = (rigCount[st] ?? 0) + 1;
-    if (st === "qc_pass") {
-      const who = latestQcBy.get(i.item_id) || "QC team";
-      passedBy.set(who, (passedBy.get(who) ?? 0) + 1);
-    }
   }
-  const passedFrom = [...passedBy.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  const passedFromText = passedFrom.length
-    ? `From ${passedFrom.slice(0, 2).map(([who, c]) => `${who} (${c})`).join(", ")}${passedFrom.length > 2 ? ` +${passedFrom.length - 2} more` : ""}`
-    : "";
+  // RTD items specifically still on their way to the IM (repaired by hardware, status "pending" — not
+  // yet received), as opposed to the "RTD" tile's total, which also counts ones already received
+  // (status "in_stock") — see rigState()'s "rtd" case in lib/rig-state.ts.
+  const rtdPendingCount = items.filter(
+    (i) => i.item_type === "rig" && i.status === "pending" && latestQc.get(i.item_id) === "repaired",
+  ).length;
+  // Sent to hardware, not received by them yet (hardware hasn't picked it up off the "qc_fail" tile's
+  // total yet — same status the admin "To be received" tile's toHw already counts).
+  const hwPendingCount = items.filter((i) => i.item_type === "rig" && i.status === "pending_hardware").length;
   const rigTotal = items.filter((i) => i.item_type === "rig").length;
   const rigShare = (v: number) => (rigTotal ? `${Math.round((v / rigTotal) * 100)}% of all rigs` : "");
   const RIG_TILE: Record<(typeof RIG_STATES)[number], { icon: IconName; color: string; hint?: string }> = {
@@ -583,7 +580,14 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   const rigKpis: Kpi[] = RIG_STATES.map((k) => ({
     label: RIG_STATE_LABELS[k],
     value: rigCount[k],
-    hint: k === "qc_pass" && passedFromText ? passedFromText : rigCount[k] ? rigShare(rigCount[k]) : (RIG_TILE[k].hint ?? ""),
+    hint:
+      k === "qc_pass"
+        ? "Ready to head out"
+        : k === "qc_fail"
+          ? "With inventory"
+          : rigCount[k]
+            ? rigShare(rigCount[k])
+            : (RIG_TILE[k].hint ?? ""),
     href: `/rigs?state=${k}`,
     icon: RIG_TILE[k].icon,
     color: RIG_TILE[k].color,
@@ -593,22 +597,47 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
     ...(k === "in_stock" && { cities: citiesForRigState("in_stock", ["in_stock", "pending"]) }),
     ...(k === "transit" && { cities: citiesForRigState("transit", ["traveling"]) }),
   }));
-  // Admin only: every rig sent and not received yet (to IMs, QC or hardware).
-  // ("Hardware team (all)" and "Sanitization" tiles removed — replace with a new metric here if wanted.)
-  if (user.role === "admin") {
-    const rigsOnly = items.filter((i) => i.item_type === "rig");
-    const toIm = rigsOnly.filter((i) => i.status === "pending").length;
-    const toQc = rigsOnly.filter((i) => i.status === "pending_qc").length;
-    const toHw = rigsOnly.filter((i) => i.status === "pending_hardware").length;
-    rigKpis.push({
-      label: "To be received",
-      value: toIm + toQc + toHw,
-      hint: `${toIm} to IMs · ${toQc} to QC · ${toHw} to hardware`,
-      href: inventory({ type: "rig", status: "pending,pending_qc,pending_hardware" }),
-      icon: "inbox",
-      color: "var(--series-4)",
-    });
-  }
+  // RTD breaks out further into "still on the way to the IM" vs "already received" — this tile is
+  // just the first half, right after the combined RTD tile above.
+  rigKpis.push({
+    label: "Rtd (waiting to received by IM)",
+    value: rtdPendingCount,
+    hint: "Repaired by hardware, sent to IM, not received yet",
+    href: "/rigs?state=rtd&rtdpending=1",
+    icon: "send",
+    color: "var(--series-4)",
+  });
+  // Every rig sent and not received yet, one tile per destination — IM, QC, hardware. ("To be received",
+  // the combined admin-only version of these three, and "Hardware team (all)" / "Sanitization" were
+  // removed — these replace it, broken out and visible to everyone who sees the rig tiles.)
+  const rigsOnly = items.filter((i) => i.item_type === "rig");
+  const imPendingCount = rigsOnly.filter((i) => i.status === "pending").length;
+  const qcPendingReceiptCount = rigsOnly.filter((i) => i.status === "pending_qc").length;
+  rigKpis.push({
+    label: "IM to receive",
+    value: imPendingCount,
+    hint: "Sent to an IM, not received yet",
+    href: inventory({ type: "rig", status: "pending" }),
+    icon: "inbox",
+    color: "var(--series-4)",
+  });
+  rigKpis.push({
+    label: "QC to receive",
+    value: qcPendingReceiptCount,
+    hint: "Sent to QC, not received yet",
+    href: inventory({ type: "rig", status: "pending_qc" }),
+    icon: "inbox",
+    color: "var(--series-4)",
+  });
+  // Sent to hardware, hardware hasn't received it yet — the part of "QC fail" that's still in transit.
+  rigKpis.push({
+    label: "Hardware to receive",
+    value: hwPendingCount,
+    hint: "Sent to hardware, not received yet",
+    href: "/rigs?hwpending=1",
+    icon: "inbox",
+    color: "var(--series-4)",
+  });
 
   // "With rig team": one tile, total of Rig team + Productivity team, with a dropdown breaking the two
   // out. The Rig team and the Productivity team are the same role and work out of the same hub — so
