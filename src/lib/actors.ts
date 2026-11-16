@@ -23,7 +23,10 @@ export function actorOptions(
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((p) => ({ value: p.person_id, label: `${p.name} (${ACTOR_LABEL[p.role] ?? p.role}, ${hubName(p.hub)})` }));
 
-  const linked = new Set(people.map((p) => p.person_id));
+  // Only treat an admin as "already covered" when their linked person is actually one of the roles
+  // being listed here (e.g. "ic") — being linked to some unrelated person (an FO, a QC, etc.) must
+  // not hide the admin's own email from this list, or they'd have no way to act as themselves.
+  const linked = new Set(handlers.map((h) => h.value));
   const admins = users
     .filter((u) => u.role === "admin" && u.active !== "false" && !(u.person_id && linked.has(u.person_id)))
     .sort((a, b) => a.email.localeCompare(b.email))

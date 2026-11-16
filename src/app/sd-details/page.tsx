@@ -32,13 +32,18 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
   // that range for that team), split out by city, and narrowed to one city when the city filter below
   // is set. Nothing filtered at all (no ?hfrom/?hto/?city in the URL) → every entry ever logged, by
   // city, instead of just today (which was usually empty) — this is what used to be the "By city" table.
-  const hFiltered = Boolean(one(sp.hfrom) || one(sp.hto) || one(sp.city));
+  // City can now be more than one at once — the "City" box below is a multi-select, so ?city= can
+  // appear several times in the URL.
+  const many = (v: string | string[] | undefined): string[] => (Array.isArray(v) ? v : v ? [v] : []);
+  const cityFilters = many(sp.city).filter(Boolean);
+  const cityFilter = cityFilters[0] ?? ""; // kept for the single-city "Filter by city" quick links below
+
+  const hFiltered = Boolean(one(sp.hfrom) || one(sp.hto) || cityFilters.length);
   const hFrom = one(sp.hfrom) || istDate(new Date());
   const hTo = one(sp.hto) || istDate(new Date());
 
   const teamFilter = one(sp.team); // "" (all), "im" or "rig"
   const subTeamFilter = one(sp.subteam); // "" (all), "rig" or "productivity" — only meaningful within team=rig
-  const cityFilter = one(sp.city);
   const icFilter = one(sp.ic); // IC name
   const memberFilter = one(sp.member); // team member name
   const dateFrom = one(sp.from); // "YYYY-MM-DD", filters by card_date
@@ -61,7 +66,7 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
   // Hours by city: IM Hours and Rig team Hours — every entry for that team (and, if chosen, that
   // city), narrowed to the date range only once one's actually been set (see hFiltered above).
   const dayRows = (hFiltered ? all.filter((r) => r.card_date >= hFrom && r.card_date <= hTo) : all).filter(
-    (r) => !cityFilter || r.city === cityFilter,
+    (r) => cityFilters.length === 0 || cityFilters.includes(r.city),
   );
   const hoursByCity = (rowsForRange: typeof dayRows) =>
     cities
@@ -86,7 +91,7 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
   let rows = all;
   if (teamFilter) rows = rows.filter((r) => r.team === teamFilter);
   if (subTeamFilter) rows = rows.filter((r) => r.team === "rig" && (r.sub_team || "rig") === subTeamFilter);
-  if (cityFilter) rows = rows.filter((r) => r.city === cityFilter);
+  if (cityFilters.length) rows = rows.filter((r) => cityFilters.includes(r.city));
   if (icFilter) rows = rows.filter((r) => r.ic_name === icFilter);
   if (memberFilter) rows = rows.filter((r) => r.team_member === memberFilter);
   if (dateFrom) rows = rows.filter((r) => r.card_date >= dateFrom);
@@ -103,20 +108,31 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
   const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const thisWeek = all.filter((r) => Date.parse(r.recorded_at || "0") >= weekAgo).length;
 
-  const keep = (extra: Record<string, string>) =>
-    `/sd-details?${new URLSearchParams({
-      ...(hFrom && { hfrom: hFrom }),
-      ...(hTo && { hto: hTo }),
-      ...(teamFilter && { team: teamFilter }),
-      ...(subTeamFilter && { subteam: subTeamFilter }),
-      ...(cityFilter && { city: cityFilter }),
-      ...(icFilter && { ic: icFilter }),
-      ...(memberFilter && { member: memberFilter }),
-      ...(dateFrom && { from: dateFrom }),
-      ...(dateTo && { to: dateTo }),
-      ...(q && { q }),
-      ...extra,
-    })}`;
+  // extra.city, when given, replaces the whole city selection (used by the single-city quick links
+  // below); every other key is a plain single value as before.
+  const keep = (extra: Record<string, string>) => {
+    const p = new URLSearchParams();
+    if (hFrom) p.set("hfrom", hFrom);
+    if (hTo) p.set("hto", hTo);
+    if (teamFilter) p.set("team", teamFilter);
+    if (subTeamFilter) p.set("subteam", subTeamFilter);
+    if ("city" in extra) {
+      if (extra.city) p.set("city", extra.city);
+    } else {
+      cityFilters.forEach((c) => p.append("city", c));
+    }
+    if (icFilter) p.set("ic", icFilter);
+    if (memberFilter) p.set("member", memberFilter);
+    if (dateFrom) p.set("from", dateFrom);
+    if (dateTo) p.set("to", dateTo);
+    if (q) p.set("q", q);
+    for (const [k, v] of Object.entries(extra)) {
+      if (k === "city") continue;
+      if (v) p.set(k, v);
+      else p.delete(k);
+    }
+    return `/sd-details?${p.toString()}`;
+  };
 
   const chip = (on: boolean) => ({
     padding: "6px 14px",
@@ -133,18 +149,18 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
   const cardValue = { fontSize: "1.6rem", fontWeight: 700, color: "#1e293b", lineHeight: 1.1 };
   const cardLabel = { fontSize: "0.8rem", color: "#64748b", marginTop: 2 };
 
-  const hasFilters = teamFilter || subTeamFilter || cityFilter || icFilter || memberFilter || dateFrom || dateTo || q;
+  const hasFilters = teamFilter || subTeamFilter || cityFilters.length || icFilter || memberFilter || dateFrom || dateTo || q;
   // Same filters as the page, download instead of /sd-details/export — city-wise, then IC-wise.
-  const exportHref = `/sd-details/export?${new URLSearchParams({
-    ...(teamFilter && { team: teamFilter }),
-    ...(subTeamFilter && { subteam: subTeamFilter }),
-    ...(cityFilter && { city: cityFilter }),
-    ...(icFilter && { ic: icFilter }),
-    ...(memberFilter && { member: memberFilter }),
-    ...(dateFrom && { from: dateFrom }),
-    ...(dateTo && { to: dateTo }),
-    ...(q && { q }),
-  })}`;
+  const exportParams = new URLSearchParams();
+  if (teamFilter) exportParams.set("team", teamFilter);
+  if (subTeamFilter) exportParams.set("subteam", subTeamFilter);
+  cityFilters.forEach((c) => exportParams.append("city", c));
+  if (icFilter) exportParams.set("ic", icFilter);
+  if (memberFilter) exportParams.set("member", memberFilter);
+  if (dateFrom) exportParams.set("from", dateFrom);
+  if (dateTo) exportParams.set("to", dateTo);
+  if (q) exportParams.set("q", q);
+  const exportHref = `/sd-details/export?${exportParams.toString()}`;
 
   return (
     <main className={styles.pageWide}>
@@ -206,8 +222,7 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
             <label style={{ fontSize: "0.85rem", color: "#334155" }}>
               To <input type="date" name="hto" defaultValue={hFiltered ? hTo : ""} aria-label="To date" />
             </label>
-            <select name="city" defaultValue={cityFilter} aria-label="City">
-              <option value="">All cities</option>
+            <select name="city" multiple defaultValue={cityFilters} aria-label="City (select one or more; none selected = all)" size={4} style={{ minWidth: 140 }}>
               {cities.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -218,7 +233,7 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
           </form>
           <span style={{ fontSize: "0.85rem", color: "#64748b" }}>
             {hFiltered ? (hFrom === hTo ? hFrom : `${hFrom} to ${hTo}`) : "All time"}
-            {cityFilter && ` · ${cityFilter}`}
+            {cityFilters.length > 0 && ` · ${cityFilters.join(", ")}`}
           </span>
         </div>
 
@@ -291,7 +306,9 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
       <form className={styles.row} method="get" style={{ margin: "0 0 10px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         {teamFilter && <input type="hidden" name="team" value={teamFilter} />}
         {subTeamFilter && <input type="hidden" name="subteam" value={subTeamFilter} />}
-        {cityFilter && <input type="hidden" name="city" value={cityFilter} />}
+        {cityFilters.map((c) => (
+          <input key={c} type="hidden" name="city" value={c} />
+        ))}
         {q && <input type="hidden" name="q" value={one(sp.q)} />}
         <label style={{ fontSize: "0.85rem", color: "#334155" }}>
           IC{" "}
@@ -321,7 +338,9 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
       <form className={styles.row} method="get" style={{ margin: "0 0 16px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         {teamFilter && <input type="hidden" name="team" value={teamFilter} />}
         {subTeamFilter && <input type="hidden" name="subteam" value={subTeamFilter} />}
-        {cityFilter && <input type="hidden" name="city" value={cityFilter} />}
+        {cityFilters.map((c) => (
+          <input key={c} type="hidden" name="city" value={c} />
+        ))}
         {icFilter && <input type="hidden" name="ic" value={icFilter} />}
         {memberFilter && <input type="hidden" name="member" value={memberFilter} />}
         <label style={{ fontSize: "0.85rem", color: "#334155" }}>
@@ -336,7 +355,9 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
       <form className={styles.row} method="get" style={{ margin: "0 0 16px" }}>
         {teamFilter && <input type="hidden" name="team" value={teamFilter} />}
         {subTeamFilter && <input type="hidden" name="subteam" value={subTeamFilter} />}
-        {cityFilter && <input type="hidden" name="city" value={cityFilter} />}
+        {cityFilters.map((c) => (
+          <input key={c} type="hidden" name="city" value={c} />
+        ))}
         {icFilter && <input type="hidden" name="ic" value={icFilter} />}
         {memberFilter && <input type="hidden" name="member" value={memberFilter} />}
         {dateFrom && <input type="hidden" name="from" value={dateFrom} />}
