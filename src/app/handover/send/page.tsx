@@ -65,7 +65,7 @@ export default async function SendPage({
   const powerBankDetail = (raw: string): string | undefined => {
     try {
       const a = JSON.parse(raw || "{}") as Record<string, unknown>;
-      const parts = [a.brand, a.model, a.capacity].map((v) => (typeof v === "string" ? v.trim() : "")).filter(Boolean);
+      const parts = [a.brand, a.model].map((v) => (typeof v === "string" ? v.trim() : "")).filter(Boolean);
       return parts.length > 0 ? parts.join(" · ") : undefined;
     } catch {
       return undefined;
@@ -82,7 +82,7 @@ export default async function SendPage({
     // Rigs show their condition while scanning, e.g. "QC passed · Idle" or "Repaired · Ready for field".
     // (Not for the hardware team: they only see where the rig is, e.g. "With hardware team".)
     ...(i.item_type === "rig" && user.role !== "hardware" && { note: rigCondition(i.status, latestQc.get(i.item_id)).label }),
-    // Power banks show their brand/model/capacity while scanning, e.g. "Portronics · 20000 20000mAh".
+    // Power banks show their brand/model while scanning, e.g. "Portronics · PBX20".
     ...(i.item_type === "power_bank" && powerBankDetail(i.attributes) && { note: powerBankDetail(i.attributes) }),
   }));
   const hubName = new Map(hubs.map((h) => [h.hub_id, h.name]));
