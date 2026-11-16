@@ -1335,6 +1335,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
           <Link href="/dashboard/analytics" className={styles.tab}>
             Analytics
           </Link>
+          <Link href="/dashboard/events" className={styles.tab}>
+            Events
+          </Link>
           {INVENTORY_ROLES.includes(user.role) && (
             <Link href="/inventory" className={styles.tab}>
               Inventory
@@ -1428,6 +1431,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
 .kpi-city a span{color:#0f172a}
 .kpi-tile{display:flex}
 .kpi-tile > a{flex:1;min-width:0}
+@media (max-width: 640px) {
+  .kpi-city > div{position:fixed;left:12px;right:12px;bottom:12px;top:auto;min-width:0;max-width:none;max-height:min(60vh,420px);box-shadow:0 -10px 30px rgba(15,23,42,.25)}
+  .kpi-city a{white-space:normal}
+}
 `}</style>
           {kpis.map((k) =>
             k.cities || k.routes || k.storage || k.hubs || k.teams || k.baselineKey || k.dupes ? (
