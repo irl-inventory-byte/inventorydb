@@ -28,12 +28,12 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
   await requireRole("admin", "im", "rig");
   const sp = (await searchParams) ?? {};
 
-  // Hours-by-city day cycle (separate from the "Date from / to" filter below, which filters the row
-  // table). Defaults to today (IST). Shows IM Hours and Rig team Hours (every "SD Card Duration Hour"
-  // entry logged that day for that team), split out by city.
-  const day = one(sp.day) || istDate(new Date());
-  const prevDay = istDate(new Date(new Date(`${day}T00:00:00+05:30`).getTime() - 24 * 3600 * 1000));
-  const nextDay = istDate(new Date(new Date(`${day}T00:00:00+05:30`).getTime() + 24 * 3600 * 1000));
+  // Hours-by-city date range (separate from the "Date from / to" filter further down, which filters the
+  // row table at the bottom). Defaults to today (IST) on both ends. Shows IM Hours and Rig team Hours
+  // (every "SD Card Duration Hour" entry logged in that range for that team), split out by city, and
+  // narrowed to one city when the city filter below is set.
+  const hFrom = one(sp.hfrom) || istDate(new Date());
+  const hTo = one(sp.hto) || istDate(new Date());
 
   const teamFilter = one(sp.team); // "" (all), "im" or "rig"
   const subTeamFilter = one(sp.subteam); // "" (all), "rig" or "productivity" — only meaningful within team=rig
@@ -69,38 +69,41 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
   const ics = [...new Set(all.map((r) => r.ic_name).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const members = [...new Set(all.map((r) => r.team_member).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
-  // City-wise matrix: total / IM / Rig counts per city, always over the full set (not the active filters).
-  // Also totals SD cards (= row count, same number as "total"), clips and duration per city, same
-  // sums "Hours by city" above uses, but over every entry ever logged for that city (not just one day).
+  // City-wise matrix: IM count, Rig team count, Total SD cards (= row count) per city, always over the
+  // full set (not the active filters) — except the "Instawork Robotics Labs" placeholder city, which
+  // isn't a real location and is dropped from this table. Total clips and Total duration here are the
+  // Rig team's own clips/hours for that city, not the IM team's.
   const cityMatrix = cities
+    .filter((city) => city !== "Instawork Robotics Labs")
     .map((city) => {
       const cityRows = all.filter((r) => r.city === city);
-      const clipsTotal = cityRows.reduce((sum, r) => sum + (Number(r.raw_clips) || 0), 0);
+      const rigRows = cityRows.filter((r) => r.team === "rig");
+      const clipsTotal = rigRows.reduce((sum, r) => sum + (Number(r.raw_clips) || 0), 0);
       return {
         city,
-        total: cityRows.length,
         im: cityRows.filter((r) => r.team === "im").length,
-        rig: cityRows.filter((r) => r.team === "rig").length,
+        rig: rigRows.length,
         cardCount: cityRows.length,
         clipsTotal,
-        seconds: sumHms(cityRows.map((r) => r.duration)),
+        seconds: sumHms(rigRows.map((r) => r.duration)),
       };
     })
-    .sort((a, b) => b.total - a.total);
+    .sort((a, b) => b.cardCount - a.cardCount);
 
-  // Hours by city, for the selected day: IM Hours and Rig team Hours (every entry that day for that team).
-  const dayRows = all.filter((r) => r.card_date === day);
-  const hoursByCity = (rowsForDay: typeof dayRows) =>
+  // Hours by city, for the selected date range (and narrowed to one city when the city filter is set):
+  // IM Hours and Rig team Hours — every entry in range for that team (and, if chosen, that city).
+  const dayRows = all.filter((r) => r.card_date >= hFrom && r.card_date <= hTo && (!cityFilter || r.city === cityFilter));
+  const hoursByCity = (rowsForRange: typeof dayRows) =>
     cities
       .map((city) => {
-        const cityRows = rowsForDay.filter((r) => r.city === city);
-        // Total IC-Number: every entry that day with an IC-Number filled in — not deduped, so an IC
-        // logged on several cards that day counts once per card, same as the hours total beside it.
+        const cityRows = rowsForRange.filter((r) => r.city === city);
+        // Total IC-Number: every entry in range with an IC-Number filled in — not deduped, so an IC
+        // logged on several cards counts once per card, same as the hours total beside it.
         const icCount = cityRows.filter((r) => r.ic_number).length;
-        // Total SD cards: one entry = one SD card logged that day for that city, so this is just the
+        // Total SD cards: one entry = one SD card logged in range for that city, so this is just the
         // row count — same number already used as rowCount below, named for what it means in the table.
         const cardCount = cityRows.length;
-        // Total clips: raw_clips summed across the day's entries for that city. It's a free-text number
+        // Total clips: raw_clips summed across this range's entries for that city. It's a free-text number
         // field (see schema.ts), so non-numeric/blank values are treated as 0 rather than breaking the sum.
         const clipsTotal = cityRows.reduce((sum, r) => sum + (Number(r.raw_clips) || 0), 0);
         return { city, icCount, cardCount, clipsTotal, seconds: sumHms(cityRows.map((r) => r.duration)), rowCount: cityRows.length };
@@ -132,7 +135,8 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
 
   const keep = (extra: Record<string, string>) =>
     `/sd-details?${new URLSearchParams({
-      ...(day && { day }),
+      ...(hFrom && { hfrom: hFrom }),
+      ...(hTo && { hto: hTo }),
       ...(teamFilter && { team: teamFilter }),
       ...(subTeamFilter && { subteam: subTeamFilter }),
       ...(cityFilter && { city: cityFilter }),
@@ -223,20 +227,29 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
       <div style={{ margin: "0 0 22px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "0 0 10px" }}>
           <h2 style={{ fontSize: "1rem", margin: 0 }}>Hours by city</h2>
-          <form method="get" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <form method="get" style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             {teamFilter && <input type="hidden" name="team" value={teamFilter} />}
             {subTeamFilter && <input type="hidden" name="subteam" value={subTeamFilter} />}
-            {cityFilter && <input type="hidden" name="city" value={cityFilter} />}
-            <Link href={keep({ day: prevDay })} style={chip(false)}>
-              ← Prev day
-            </Link>
-            <input type="date" name="day" defaultValue={day} aria-label="Day" />
+            <label style={{ fontSize: "0.85rem", color: "#334155" }}>
+              From <input type="date" name="hfrom" defaultValue={hFrom} aria-label="From date" />
+            </label>
+            <label style={{ fontSize: "0.85rem", color: "#334155" }}>
+              To <input type="date" name="hto" defaultValue={hTo} aria-label="To date" />
+            </label>
+            <select name="city" defaultValue={cityFilter} aria-label="City">
+              <option value="">All cities</option>
+              {cities.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
             <button type="submit">Go</button>
-            <Link href={keep({ day: nextDay })} style={chip(false)}>
-              Next day →
-            </Link>
           </form>
-          <span style={{ fontSize: "0.85rem", color: "#64748b" }}>{day}</span>
+          <span style={{ fontSize: "0.85rem", color: "#64748b" }}>
+            {hFrom === hTo ? hFrom : `${hFrom} to ${hTo}`}
+            {cityFilter && ` · ${cityFilter}`}
+          </span>
         </div>
 
         {[
@@ -247,7 +260,7 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
             <h3 style={{ fontSize: "0.9rem", margin: "0 0 6px", color: "#334155" }}>{title}</h3>
             {data.length === 0 ? (
               <p className={styles.muted} style={{ margin: "0 0 6px" }}>
-                No entries for this day.
+                No entries for this range.
               </p>
             ) : (
               <div role="region" aria-label={title} tabIndex={0} style={{ overflowX: "auto" }}>
@@ -287,12 +300,11 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
               <thead>
                 <tr>
                   <th>City</th>
-                  <th>Total</th>
                   <th>IM</th>
                   <th>Rig team</th>
                   <th>Total SD cards</th>
-                  <th>Total clips</th>
-                  <th>Total duration</th>
+                  <th>Rig team clips</th>
+                  <th>Rig team duration</th>
                 </tr>
               </thead>
               <tbody>
@@ -301,7 +313,6 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
                     <td>
                       <Link href={keep({ city: c.city })}>{c.city}</Link>
                     </td>
-                    <td>{c.total}</td>
                     <td>{c.im}</td>
                     <td>{c.rig}</td>
                     <td>{c.cardCount}</td>
