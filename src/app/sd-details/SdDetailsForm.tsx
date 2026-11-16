@@ -337,9 +337,7 @@ export default function SdDetailsForm({
               {recent.map((r) => (
                 <tr key={r.record_id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                   <td style={{ padding: "6px 8px" }}>{r.card_date}</td>
-                  {team === "rig" && (
-                    <td style={{ padding: "6px 8px" }}>{r.sub_team === "productivity" ? "Productivity team" : "Rig team"}</td>
-                  )}
+                  {team === "rig" && <td style={{ padding: "6px 8px" }}>Productivity team</td>}
                   <td style={{ padding: "6px 8px" }}>{r.team_member}</td>
                   <td style={{ padding: "6px 8px" }}>{r.fo_ifo || "—"}</td>
                   <td style={{ padding: "6px 8px" }}>

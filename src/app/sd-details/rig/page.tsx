@@ -6,7 +6,7 @@ import SdDetailsForm from "../SdDetailsForm";
 import { saveSdDetails } from "../actions";
 import Link from "next/link";
 
-/** Rig SD card details — admin and Rig team only. See src/app/sd-details/SdDetailsForm.tsx / actions.ts. */
+/** Productivity team SD card details — admin and rig role only. See src/app/sd-details/SdDetailsForm.tsx / actions.ts. */
 export default async function RigSdDetailsPage({
   searchParams,
 }: {
@@ -31,9 +31,7 @@ export default async function RigSdDetailsPage({
     store.list("sd_card_durations"),
   ]);
 
-  // Rig team and Productivity team members both carry the "rig" role (see lib/rig-hub.ts) — which
-  // pool they're sending for on a given day is chosen on the form itself (the Team dropdown), not by
-  // who they are.
+  // Productivity team members carry the "rig" role (see lib/rig-hub.ts).
   const memberOptions = people
     .filter((p) => p.role === "rig" && p.active !== "false")
     .map((p) => ({ id: p.person_id, name: p.name }))
@@ -51,8 +49,8 @@ export default async function RigSdDetailsPage({
   }
   const cities = [...byCity.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
-  // Pre-select the logged-in person's own name, if they're a Rig team member themselves (not when an
-  // admin not listed on the Rig team is filling this in on someone else's behalf).
+  // Pre-select the logged-in person's own name, if they're a Productivity team member themselves (not
+  // when an admin not listed on the team is filling this in on someone else's behalf).
   const defaultMember = memberOptions.find((m) => m.id === user.personId)?.name ?? "";
 
   // Recent-entries filter bar: date range (on card_date) + exact match on member/FO-IFO/city/IC.
@@ -79,13 +77,13 @@ export default async function RigSdDetailsPage({
       <p className={styles.back}>
         <Link href="/sd-details">Back</Link>
       </p>
-      <h1>Rig SD card details</h1>
+      <h1>Productivity team SD card details</h1>
       <p className={styles.muted}>SD Card Duration Hour — recorded here and also sent to the Google Sheet.</p>
 
       <SdDetailsForm
         team="rig"
         action={saveSdDetails}
-        memberLabel="Rig team name"
+        memberLabel="Productivity team name"
         memberOptions={memberOptions}
         foIfoOptions={foIfoOptions}
         cities={cities}

@@ -59,7 +59,8 @@ export async function saveSdDetails(formData: FormData) {
   const detected = team === "im" ? String(formData.get("detected") ?? "").trim() : "";
   const note = team === "rig" ? String(formData.get("note") ?? "").trim() : "";
   // Rig form only: not asked on the form anymore (removed per request) — every Rig-form entry is just
-  // recorded as "Rig team". Still "" for IM entries. See sd-details/SdDetailsForm.tsx.
+  // recorded as "rig" (shown as "Productivity team" everywhere it's displayed). Still "" for IM
+  // entries. See sd-details/SdDetailsForm.tsx.
   const subTeam = team === "rig" ? "rig" : "";
 
   if (!cardDate || !teamMember || !foIfo || !icName || !city || !serial || !duration || !rawClips) {

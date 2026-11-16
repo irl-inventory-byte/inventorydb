@@ -11,11 +11,10 @@ type SdDetailsPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined>;
 };
 
-const TEAM_NAME: Record<string, string> = { im: "IM", rig: "Rig team" };
-// For rig-team rows, which hub actually sent it in — "Rig team" or "Productivity team" (same role,
-// two hubs). Blank sub_team on an older rig row (saved before this field existed) falls back to "Rig team".
-const subTeamLabel = (r: { team: string; sub_team?: string }) =>
-  r.team !== "rig" ? "" : r.sub_team === "productivity" ? "Productivity team" : "Rig team";
+const TEAM_NAME: Record<string, string> = { im: "IM", rig: "Productivity team" };
+// Rig-team rows are all shown under one label now ("Productivity team") — the old separate
+// "Rig team" / "Productivity team" split by sub_team is no longer shown anywhere on this page.
+const subTeamLabel = (r: { team: string; sub_team?: string }) => (r.team !== "rig" ? "" : "Productivity team");
 
 /**
  * SD CARD DETAILS: combined report of every "SD Card Duration Hour" entry saved by the IM and Rig
@@ -48,23 +47,11 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
 
   const all = await getStore().list("sd_card_durations");
 
-  // IM, then the two rig sub-teams split out as their own cards (same split as the dashboard's "With
-  // rig team" / "With productivity team" tiles) — Rig team and Productivity team share the same "rig"
-  // team value here, told apart only by sub_team.
+  // IM and the rig/productivity team, as their own cards. The old separate "Rig team" / "Productivity
+  // team" split by sub_team is no longer shown — both are just "Productivity team" here.
   const byTeam = [
     { team: "im" as const, subteam: "", label: TEAM_NAME.im, count: all.filter((r) => r.team === "im").length },
-    {
-      team: "rig" as const,
-      subteam: "rig",
-      label: "Rig team",
-      count: all.filter((r) => r.team === "rig" && (r.sub_team || "rig") === "rig").length,
-    },
-    {
-      team: "rig" as const,
-      subteam: "productivity",
-      label: "Productivity team",
-      count: all.filter((r) => r.team === "rig" && r.sub_team === "productivity").length,
-    },
+    { team: "rig" as const, subteam: "", label: "Productivity team", count: all.filter((r) => r.team === "rig").length },
   ];
 
   const cities = [...new Set(all.map((r) => r.city).filter(Boolean))].sort((a, b) => a.localeCompare(b));
@@ -93,6 +80,8 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
 
   const imHoursByCity = hoursByCity(dayRows.filter((r) => r.team === "im"));
   const rigHoursByCity = hoursByCity(dayRows.filter((r) => r.team === "rig"));
+  // Overall: IM + Productivity team combined, same date/city filter as the two tables above.
+  const overallByCity = hoursByCity(dayRows);
 
   let rows = all;
   if (teamFilter) rows = rows.filter((r) => r.team === teamFilter);
@@ -212,10 +201,10 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
             {teamFilter && <input type="hidden" name="team" value={teamFilter} />}
             {subTeamFilter && <input type="hidden" name="subteam" value={subTeamFilter} />}
             <label style={{ fontSize: "0.85rem", color: "#334155" }}>
-              From <input type="date" name="hfrom" defaultValue={hFrom} aria-label="From date" />
+              From <input type="date" name="hfrom" defaultValue={hFiltered ? hFrom : ""} aria-label="From date" />
             </label>
             <label style={{ fontSize: "0.85rem", color: "#334155" }}>
-              To <input type="date" name="hto" defaultValue={hTo} aria-label="To date" />
+              To <input type="date" name="hto" defaultValue={hFiltered ? hTo : ""} aria-label="To date" />
             </label>
             <select name="city" defaultValue={cityFilter} aria-label="City">
               <option value="">All cities</option>
@@ -235,7 +224,8 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
 
         {[
           { title: "IM Hours", data: imHoursByCity },
-          { title: "Rig team Hours", data: rigHoursByCity },
+          { title: "Productivity team Hours", data: rigHoursByCity },
+          { title: "Overall", data: overallByCity },
         ].map(({ title, data }) => (
           <div key={title} style={{ margin: "0 0 14px" }}>
             <h3 style={{ fontSize: "0.9rem", margin: "0 0 6px", color: "#334155" }}>{title}</h3>
@@ -284,20 +274,6 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
           );
         })}
       </nav>
-
-      {teamFilter === "rig" && (
-        <nav aria-label="Filter by rig sub-team" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "0 0 10px" }}>
-          <Link href={keep({ subteam: "" })} aria-current={!subTeamFilter ? "true" : undefined} style={chip(!subTeamFilter)}>
-            Rig + Productivity
-          </Link>
-          <Link href={keep({ subteam: "rig" })} aria-current={subTeamFilter === "rig" ? "true" : undefined} style={chip(subTeamFilter === "rig")}>
-            Rig team
-          </Link>
-          <Link href={keep({ subteam: "productivity" })} aria-current={subTeamFilter === "productivity" ? "true" : undefined} style={chip(subTeamFilter === "productivity")}>
-            Productivity team
-          </Link>
-        </nav>
-      )}
 
       {cities.length > 0 && (
         <nav aria-label="Filter by city" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "0 0 10px" }}>
