@@ -151,12 +151,17 @@ export const TABS = {
     "failed_hours", // how much of the duration failed/was unusable, HH:MM:SS — optional, "" if none
     "failed_raw_clips", // how many of the raw clips failed/were unusable — optional, "" if none
     "raw_clips", // No. of raw clips
-    "detected", // IM form only: "detected" | "not_detected" | "" (blank on Rig-form entries)
-    "note", // Rig form only: free text, optional — "" if none given (blank on IM-form entries)
     "recorded_by", // login email
     "recorded_by_name",
     "recorded_at",
     "forwarded", // "yes" | "no: <reason>" — whether the copy sent to the Google Script succeeded
+    // These two are added AT THE END on purpose: this store (Google Sheets, src/lib/store/sheets.ts)
+    // reads and writes every row by COLUMN POSITION, not by header name — inserting a new field earlier
+    // in this list shifts every column after it out of alignment with the physical sheet, which is
+    // what broke the data when these were first added in the middle. Adding more fields later must
+    // also go at the end, never inserted between existing ones.
+    "detected", // IM form only: "detected" | "not_detected" | "" (blank on Rig-form entries)
+    "note", // Rig form only: free text, optional — "" if none given (blank on IM-form entries)
   ],
   // Manual flags shown in the dashboard's "Needs attention" section, alongside the automatic delayed-card
   // table — a free-text note anyone can add (e.g. "Chase city X about missing cards"), with who added it
