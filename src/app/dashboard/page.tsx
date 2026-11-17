@@ -744,6 +744,26 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
     hubIdList
       ? inventory({ status: "with_rig,in_stock", hub: hubIdList, city: city.toLowerCase() })
       : inventory({ status: "with_rig", city: city.toLowerCase() });
+  // Green / Black breakdown of one team's SD cards (rigs have no card colour at all — see
+  // cardColorOf above — so only that team's SD-card share counts here). No per-colour filter on
+  // Inventory yet, so this opens the same list as that team's own row.
+  // Declared before teamBreakdown below, which calls it on every item — a `const` used before its
+  // own declaration throws "Cannot access before initialization" even though the call happens
+  // inside a .map() that runs immediately, which is exactly what was crashing this page.
+  const cardColorFor = (list: Item[], href: string) => {
+    const count = new Map<string, number>();
+    for (const i of list) {
+      if (i.item_type !== "sd_card") continue;
+      const c = cardColorOf(i.attributes);
+      count.set(c, (count.get(c) ?? 0) + 1);
+    }
+    const all = [...count.entries()];
+    const total = all.reduce((t, [, v]) => t + v, 0);
+    return all
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([color, c]) => ({ color, count: c, pct: total ? Math.round((c / total) * 100) : 0, href }));
+  };
+
   const teamBreakdown = (
     [
       ["Rig team", rigTeamCount, rigTeamItemsList, [...rigHubIds].join(",")],
@@ -769,23 +789,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
       cardColor: cardColorFor(list, href),
     };
   });
-
-  // Green / Black breakdown of one team's SD cards (rigs have no card colour at all — see
-  // cardColorOf above — so only that team's SD-card share counts here). No per-colour filter on
-  // Inventory yet, so this opens the same list as that team's own row.
-  const cardColorFor = (list: Item[], href: string) => {
-    const count = new Map<string, number>();
-    for (const i of list) {
-      if (i.item_type !== "sd_card") continue;
-      const c = cardColorOf(i.attributes);
-      count.set(c, (count.get(c) ?? 0) + 1);
-    }
-    const all = [...count.entries()];
-    const total = all.reduce((t, [, v]) => t + v, 0);
-    return all
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([color, c]) => ({ color, count: c, pct: total ? Math.round((c / total) * 100) : 0, href }));
-  };
 
   // The Broken tile's storage breakdown combines the admin's manual baseline (already-broken cards
   // that predate storage tracking, or were never scanned into the system) with the LIVE counts of
