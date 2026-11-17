@@ -11,6 +11,27 @@ const howLong = (hours: number) =>
 const dayText = (days: number | null) =>
   days === null ? "" : days === 0 ? "today" : `${days} day${days === 1 ? "" : "s"} ago`;
 
+/** A power bank's saved "age" attribute ("New" / "Old" / "Not set"), same values power-bank-sheet.ts saves. */
+function ageOf(raw: string): string {
+  let attributes: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(raw || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) attributes = parsed as Record<string, unknown>;
+  } catch {
+    // Missing or invalid details count as "Not set".
+  }
+  const text = typeof attributes.age === "string" ? attributes.age.trim().toLowerCase() : "";
+  if (text.startsWith("new")) return "New";
+  if (text.startsWith("old")) return "Old";
+  return "Not set";
+}
+
+const AGE_PALETTE: Record<string, { bg: string; border: string; text: string }> = {
+  New: { bg: "#dcfce7", border: "#16a34a", text: "#14532d" },
+  Old: { bg: "#fef3c7", border: "#d97706", text: "#78350f" },
+  "Not set": { bg: "#e2e8f0", border: "#64748b", text: "#334155" },
+};
+
 interface Tile {
   label: string;
   count: number;
@@ -80,6 +101,25 @@ export function PowerBankSummary({ d, hubParam, items, attentionHref, brokenCoun
   const share = (count: number) => (powerBanks.length > 0 ? `${Math.round((count / powerBanks.length) * 100)}%` : "");
   const unusableTotal = brokenCount + retiredCount;
   const unusableShare = (count: number) => (unusableTotal > 0 ? `${Math.round((count / unusableTotal) * 100)}%` : "");
+
+  // New / Old split of every power bank in scope, from the sheet's Old/New column (see
+  // power-bank-sheet.ts). Only an explicit "New" counts as New — anything else (explicitly "Old", or
+  // never scanned since that column was added) counts as Old, so the two always add up to the total.
+  const newCount = powerBanks.filter((i) => ageOf(i.attributes) === "New").length;
+  const oldCount = powerBanks.length - newCount;
+  const ageCounts = new Map<string, number>([
+    ["New", newCount],
+    ["Old", oldCount],
+  ]);
+  const ageShare = (count: number) => (powerBanks.length > 0 ? `${Math.round((count / powerBanks.length) * 100)}%` : "");
+  const ageDetails: Tile[] = (["New", "Old"] as const)
+    .filter((key) => (ageCounts.get(key) ?? 0) > 0)
+    .map((key) => ({
+      label: `${key} power banks`,
+      count: ageCounts.get(key) ?? 0,
+      pct: ageShare(ageCounts.get(key) ?? 0),
+      ...AGE_PALETTE[key],
+    }));
 
   // Capacity (e.g. "20000mAh") and colour ("Black") breakdown chips used to render here, under the
   // Fleet tile — removed per request (see the comment above these functions' old spot, further up).
@@ -212,6 +252,38 @@ export function PowerBankSummary({ d, hubParam, items, attentionHref, brokenCoun
                     {detail.pct && <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.75 }}>{detail.pct}</span>}
                   </strong>
                 </span>
+              ))}
+            </span>
+          </span>
+        )}
+
+        {ageDetails.length > 0 && (
+          <span style={{ display: "block", flexShrink: 0, width: "100%", marginTop: 12, paddingTop: 12, borderTop: "1px solid #cbd5e1", whiteSpace: "normal" }}>
+            <span style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+              {ageDetails.map((detail) => (
+                <Link
+                  key={detail.label}
+                  href={list()}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4,
+                    padding: "8px 10px",
+                    minWidth: 0,
+                    border: `1px solid ${detail.border}`,
+                    borderLeft: `5px solid ${detail.border}`,
+                    borderRadius: 8,
+                    backgroundColor: detail.bg,
+                    color: detail.text,
+                    textDecoration: "none",
+                  }}
+                >
+                  <span style={{ fontSize: 12, fontWeight: 600, whiteSpace: "normal" }}>{detail.label}</span>
+                  <strong style={{ fontSize: 20, lineHeight: 1.3, display: "flex", alignItems: "baseline", gap: 6 }}>
+                    {n(detail.count)}
+                    {detail.pct && <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.75 }}>{detail.pct}</span>}
+                  </strong>
+                </Link>
               ))}
             </span>
           </span>
