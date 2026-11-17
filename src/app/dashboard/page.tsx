@@ -546,6 +546,33 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
       });
   };
 
+  // From → To breakdown for rigs in a given RIG STATE (same idea as routesFor above, but re-running
+  // rigState() per item like citiesForRigState, so it only counts rigs and only this state).
+  const routesForRigState = (state: RigState, hrefStatuses: Status[]) => {
+    const count = new Map<string, { from: string; to: string; n: number }>();
+    for (const i of items) {
+      if (i.item_type !== "rig" || rigState(i.status, latestQc.get(i.item_id)) !== state) continue;
+      const e = eventByIdForRoutes.get(i.last_event_id);
+      const fromCity = (e && cityOfHub.get(e.from_hub)) || e?.from_hub || "Unknown";
+      const toCity = cityOfHub.get(i.current_hub) || i.current_hub || "Not set";
+      const key = `${fromCity}→${toCity}`;
+      const row = count.get(key) ?? { from: fromCity, to: toCity, n: 0 };
+      row.n += 1;
+      count.set(key, row);
+    }
+    const all = [...count.values()];
+    const total = all.reduce((t, r) => t + r.n, 0);
+    return all
+      .sort((a, b) => b.n - a.n || a.from.localeCompare(b.from))
+      .map((r) => ({
+        label: `${shortCity(r.from)} → ${shortCity(r.to)}`,
+        fullLabel: `${r.from} → ${r.to}`,
+        count: r.n,
+        pct: total ? Math.round((r.n / total) * 100) : 0,
+        href: inventory({ status: hrefStatuses.join(","), city: r.to.toLowerCase(), type: "rig" }),
+      }));
+  };
+
   // RIGS: one tile per rig state (see RIG_STATES in lib/rig-state.ts). Each opens Rig checks filtered to it.
   const rigCount = Object.fromEntries(RIG_STATES.map((k) => [k, 0])) as Record<RigState, number>;
   for (const i of items) {
@@ -593,9 +620,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
     color: RIG_TILE[k].color,
     // Rigs with field officers: city-wise list too, like SD cards and mobiles.
     ...(k === "fo" && { cities: citiesFor("with_fo", "rig") }),
-    // In stock, and in transit to an IFO: city-wise too.
+    // In stock: city-wise too.
     ...(k === "in_stock" && { cities: citiesForRigState("in_stock", ["in_stock", "pending"]) }),
-    ...(k === "transit" && { cities: citiesForRigState("transit", ["traveling"]) }),
+    // In transit: From → To routes, same as the overall "In transit" tile above, instead of a
+    // destination-only city list — this says where each rig actually started from too.
+    ...(k === "transit" && { routes: routesForRigState("transit", ["traveling"]), routesLabel: "Routes" }),
   }));
   // RTD breaks out further into "still on the way to the IM" vs "already received" — this tile is
   // just the first half, right after the combined RTD tile above.
