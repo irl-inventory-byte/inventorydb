@@ -59,7 +59,12 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
     { team: "rig" as const, subteam: "", label: "Productivity team", count: all.filter((r) => r.team === "rig").length },
   ];
 
-  const cities = [...new Set(all.map((r) => r.city).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  // A handful of old entries have "Rig team" saved in the city field itself (bad data, not a real
+  // city) — that was showing up as its own row in the city dropdown and in the Hours-by-city tables
+  // (including Overall, which was then a card or two too high). Drop it everywhere cities are listed.
+  const cities = [...new Set(all.map((r) => r.city).filter(Boolean))]
+    .filter((c) => c.trim().toLowerCase() !== "rig team")
+    .sort((a, b) => a.localeCompare(b));
   const ics = [...new Set(all.map((r) => r.ic_name).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const members = [...new Set(all.map((r) => r.team_member).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
