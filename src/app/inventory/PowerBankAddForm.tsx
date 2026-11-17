@@ -16,6 +16,7 @@ const EMPTY: PowerBankLookup = {
   color: "",
   capacity: "",
   output: "",
+  age: "",
   price: "",
 };
 
@@ -29,6 +30,7 @@ const FIELDS: [keyof PowerBankLookup, string][] = [
   ["color", "Color"],
   ["capacity", "Capacity"],
   ["output", "Output"],
+  ["age", "Old/New"],
   ["price", "Price / Penalty (₹)"],
 ];
 
@@ -191,20 +193,36 @@ export default function PowerBankAddForm({ hubs = [] }: { hubs?: Hubs }) {
           alignItems: "start",
         }}
       >
-        {FIELDS.map(([k, label]) => (
-          <label key={k} style={fieldStyle}>
-            <span>{label}</span>
-            <input
-              name={k}
-              value={details[k]}
-              onChange={(e) => setDetails((d) => ({ ...d, [k]: e.target.value }))}
-              placeholder={found ? "—" : "Fills in from the sheet"}
-              readOnly={k === "type"}
-              inputMode={k === "price" ? "numeric" : undefined}
-              style={inputStyle}
-            />
-          </label>
-        ))}
+        {FIELDS.map(([k, label]) =>
+          k === "age" ? (
+            <label key={k} style={fieldStyle}>
+              <span>{label}</span>
+              <select
+                name={k}
+                value={details.age}
+                onChange={(e) => setDetails((d) => ({ ...d, age: e.target.value }))}
+                style={inputStyle}
+              >
+                <option value="">{found ? "Not set" : "Fills in from the sheet"}</option>
+                <option value="New">New</option>
+                <option value="Old">Old</option>
+              </select>
+            </label>
+          ) : (
+            <label key={k} style={fieldStyle}>
+              <span>{label}</span>
+              <input
+                name={k}
+                value={details[k]}
+                onChange={(e) => setDetails((d) => ({ ...d, [k]: e.target.value }))}
+                placeholder={found ? "—" : "Fills in from the sheet"}
+                readOnly={k === "type"}
+                inputMode={k === "price" ? "numeric" : undefined}
+                style={inputStyle}
+              />
+            </label>
+          ),
+        )}
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>

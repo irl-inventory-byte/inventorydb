@@ -197,6 +197,7 @@ export default function PowerBankBulkAddForm({ hubs = [] }: { hubs?: Hubs }) {
                 <th style={cellStyle}>Color</th>
                 <th style={cellStyle}>Capacity</th>
                 <th style={cellStyle}>Output</th>
+                <th style={cellStyle}>Old/New</th>
                 <th style={cellStyle}>Price / Penalty</th>
                 <th style={cellStyle}>Check</th>
                 <th style={cellStyle} aria-label="Remove" />
@@ -215,6 +216,7 @@ export default function PowerBankBulkAddForm({ hubs = [] }: { hubs?: Hubs }) {
                     <td style={cellStyle}>{row.color || "—"}</td>
                     <td style={cellStyle}>{row.capacity || "—"}</td>
                     <td style={cellStyle}>{row.output || "—"}</td>
+                    <td style={cellStyle}>{row.age || "—"}</td>
                     <td style={cellStyle}>{rupees(row.price)}</td>
                     <td style={{ ...cellStyle, color: label.color, fontWeight: 600 }}>{label.text}</td>
                     <td style={cellStyle}>

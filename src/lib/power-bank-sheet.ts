@@ -38,6 +38,7 @@ export interface PowerBankRecord {
   color: string;
   capacity: string;
   output: string;
+  age: string; // "New" / "Old" / "" — from the sheet's Old/New column
   price: string; // digits only, "" when missing
 }
 
@@ -51,10 +52,19 @@ const HEADERS: Record<Exclude<keyof PowerBankRecord, "assetTag">, string[]> = {
   color: ["color", "colour"],
   capacity: ["capacity", "mah", "capacitymah"],
   output: ["output", "outputw", "wattage"],
+  age: ["oldnew", "newold", "old", "condition", "age"],
   price: ["pricepenalty", "price", "penalty", "cost", "amount", "value"],
 };
 
 const ASSET_TAG_HEADINGS = ["assettag", "assettagno", "assetid", "assetno"];
+
+/** Normalize the sheet's Old/New column to exactly "New", "Old", or "" when it says neither. */
+function normalizeAge(raw: string): string {
+  const v = String(raw ?? "").trim().toLowerCase();
+  if (v.startsWith("new")) return "New";
+  if (v.startsWith("old")) return "Old";
+  return "";
+}
 
 function money(raw: string): string {
   const cleaned = String(raw ?? "").replace(/[^0-9.]/g, "");
@@ -110,6 +120,7 @@ export function parsePowerBankSheet(rows: string[][]): { records: PowerBankRecor
       color: cell(at.color),
       capacity: cell(at.capacity),
       output: cell(at.output),
+      age: normalizeAge(cell(at.age)),
       price: money(cell(at.price)),
     });
   }
@@ -126,12 +137,14 @@ export function findPowerBank(records: PowerBankRecord[], scanned: string): Powe
 }
 
 /** The details saved with a power bank (shown on its page and searchable in Inventory). */
-export function powerBankAttributes(r: Pick<PowerBankRecord, "color" | "capacity" | "output" | "date">): string {
+export function powerBankAttributes(r: Pick<PowerBankRecord, "color" | "capacity" | "output" | "date" | "age">): string {
   const pairs: [string, string][] = [
     ["color", r.color],
     ["capacity", r.capacity],
     ["output", r.output],
     ["date", r.date],
+    // Stored lowercase ("new"/"old"), same convention as the SD card "age" attribute.
+    ["age", r.age.toLowerCase()],
   ];
   const kept = pairs.filter(([, v]) => v.trim());
   return kept.length ? JSON.stringify(Object.fromEntries(kept.map(([k, v]) => [k, v.trim()]))) : "";

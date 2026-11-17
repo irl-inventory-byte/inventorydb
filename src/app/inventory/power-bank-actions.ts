@@ -39,6 +39,7 @@ export type PowerBankLookup = {
   color: string;
   capacity: string;
   output: string;
+  age: string;
   price: string;
 };
 
@@ -51,6 +52,7 @@ const toLookup = (r: PowerBankRecord): PowerBankLookup => ({
   color: r.color,
   capacity: r.capacity,
   output: r.output,
+  age: r.age,
   price: r.price,
 });
 
@@ -141,6 +143,7 @@ export async function addPowerBank(formData: FormData) {
         capacity: field("capacity", found?.capacity),
         output: field("output", found?.output),
         date: field("date", found?.date),
+        age: field("age", found?.age),
       }),
     },
     items,
@@ -176,6 +179,7 @@ const emptyLookup: PowerBankLookup = {
   color: "",
   capacity: "",
   output: "",
+  age: "",
   price: "",
 };
 
@@ -270,7 +274,7 @@ export async function addPowerBanks(scans: string[], homeHub: string): Promise<P
         model: found.model,
         price: found.price,
         itemType: "power_bank",
-        attributes: powerBankAttributes({ color: found.color, capacity: found.capacity, output: found.output, date: found.date }),
+        attributes: powerBankAttributes({ color: found.color, capacity: found.capacity, output: found.output, date: found.date, age: found.age }),
       },
       known,
       { hubs, by, now, newId },
