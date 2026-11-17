@@ -52,6 +52,21 @@ function cardStorage(raw: string): string {
   if (normalized === "256GB" || normalized === "256") return "256 GB";
   return capacityText || "Unknown";
 }
+/** SD card colour ("Black" / "Green" / "Unknown") from the saved "card_type" attribute — only ever set on SD cards, not rigs. */
+function cardColorOf(raw: string): string {
+  let attributes: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(raw || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) attributes = parsed as Record<string, unknown>;
+  } catch {
+    // Missing or invalid details count as "Unknown".
+  }
+  const rawColor = attributes.card_type;
+  const lower = (typeof rawColor === "string" ? rawColor.trim() : "").toLowerCase();
+  if (lower === "black") return "Black";
+  if (lower === "green") return "Green";
+  return "Unknown";
+}
 const days = (d: number | null) => (d === null ? "—" : d === 0 ? "today" : `${d}d`);
 
 /** A time as an IST date, e.g. "8 Oct 2026". */
@@ -432,7 +447,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
       pct: number;
       href: string;
       cities: { city: string; count: number; pct: number; href: string }[]; // this team's items, by city of current_hub
-    }[]; // Rig team / Productivity team breakdown, each split by city, opened from the tile
+      cardColor: { color: string; count: number; pct: number; href: string }[]; // this team's SD cards, by Green/Black
+    }[]; // Rig team / Productivity team breakdown, each split by city and by SD card colour, opened from the tile
     defn?: string; // one-line definition shown under the tile (e.g. what "Lost" vs "Broken" means)
     storageOverrideKey?: string; // settings key for an admin-editable manual override of `storage` (see dashboard/actions.ts)
     storageOverrideValue?: { gb256: number; gb512: number }; // current override, if any — prefills the edit form
@@ -741,16 +757,35 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
       pct: count ? Math.round((c / count) * 100) : 0,
       href: cityHref(city),
     }));
+    const href = hubIdList ? inventory({ status: "with_rig,in_stock", hub: hubIdList }) : teamHref;
     return {
       label,
       count,
       pct: teamTotal ? Math.round((count / teamTotal) * 100) : 0,
-      href: hubIdList ? inventory({ status: "with_rig,in_stock", hub: hubIdList }) : teamHref,
+      href,
       // When every item in this team is in the same one city, the city row would just repeat the
       // team's own total (100%) — drop it rather than show the same number twice.
       cities: cities.length === 1 && cities[0].pct === 100 ? [] : cities,
+      cardColor: cardColorFor(list, href),
     };
   });
+
+  // Green / Black breakdown of one team's SD cards (rigs have no card colour at all — see
+  // cardColorOf above — so only that team's SD-card share counts here). No per-colour filter on
+  // Inventory yet, so this opens the same list as that team's own row.
+  const cardColorFor = (list: Item[], href: string) => {
+    const count = new Map<string, number>();
+    for (const i of list) {
+      if (i.item_type !== "sd_card") continue;
+      const c = cardColorOf(i.attributes);
+      count.set(c, (count.get(c) ?? 0) + 1);
+    }
+    const all = [...count.entries()];
+    const total = all.reduce((t, [, v]) => t + v, 0);
+    return all
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([color, c]) => ({ color, count: c, pct: total ? Math.round((c / total) * 100) : 0, href }));
+  };
 
   // The Broken tile's storage breakdown combines the admin's manual baseline (already-broken cards
   // that predate storage tracking, or were never scanned into the system) with the LIVE counts of
@@ -1763,12 +1798,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
                                 <span style={{ minWidth: 38, textAlign: "right", color: "#64748b", fontSize: "0.8rem" }}>{t.pct}%</span>
                               </span>
                             </Link>
-                            {t.cities.map((c) => (
-                              <Link key={c.city} href={c.href} style={{ paddingLeft: 24, color: "#64748b" }}>
-                                <span>{c.city}</span>
+                            {t.cardColor.map((cc) => (
+                              <Link key={cc.color} href={cc.href} style={{ paddingLeft: 24, color: "#64748b" }}>
+                                <span>{cc.color}</span>
                                 <span style={{ display: "inline-flex", gap: 10, alignItems: "baseline" }}>
-                                  <b style={{ fontWeight: 500 }}>{n(c.count)}</b>
-                                  <span style={{ minWidth: 38, textAlign: "right", color: "#94a3b8", fontSize: "0.78rem" }}>{c.pct}%</span>
+                                  <b style={{ fontWeight: 500 }}>{n(cc.count)}</b>
+                                  <span style={{ minWidth: 38, textAlign: "right", color: "#94a3b8", fontSize: "0.78rem" }}>{cc.pct}%</span>
                                 </span>
                               </Link>
                             ))}
