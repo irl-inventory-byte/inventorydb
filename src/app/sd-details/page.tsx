@@ -90,8 +90,9 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
 
   const imHoursByCity = hoursByCity(dayRows.filter((r) => r.team === "im"));
   const rigHoursByCity = hoursByCity(dayRows.filter((r) => r.team === "rig"));
-  // Overall: IM + Productivity team combined, same date/city filter as the two tables above.
-  const overallByCity = hoursByCity(dayRows);
+  // Overall: Productivity team only (same rows as "Productivity team Hours" above), not IM+Productivity
+  // combined — per request.
+  const overallByCity = rigHoursByCity;
 
   let rows = all;
   if (teamFilter) rows = rows.filter((r) => r.team === teamFilter);
@@ -173,7 +174,7 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
         <BackLink /> · <Link href="/dashboard">Dashboard</Link>
       </p>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <h1 style={{ margin: 0 }}>SD card details </h1>
+        <h1 style={{ margin: 0 }}>SD card details ({all.length})</h1>
         <a
           href={exportHref}
           style={{
