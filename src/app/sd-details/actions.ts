@@ -122,13 +122,15 @@ export async function saveSdDetails(formData: FormData) {
 }
 
 /**
- * Called from the SD card details form when the serial number field loses focus: looks up the most
- * recent prior submission for that same serial (across both IM and Rig forms) and returns the fields
- * that are safe to copy forward — FO/IFO, IC name, IC-Number, city, duration and raw clips — so the
- * form can pre-fill them. The person can still edit anything before submitting. Returns null when
- * there's no prior entry for that serial, so the form leaves everything as typed.
+ * Called from the Productivity team (Rig) SD card details form once both the serial and the SD card
+ * date are filled in: looks ONLY at IM SD card details entries (team === "im") for an exact match on
+ * both serial and card_date, and returns the fields that are safe to copy forward — FO/IFO, IC name,
+ * IC-Number, city, duration and raw clips — so the Rig form can pre-fill them. No other matching is
+ * done (not by serial alone, not across a date range, not from other Rig entries): if there's no IM
+ * entry for that exact serial + date, this returns null and the form leaves everything as typed. The
+ * IM form itself no longer auto-fills anything (see SdDetailsForm.tsx).
  */
-export async function lookupSdDetailsBySerial(serial: string): Promise<{
+export async function lookupImEntryForRig(serial: string, cardDate: string): Promise<{
   fo_ifo: string;
   ic_name: string;
   ic_number: string;
@@ -138,11 +140,12 @@ export async function lookupSdDetailsBySerial(serial: string): Promise<{
 } | null> {
   await requireRole("admin", "im", "rig");
   const s = serial.trim();
-  if (!s) return null;
+  const d = cardDate.trim();
+  if (!s || !d) return null;
 
   const all = await getStore().list("sd_card_durations");
   const matches = all
-    .filter((r) => r.serial.trim() === s)
+    .filter((r) => r.team === "im" && r.serial.trim() === s && r.card_date === d)
     .sort((a, b) => Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0"));
   const latest = matches[0];
   if (!latest) return null;

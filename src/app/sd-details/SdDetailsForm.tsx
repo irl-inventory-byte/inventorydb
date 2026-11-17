@@ -3,7 +3,7 @@
 import { useRef, useState, type CSSProperties } from "react";
 import type { SdCardDuration } from "@/lib/schema";
 import { formatIst } from "@/lib/time";
-import { lookupSdDetailsBySerial } from "./actions";
+import { lookupImEntryForRig } from "./actions";
 
 const IC_NAMES = [
   "Aditya", "Anshitha", "Bhavana", "Hari Prasad M S", "Hemanth", "Kavya", "Kusuma H",
@@ -44,18 +44,22 @@ export default function SdDetailsForm({
   const [rawClips, setRawClips] = useState("");
   const [detected, setDetected] = useState("");
   const [autofillStatus, setAutofillStatus] = useState<"" | "looking" | "filled" | "none">("");
-  // So the SD card date field can trigger the same lookup as the serial field — see its onBlur below.
+  // Serial and SD card date both need to be filled in before the lookup can run — see their onBlur
+  // handlers below, either of which can trigger it once the other is already filled.
   const serialRef = useRef<HTMLInputElement>(null);
+  const cardDateRef = useRef<HTMLInputElement>(null);
 
-  async function runLookup(rawSerial: string) {
+  async function runLookup() {
     // IM form: nothing is pre-filled from a prior entry anymore — every field is typed fresh. The
-    // Rig form keeps the auto-fill below.
+    // Rig (Productivity team) form keeps the auto-fill below, now matched against the IM entry for
+    // this exact serial + SD card date only — no other data is fetched.
     if (team === "im") return;
-    const serial = rawSerial.trim();
-    if (!serial) return;
+    const serial = serialRef.current?.value.trim() ?? "";
+    const cardDate = cardDateRef.current?.value.trim() ?? "";
+    if (!serial || !cardDate) return;
     setAutofillStatus("looking");
     try {
-      const match = await lookupSdDetailsBySerial(serial);
+      const match = await lookupImEntryForRig(serial, cardDate);
       if (!match) {
         setAutofillStatus("none");
         return;
@@ -101,10 +105,11 @@ export default function SdDetailsForm({
             required
             max={new Date().toISOString().slice(0, 10)}
             style={input}
-            onBlur={(e) => {
+            ref={cardDateRef}
+            onBlur={() => {
               // Whichever of serial/date is filled in second triggers the lookup — so it fires
               // whether the card is scanned first or the date is picked first.
-              if (e.currentTarget.value && serialRef.current?.value.trim()) runLookup(serialRef.current.value);
+              runLookup();
             }}
           />
         </label>
@@ -134,19 +139,21 @@ export default function SdDetailsForm({
             placeholder="Serial or asset tag"
             style={input}
             ref={serialRef}
-            onBlur={(e) => runLookup(e.target.value)}
+            onBlur={() => runLookup()}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                runLookup(e.currentTarget.value);
+                runLookup();
               }
             }}
           />
           {autofillStatus === "looking" && <span style={{ fontSize: "0.72rem", color: "#64748b" }}>Looking up this card…</span>}
           {autofillStatus === "filled" && (
-            <span style={{ fontSize: "0.72rem", color: "#166534" }}>Filled in from the last entry for this card — check before submitting.</span>
+            <span style={{ fontSize: "0.72rem", color: "#166534" }}>Filled in from IM&apos;s entry for this card and date — check before submitting.</span>
           )}
-          {autofillStatus === "none" && <span style={{ fontSize: "0.72rem", color: "#64748b" }}>No earlier entry found for this card.</span>}
+          {autofillStatus === "none" && (
+            <span style={{ fontSize: "0.72rem", color: "#64748b" }}>No IM entry found for this card on this date.</span>
+          )}
         </label>
         {team === "im" && (
           <label style={field}>
