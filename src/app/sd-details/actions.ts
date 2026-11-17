@@ -159,3 +159,38 @@ export async function lookupImEntryForRig(serial: string, cardDate: string): Pro
     raw_clips: latest.raw_clips || "",
   };
 }
+
+/**
+ * Original lookup, kept only so src/app/sd-details/SdDetailsFields.tsx (an unused, not-wired-up
+ * leftover component — nothing imports it) still compiles unchanged: looks up the most recent prior
+ * submission for that same serial, across both IM and Rig entries, with no date check. Not used by
+ * the real forms (SdDetailsForm.tsx) — those use lookupImEntryForRig above.
+ */
+export async function lookupSdDetailsBySerial(serial: string): Promise<{
+  fo_ifo: string;
+  ic_name: string;
+  ic_number: string;
+  city: string;
+  duration: string;
+  raw_clips: string;
+} | null> {
+  await requireRole("admin", "im", "rig");
+  const s = serial.trim();
+  if (!s) return null;
+
+  const all = await getStore().list("sd_card_durations");
+  const matches = all
+    .filter((r) => r.serial.trim() === s)
+    .sort((a, b) => Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0"));
+  const latest = matches[0];
+  if (!latest) return null;
+
+  return {
+    fo_ifo: latest.fo_ifo || "",
+    ic_name: latest.ic_name || "",
+    ic_number: latest.ic_number || "",
+    city: latest.city || "",
+    duration: latest.duration || "",
+    raw_clips: latest.raw_clips || "",
+  };
+}
