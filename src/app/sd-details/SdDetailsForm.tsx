@@ -48,6 +48,9 @@ export default function SdDetailsForm({
   const serialRef = useRef<HTMLInputElement>(null);
 
   async function runLookup(rawSerial: string) {
+    // IM form: nothing is pre-filled from a prior entry anymore — every field is typed fresh. The
+    // Rig form keeps the auto-fill below.
+    if (team === "im") return;
     const serial = rawSerial.trim();
     if (!serial) return;
     setAutofillStatus("looking");
