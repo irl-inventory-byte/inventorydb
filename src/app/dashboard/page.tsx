@@ -754,7 +754,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
     const count = new Map<string, number>();
     for (const i of list) {
       if (i.item_type !== "sd_card") continue;
-      const c = cardColorOf(i.attributes);
+      // Cards with no saved colour ("Unknown") are counted as Black here, so this breakdown only
+      // ever shows Black and Green.
+      const raw = cardColorOf(i.attributes);
+      const c = raw === "Unknown" ? "Black" : raw;
       count.set(c, (count.get(c) ?? 0) + 1);
     }
     const all = [...count.entries()];
