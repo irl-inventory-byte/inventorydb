@@ -173,7 +173,7 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
         <BackLink /> · <Link href="/dashboard">Dashboard</Link>
       </p>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <h1 style={{ margin: 0 }}>SD card details ({all.length})</h1>
+        <h1 style={{ margin: 0 }}>SD card details </h1>
         <a
           href={exportHref}
           style={{
@@ -227,7 +227,8 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
             <label style={{ fontSize: "0.85rem", color: "#334155" }}>
               To <input type="date" name="hto" defaultValue={hFiltered ? hTo : ""} aria-label="To date" />
             </label>
-            <select name="city" multiple defaultValue={cityFilters} aria-label="City (select one or more; none selected = all)" size={4} style={{ minWidth: 140 }}>
+            <select name="city" defaultValue={cityFilter} aria-label="City">
+              <option value="">All cities</option>
               {cities.map((c) => (
                 <option key={c} value={c}>
                   {c}
