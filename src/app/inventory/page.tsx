@@ -440,6 +440,7 @@ export default async function InventoryPage({
               <th scope="col">Color</th>
               <th scope="col">Capacity</th>
               <th scope="col">Output</th>
+              <th scope="col">Old/New</th>
               <th scope="col">Price / Penalty</th>
               <th scope="col">Status</th>
               <th scope="col">Hub</th>
@@ -591,6 +592,7 @@ export default async function InventoryPage({
                     <td>{a["color"] || "—"}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{a["capacity"] || "—"}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{a["output"] || "—"}</td>
+                    <td>{a["age"] ? a["age"][0].toUpperCase() + a["age"].slice(1).toLowerCase() : "—"}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{displayAmount(item.price)}</td>
                     <td>{STATUS_LABELS[item.status] ?? item.status}</td>
                     <td>{hubName.get(item.current_hub) ?? item.current_hub}</td>

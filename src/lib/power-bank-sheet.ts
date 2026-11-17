@@ -143,8 +143,7 @@ export function powerBankAttributes(r: Pick<PowerBankRecord, "color" | "capacity
     ["capacity", r.capacity],
     ["output", r.output],
     ["date", r.date],
-    // Stored lowercase ("new"/"old"), same convention as the SD card "age" attribute.
-    ["age", r.age.toLowerCase()],
+    ["age", r.age], // "New" or "Old" — read back as-is by Inventory's power bank table (see page.tsx)
   ];
   const kept = pairs.filter(([, v]) => v.trim());
   return kept.length ? JSON.stringify(Object.fromEntries(kept.map(([k, v]) => [k, v.trim()]))) : "";
