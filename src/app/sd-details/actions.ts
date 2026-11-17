@@ -6,6 +6,7 @@ import { displayName } from "@/lib/actors";
 import { requireRole } from "@/lib/authz";
 import { getStore } from "@/lib/store";
 import { istTimestamp } from "@/lib/time";
+import { syncProductivitySerialsToRigSheet } from "@/lib/rig-data-sheet";
 
 type Team = "im" | "rig";
 
@@ -193,4 +194,30 @@ export async function lookupSdDetailsBySerial(serial: string): Promise<{
     duration: latest.duration || "",
     raw_clips: latest.raw_clips || "",
   };
+}
+
+/**
+ * Matches every row of the "Rig Data" Google Sheet to a Productivity-team SD card serial, by Date +
+ * City + IC, and writes the result straight into that sheet — live from Supabase, no manual
+ * download/upload. Triggered from a button on /sd-details (admin only).
+ */
+export async function syncRigDataSheet(formData: FormData) {
+  await requireRole("admin");
+  const back = String(formData.get("back") ?? "/sd-details");
+
+  try {
+    const result = await syncProductivitySerialsToRigSheet();
+    redirect(
+      `${back}?${new URLSearchParams({
+        syncMatched: String(result.matched),
+        syncNotFound: String(result.notFound),
+        syncRows: String(result.rows),
+        syncColumn: result.column,
+      })}`,
+    );
+  } catch (error) {
+    if (error && typeof error === "object" && "digest" in error) throw error; // let redirect() through
+    const message = error instanceof Error ? error.message : "Could not sync the Rig Data sheet.";
+    redirect(`${back}?${new URLSearchParams({ syncError: message })}`);
+  }
 }

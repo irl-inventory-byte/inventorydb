@@ -6,6 +6,7 @@ import { formatHms, sumHms } from "@/lib/duration";
 import { formatIst, istDate } from "@/lib/time";
 import styles from "../admin/admin.module.css";
 import BackLink from "../BackLink";
+import { syncRigDataSheet } from "./actions";
 
 type SdDetailsPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined>;
@@ -24,7 +25,8 @@ const subTeamLabel = (r: { team: string; sub_team?: string }) => (r.team !== "ri
  * (see dashboard/page.tsx), not just the home page.
  */
 export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps) {
-  await requireRole("admin", "im", "rig");
+  const user = await requireRole("admin", "im", "rig");
+  const isAdmin = user.role === "admin";
   const sp = (await searchParams) ?? {};
 
   // Hours-by-city date range (separate from the "Date from / to" filter further down, which filters the
@@ -174,7 +176,7 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
         <BackLink /> · <Link href="/dashboard">Dashboard</Link>
       </p>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <h1 style={{ margin: 0 }}>SD card details ({all.length})</h1>
+        <h1 style={{ margin: 0 }}>SD card details </h1>
         <a
           href={exportHref}
           style={{
@@ -198,6 +200,27 @@ export default async function SdDetailsPage({ searchParams }: SdDetailsPageProps
         Every SD Card Duration Hour entry — saved here and also sent to the Google Sheet. The download uses
         whichever filters are active below.
       </p>
+
+      {isAdmin && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "0 0 10px" }}>
+          <form action={syncRigDataSheet}>
+            <input type="hidden" name="back" value="/sd-details" />
+            <button type="submit">Sync Productivity serials → Rig Data sheet</button>
+          </form>
+          <span className={styles.muted} style={{ fontSize: "0.85rem" }}>
+            Matches the Rig Data sheet to Productivity-team SD cards by Date + City + IC, live — no download/upload.
+          </span>
+        </div>
+      )}
+
+      {one(sp.syncMatched) && (
+        <p className={styles.ok}>
+          Synced: matched {one(sp.syncMatched)} of {one(sp.syncRows)} rows
+          {Number(one(sp.syncNotFound)) > 0 && ` (${one(sp.syncNotFound)} not found)`} · written to column {one(sp.syncColumn)} of
+          the Rig Data sheet.
+        </p>
+      )}
+      {one(sp.syncError) && <p className={styles.error}>{one(sp.syncError)}</p>}
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", margin: "12px 0 18px" }}>
         <div style={card}>
