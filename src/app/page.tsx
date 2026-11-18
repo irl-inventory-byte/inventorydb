@@ -94,6 +94,13 @@ const WORK: Tile[] = [
     roles: RECEIVE_ROLES,
   },
   {
+    href: "/fo-assets",
+    title: "FO Assets",
+    desc: "Pick an FO or IFO and see every asset they currently hold, with totals by type.",
+    icon: "search",
+    roles: INVENTORY_ROLES,
+  },
+  {
     href: "/admin/people",
     title: "Manage people",
     desc: "The IMs, IFOs, FOs and rig team.",
