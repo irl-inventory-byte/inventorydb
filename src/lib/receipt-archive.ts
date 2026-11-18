@@ -593,9 +593,13 @@ async function ensureReceiptsTab(
  * "Receipts" tab. Errors are logged and never thrown, so a Drive or Sheets
  * problem can never undo or block a handover that was already saved.
  */
-export async function archiveReceipt(batchId: string, baseUrl: string) {
+export async function archiveReceipt(
+  batchId: string,
+  baseUrl: string,
+  options?: { extraRecipients?: { id: string; name: string }[] },
+) {
   try {
-    await saveReceipt(batchId, baseUrl);
+    await saveReceipt(batchId, baseUrl, options);
   } catch (error) {
     console.error(`[receipt-archive] Could not archive batch ${batchId}:`, error);
   }
@@ -604,8 +608,16 @@ export async function archiveReceipt(batchId: string, baseUrl: string) {
 /**
  * Same as archiveReceipt, but throws a readable error naming the step that
  * failed. Used by the admin test page at /api/receipt-test.
+ *
+ * `extraRecipients`: always emailed a plain copy (no acknowledgment ask), regardless of their role —
+ * for someone who should see the receipt but isn't the "From" or "To" party on the batch itself, e.g.
+ * the IC who recorded an FO → FO transfer on their behalf (see app/ic/actions.ts's transferFoToFo).
  */
-export async function saveReceipt(batchId: string, baseUrl: string) {
+export async function saveReceipt(
+  batchId: string,
+  baseUrl: string,
+  options?: { extraRecipients?: { id: string; name: string }[] },
+) {
   let step = "reading the batch";
   try {
     const store = getStore();
@@ -709,10 +721,15 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
     // for their own records, with no acknowledgment ask (that's only for whoever is now holding the
     // items). Skipped if there's no "from" person on this batch, if they're the same person as "to"
     // (nothing to copy them on), or if they're not FO/IFO either.
+    //
+    // Also fires on "correct": that's the action a direct custody change (e.g. an FO → FO transfer,
+    // see app/ic/actions.ts's transferFoToFo, or an admin moving an item straight from one FO/IFO to
+    // another on the Corrections screen) is recorded as — the FO giving the item up is just as much a
+    // party to that move as the one receiving it, even though nothing was formally "received" here.
     const sentTo = [...email.sentTo];
     const missing = [...email.missing];
     if (
-      summary.action === "receive" &&
+      (summary.action === "receive" || summary.action === "correct") &&
       (summary.fromId || summary.fromName) &&
       summary.fromId !== summary.toId &&
       fromCanEmail
@@ -728,6 +745,23 @@ export async function saveReceipt(batchId: string, baseUrl: string) {
       });
       sentTo.push(...fromEmail.sentTo);
       missing.push(...fromEmail.missing);
+    }
+
+    // Extra recipients (e.g. the IC who recorded this transfer) — always emailed a plain copy
+    // regardless of role, since they asked to be named here explicitly rather than being inferred
+    // from the batch's From/To parties.
+    if (options?.extraRecipients?.length) {
+      const extraEmail = await sendReceiptEmail({
+        summary,
+        title: ACTION_TITLE[summary.action] ?? "Batch record",
+        pdf,
+        fileName,
+        receiptUrl,
+        totalPenalty: rupeeTotal(penalties.total),
+        people: options.extraRecipients,
+      });
+      sentTo.push(...extraEmail.sentTo);
+      missing.push(...extraEmail.missing);
     }
 
     if (missing.length > 0) {

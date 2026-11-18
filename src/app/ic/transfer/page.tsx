@@ -5,9 +5,10 @@ import { IC_TRANSFER_ROLES, handoverStoreFor } from "@/lib/access";
 import { rigHomeHub } from "@/lib/rig-hub";
 import { mobileAliases } from "@/lib/scan";
 import styles from "../../handover/form.module.css";
-import { transferToFo } from "../actions";
+import { transferToFo, transferFoToFo } from "../actions";
 import BackLink from "../../BackLink";
 import IcTransferFields from "./IcTransferFields";
+import FoToFoFields from "./FoToFoFields";
 
 export default async function IcTransferPage({
   searchParams,
@@ -122,6 +123,39 @@ export default async function IcTransferPage({
           </p>
         )}
         {one(sp.error) && <p className={`${styles.error} ${styles.result}`}>{one(sp.error)}</p>}
+      </form>
+
+      <hr style={{ margin: "32px 0", border: "none", borderTop: "1px solid #2a2a2a" }} />
+
+      <h2>Transfer between FOs</h2>
+      <p className={styles.hint}>
+        Move an item that&apos;s already with one FO straight to a different FO — not from Bangalore stock. This
+        happens immediately; the receiving FO doesn&apos;t need to confirm anything.
+      </p>
+
+      <form action={transferFoToFo} className={styles.form}>
+        <FoToFoFields fos={fos} />
+
+        <div className={styles.field}>
+          <label className={styles.label} htmlFor="fonote">
+            Notes *
+          </label>
+          <div className={styles.control}>
+            <textarea id="fonote" name="note" rows={3} className={styles.textarea} required />
+            <p className={styles.hint}>Required — say what this transfer is for.</p>
+          </div>
+        </div>
+
+        <div className={styles.actions}>
+          <button type="submit">Transfer</button>
+        </div>
+
+        {one(sp.fdone) && (
+          <p className={`${styles.ok} ${styles.result}`}>
+            Moved {one(sp.fdone)} item(s) to {one(sp.fperson)}.
+          </p>
+        )}
+        {one(sp.ferror) && <p className={`${styles.error} ${styles.result}`}>{one(sp.ferror)}</p>}
       </form>
     </main>
   );
