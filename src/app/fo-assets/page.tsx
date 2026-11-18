@@ -3,13 +3,14 @@ import Link from "next/link";
 import { requireRole } from "@/lib/authz";
 import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
 import { storeForAll } from "@/lib/access";
-import { formatIst } from "@/lib/time";
+import { formatIst, istDate } from "@/lib/time";
 import styles from "../admin/admin.module.css";
 import { TypeBadge, TypeCounts } from "../ItemTypeBadge";
 
 /**
- * Search by FO number (an FO/IFO's person_id), mobile number, or name, and see everything they
- * currently hold: total count, a breakdown by item type, and each item's ID, status and hub.
+ * Pick an FO (or IFO) by name from a dropdown — optionally narrowed first by city — and see
+ * everything they currently hold: total count, a breakdown by item type, and each item's ID,
+ * status and hub. From / To narrows further to items assigned within that date range.
  *
  * Only CURRENTLY assigned items ever show here. This isn't a separate filter — items.current_holder
  * is cleared the moment an item is received back into stock (see lib/handover.ts), so an item that was
@@ -22,9 +23,12 @@ export default async function FoAssetsPage({
 }) {
   const user = await requireRole();
   const sp = await searchParams;
-  const q = one(sp.q).trim();
-  const qLower = q.toLowerCase();
-  const qDigits = q.replace(/\D/g, "");
+
+  const cityFilter = one(sp.city).trim().toLowerCase();
+  const selectedId = one(sp.fo);
+  const isDay = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
+  const from = isDay(one(sp.from)) ? one(sp.from) : "";
+  const to = isDay(one(sp.to)) ? one(sp.to) : "";
 
   const store = storeForAll(user.role);
   const [people, hubs, items] = await Promise.all([
@@ -35,26 +39,29 @@ export default async function FoAssetsPage({
 
   const hubName = new Map(hubs.map((h) => [h.hub_id, h.name]));
 
-  // FOs and IFOs are searched the same way (both are field-facing roles items get sent to elsewhere
-  // in the app — see the Role/Name filter on /inventory). An exact FO number match always wins, even
-  // if the typed text also happens to appear in another person's name.
-  const fos = people.filter((p) => p.role === "fo" || p.role === "ifo");
-  const exact = fos.find((p) => p.person_id.toLowerCase() === qLower);
-  const candidates = exact
-    ? [exact]
-    : q
-      ? fos.filter(
-          (p) =>
-            p.person_id.toLowerCase().includes(qLower) ||
-            p.name.toLowerCase().includes(qLower) ||
-            (qDigits.length >= 4 && (p.mobile ?? "").includes(qDigits)),
-        )
-      : [];
+  // A hub's city: its city, or its name when the city is blank (same rule as /inventory).
+  const cityLabelOf = (h: (typeof hubs)[number]) => (h.city ?? "").trim() || h.name.trim();
+  const hubCity = new Map(hubs.map((h) => [h.hub_id, cityLabelOf(h).toLowerCase()]));
+  const cityOptions = [...new Map(hubs.map((h) => [cityLabelOf(h).toLowerCase(), cityLabelOf(h)])).entries()]
+    .filter(([key]) => key)
+    .sort((a, b) => a[1].localeCompare(b[1]));
 
-  const selectedId = one(sp.fo) || (candidates.length === 1 ? candidates[0].person_id : "");
+  // FOs and IFOs, narrowed by the chosen city (their own hub's city), sorted by name.
+  const fos = people
+    .filter((p) => p.role === "fo" || p.role === "ifo")
+    .filter((p) => !cityFilter || hubCity.get(p.hub) === cityFilter)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   const selected = selectedId ? people.find((p) => p.person_id === selectedId) : undefined;
 
-  const assigned = selected ? items.filter((i) => i.current_holder === selected.person_id) : [];
+  const assigned = selected
+    ? items.filter((i) => {
+        if (i.current_holder !== selected.person_id) return false;
+        if (!from && !to) return true;
+        const day = i.updated_at ? istDate(new Date(Date.parse(i.updated_at))) : "";
+        return (!from || (day !== "" && day >= from)) && (!to || (day !== "" && day <= to));
+      })
+    : [];
 
   return (
     <main className={styles.pageWide}>
@@ -67,45 +74,55 @@ export default async function FoAssetsPage({
       </div>
 
       <p className={styles.muted}>
-        Search by FO number, mobile number or name to see everything they currently hold. Only
-        currently assigned items show here — anything returned or transferred drops off automatically.
+        Pick an FO or IFO to see everything they currently hold. Only currently assigned items show
+        here — anything returned or transferred drops off automatically.
       </p>
 
       <Form action="/fo-assets" className={styles.row} scroll={false} data-progress="1">
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <strong style={{ fontWeight: 600 }}>FO number</strong>
-          <input
-            type="text"
-            name="q"
-            defaultValue={q}
-            placeholder="FO number, mobile or name"
-            aria-label="FO number, mobile or name"
-            autoFocus
-          />
+          <strong style={{ fontWeight: 600 }}>City</strong>
+          <select name="city" defaultValue={cityFilter} aria-label="City">
+            <option value="">All cities</option>
+            {cityOptions.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
         </label>
+
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <strong style={{ fontWeight: 600 }}>FO name</strong>
+          <select name="fo" defaultValue={selectedId} aria-label="FO / IFO name">
+            <option value="">Choose…</option>
+            {fos.map((p) => (
+              <option key={p.person_id} value={p.person_id}>
+                {p.name} ({ROLE_LABELS[p.role] ?? p.role}, {hubName.get(p.hub) ?? p.hub})
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <strong style={{ fontWeight: 600 }}>From</strong>
+          <input type="date" name="from" defaultValue={from} max={to || undefined} aria-label="From date" />
+        </label>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <strong style={{ fontWeight: 600 }}>To</strong>
+          <input type="date" name="to" defaultValue={to} min={from || undefined} aria-label="To date" />
+        </label>
+
         <button type="submit">Search</button>
-        {q && <Link href="/fo-assets">Clear</Link>}
+        {(selectedId || cityFilter || from || to) && <Link href="/fo-assets">Clear</Link>}
       </Form>
 
-      {q && candidates.length === 0 && (
-        <p className={styles.error}>No FO or IFO matches &quot;{q}&quot;.</p>
+      {!selectedId && (
+        <p className={styles.muted}>
+          {cityFilter ? `${fos.length} FO/IFO in that city. ` : ""}Choose a name above to see their assets.
+        </p>
       )}
 
-      {q && !selected && candidates.length > 1 && (
-        <>
-          <p className={styles.muted}>{candidates.length} matches — pick one:</p>
-          <ul className={styles.list}>
-            {candidates.map((p) => (
-              <li key={p.person_id}>
-                <Link href={`/fo-assets?q=${encodeURIComponent(q)}&fo=${encodeURIComponent(p.person_id)}`}>
-                  {p.name} ({ROLE_LABELS[p.role] ?? p.role}) — {p.person_id}
-                  {p.mobile ? ` · ${p.mobile}` : ""}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+      {selectedId && !selected && <p className={styles.error}>That FO/IFO could not be found.</p>}
 
       {selected && (
         <>
@@ -113,10 +130,15 @@ export default async function FoAssetsPage({
             <h2 style={{ marginTop: 0 }}>
               {selected.name}{" "}
               <span className={styles.muted}>
-                ({ROLE_LABELS[selected.role] ?? selected.role} · {selected.person_id})
+                ({ROLE_LABELS[selected.role] ?? selected.role} · {hubName.get(selected.hub) ?? selected.hub})
               </span>
             </h2>
             {selected.mobile && <p className={styles.muted}>Mobile: {selected.mobile}</p>}
+            {(from || to) && (
+              <p className={styles.muted}>
+                Assigned {from ? `from ${from}` : ""} {to ? `to ${to}` : ""}
+              </p>
+            )}
             <p style={{ fontSize: 18, fontWeight: 700, margin: "8px 0" }}>
               {assigned.length} asset{assigned.length === 1 ? "" : "s"} currently assigned
             </p>
@@ -124,7 +146,7 @@ export default async function FoAssetsPage({
           </div>
 
           {assigned.length === 0 ? (
-            <p className={styles.muted}>No assets currently assigned to {selected.name}.</p>
+            <p className={styles.muted}>No assets currently assigned to {selected.name}{(from || to) ? " in that date range" : ""}.</p>
           ) : (
             <div
               role="region"
