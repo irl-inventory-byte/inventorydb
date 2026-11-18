@@ -220,11 +220,16 @@ export async function sendReceiptEmail(options: {
   acknowledgment?: { yesUrl: string };
 }): Promise<ReceiptEmailResult> {
   const { summary, title, pdf, fileName, receiptUrl, totalPenalty, acknowledgment } = options;
-  // Reference documents live in Drive now (not served by the app), so these are fixed links.
-  const assetHandoverNoticeUrl = "https://drive.google.com/file/d/1yX2UtuZU_njYyOFHcGD8VwBLgLerW6jM/view?usp=drive_link";
+  // Same origin the receipt link itself uses, so these work wherever this is sent from (local dev, a
+  // preview deploy, production) without a separate base-URL setting. The files live in public/docs/,
+  // which src/proxy.ts excludes from the login redirect — so recipients open them with no sign-in,
+  // same as the handover/ack link.
+  const origin = new URL(receiptUrl).origin;
+  const assetHandoverNoticeUrl = `${origin}/docs/Asset-Handover-and-Custody-Notice.pdf`;
+  const fieldOfficerSopUrl = `${origin}/docs/Field-Officer-SOP.pdf`;
+  const foDebuggingSopUrl = `${origin}/docs/FO-Debugging-SOP.pdf`;
+  // Not yet added to public/docs/ — still pointing at Drive until that file is in place.
   const powerBankFieldGuideUrl = "https://drive.google.com/file/d/1IOCpgFgbOiKuEHBVDIFhqJqwAHgPhQgm/view?usp=drive_link";
-  const fieldOfficerSopUrl = "https://drive.google.com/file/d/1ZtkulA5ow2LXMwbhTi4hMLs0PUwdscvJ/view?usp=drive_link";
-  const foDebuggingSopUrl = "https://drive.google.com/drive/folders/1ywcIQKftr4_f6TulLeKBmI5mFaIU6nUM";
 
   const recipients = (options.people ?? [{ id: summary.toId, name: summary.toName }]).filter(
     (r) => r.id || r.name,
