@@ -41,7 +41,7 @@ export default async function IcTransferPage({
   const fos = people
     .filter((p) => p.role === "fo" && p.active !== "false")
     .sort((a, b) => a.name.localeCompare(b.name))
-    .map((p) => ({ id: p.person_id, label: `${p.name} (${hubName.get(p.hub) ?? p.hub})` }));
+    .map((p) => ({ id: p.person_id, name: p.name, city: hubName.get(p.hub) ?? p.hub }));
 
   const toPerson = people.find((p) => p.person_id === one(sp.person))?.name ?? one(sp.person);
 
