@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { Analytics } from "@vercel/analytics/next";
 import NavProgress from "./NavProgress";
 import ThemeToggle from "./ThemeToggle";
+import SoundToggle from "./SoundToggle";
 import "./globals.css";
 
 // Runs synchronously before <body> paints anything, so the page never flashes the wrong theme then
@@ -51,6 +52,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         </Suspense>
         {children}
         <ThemeToggle />
+        <SoundToggle />
         <Analytics />
       </body>
     </html>
