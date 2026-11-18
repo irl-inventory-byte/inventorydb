@@ -9,7 +9,8 @@ import {
 } from "pdf-lib";
 import { toBuffer as qrToBuffer } from "qrcode";
 import { RECEIPT_TYPE_TITLE, byReceiptType, receiptColumns } from "./receipt-columns";
-import { STATUS_LABELS } from "./labels";
+import { ROLE_LABELS, STATUS_LABELS } from "./labels";
+import type { Role } from "./schema";
 import { LOGO_HEIGHT, LOGO_PATHS, LOGO_WIDTH } from "./receipt-logo";
 import { formatPrice, summarizeBatch, type BatchSummary } from "./receipt";
 import { sendReceiptEmail, type ReceiptEmailResult } from "./receipt-email";
@@ -283,12 +284,13 @@ export async function buildReceiptPdf(
 
   const boxGap = 14;
   const boxWidth = (contentWidth - boxGap) / 2;
-  const boxHeight = 62;
+  const boxHeight = 78;
 
   const partyBox = (
     x: number,
     heading: string,
     person: string,
+    role: string,
     location: string
   ) => {
     page.drawRectangle({
@@ -305,14 +307,18 @@ export async function buildReceiptPdf(
     page.drawText(fit(person || "—", bold, 10.5, boxWidth - 80), {
       x: x + 66, y: top - 17, size: 10.5, font: bold, color: black,
     });
-    page.drawText("Location", { x: x + 10, y: top - 33, size: 10, font: regular, color: grey });
-    page.drawText(fit(location || "—", regular, 10.5, boxWidth - 80), {
+    page.drawText("Role", { x: x + 10, y: top - 33, size: 10, font: regular, color: grey });
+    page.drawText(fit((ROLE_LABELS[role as Role] ?? role) || "—", regular, 10.5, boxWidth - 80), {
       x: x + 66, y: top - 33, size: 10.5, font: regular, color: black,
+    });
+    page.drawText("Location", { x: x + 10, y: top - 49, size: 10, font: regular, color: grey });
+    page.drawText(fit(location || "—", regular, 10.5, boxWidth - 80), {
+      x: x + 66, y: top - 49, size: 10.5, font: regular, color: black,
     });
   };
 
-  partyBox(margin, "FROM", summary.fromName, summary.fromHubName);
-  partyBox(margin + boxWidth + boxGap, "TO", summary.toName, summary.hubName);
+  partyBox(margin, "FROM", summary.fromName, summary.fromRole, summary.fromHubName);
+  partyBox(margin + boxWidth + boxGap, "TO", summary.toName, summary.toRole, summary.hubName);
   y -= boxHeight + 10;
 
   // Other batch details.
@@ -332,6 +338,12 @@ export async function buildReceiptPdf(
     ["Date & time", `${formatIst(summary.occurredAt)} IST`],
     ["Items", storageBreakdown ? `${itemCountLabel} (${storageBreakdown})` : itemCountLabel],
   ];
+  // "Name of IC" only on a correction (an FO -> FO transfer, or an admin's direct reassignment) — on an
+  // ordinary send/receive, whoever is in "Recorded by" is the FO/IFO themselves, so a separate "IC" line
+  // would be misleading.
+  if (summary.action === "correct" && summary.recordedByName) {
+    facts.push(["Name of IC", summary.recordedByName]);
+  }
   if (summary.recordedBy) facts.push(["Recorded by", summary.recordedBy]);
   if (summary.note) facts.push(["Note", summary.note]);
 
@@ -621,15 +633,16 @@ export async function saveReceipt(
   let step = "reading the batch";
   try {
     const store = getStore();
-    const [events, items, hubs, people] = await Promise.all([
+    const [events, items, hubs, people, users] = await Promise.all([
       store.list("events"),
       store.list("items"),
       store.list("hubs"),
       store.list("people"),
+      store.list("users"),
     ]);
     const roleOf = new Map(people.map((p) => [p.person_id, p.role]));
 
-    const summary = summarizeBatch(events, items, hubs, batchId);
+    const summary = summarizeBatch(events, items, hubs, batchId, {}, people, users);
     if (!summary) {
       throw new Error(`Batch ${batchId} not found in the events tab.`);
     }

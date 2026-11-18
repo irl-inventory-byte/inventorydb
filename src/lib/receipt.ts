@@ -1,4 +1,4 @@
-import type { Action, Hub, Item, ItemEvent, Status } from "./schema";
+import type { Action, AppUser, Hub, Item, ItemEvent, Person, Status } from "./schema";
 
 export interface ReceiptLine {
   itemId: string;
@@ -47,8 +47,17 @@ export interface BatchSummary {
   // Signed-in account that recorded the handover, and when.
   recordedBy: string;
   recordedAt: string;
+  // The name behind recordedBy's email — "" if no People/Users row matches it, in which case the
+  // email in recordedBy is all there is to show. See the lookup in summarizeBatch below.
+  recordedByName: string;
   note: string;
   items: ReceiptLine[];
+
+  // Role of the FROM / TO person (e.g. "fo", "im"), from the people database at the moment the
+  // receipt is built — "" when the row no longer exists, was never a real person (a typed "Internal"
+  // name) or is an admin's email rather than a person_id.
+  fromRole: string;
+  toRole: string;
 
   // Item value only. This is not a charge or penalty.
   totalPrice: number | null;
@@ -195,6 +204,10 @@ export function summarizeBatch(
   hubs: Hub[],
   batchId: string,
   penaltiesByItem: PenaltiesByItem = {},
+  // Optional: both default to [] so existing 4-argument calls keep working. Needed only to resolve
+  // fromRole / toRole / recordedByName below — pass both when the caller has them loaded.
+  people: Person[] = [],
+  users: AppUser[] = [],
 ): BatchSummary | undefined {
   if (!batchId) {
     return undefined;
@@ -298,6 +311,24 @@ export function summarizeBatch(
     throw new Error("Total penalty amount is too large.");
   }
 
+  // Role of the FROM / TO person, by person_id. An admin's email (not a real person_id) or a typed
+  // "Internal" name simply won't match anything here, which is fine — the field just comes back "".
+  const roleOf = new Map(people.map((p) => [p.person_id, p.role]));
+  const fromRole = roleOf.get(first.from_id ?? "") ?? "";
+  const toRole = roleOf.get(first.to_id ?? "") ?? "";
+
+  // Name behind the recorded_by email: first by a matching active user account's linked person, then
+  // by a People row whose own "linked_user" is that email. "" if neither matches (an email with no
+  // People/Users row at all, e.g. an admin login that was never linked to anyone).
+  const recordedByEmail = (first.recorded_by ?? "").trim().toLowerCase();
+  const recordedByUser = recordedByEmail
+    ? users.find((u) => u.email?.trim().toLowerCase() === recordedByEmail && u.active !== "false")
+    : undefined;
+  const recordedByPerson =
+    (recordedByUser?.person_id && people.find((p) => p.person_id === recordedByUser.person_id)) ||
+    (recordedByEmail ? people.find((p) => (p.linked_user ?? "").trim().toLowerCase() === recordedByEmail) : undefined);
+  const recordedByName = recordedByPerson?.name ?? "";
+
   return {
     batchId,
     action: first.action,
@@ -310,6 +341,7 @@ export function summarizeBatch(
     hubName,
     recordedBy: first.recorded_by ?? "",
     recordedAt: first.recorded_at ?? "",
+    recordedByName,
     note: first.note,
     items: lines,
     totalPrice: prices.length
@@ -319,5 +351,7 @@ export function summarizeBatch(
     returnInfo: undefined,
     fromId: first.from_id ?? "",
     toId: first.to_id ?? "",
+    fromRole,
+    toRole,
   };
 }
