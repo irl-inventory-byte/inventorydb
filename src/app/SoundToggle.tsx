@@ -99,21 +99,24 @@ export default function SoundToggle() {
       aria-label={enabled ? "Mute click sounds" : "Enable click sounds"}
       title={enabled ? "Click sounds: on" : "Click sounds: off"}
       style={{
+        // right: 64, not 16 — ThemeToggle already sits at bottom:16/right:16, so this sits right
+        // next to it instead of underneath it.
         position: "fixed",
         bottom: 16,
-        right: 16,
-        zIndex: 1000,
+        right: 64,
+        zIndex: 9999,
         width: 40,
         height: 40,
         borderRadius: "50%",
-        border: "1px solid var(--border, #e2e8f0)",
-        background: "var(--card, #ffffff)",
-        color: "var(--fg, #0f172a)",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+        border: "1px solid var(--muted-text)",
+        background: "var(--background)",
+        color: "var(--foreground)",
+        boxShadow: "0 2px 10px rgba(0,0,0,0.18)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        fontSize: 18,
+        fontSize: "1.1rem",
+        lineHeight: 1,
         cursor: "pointer",
       }}
     >
