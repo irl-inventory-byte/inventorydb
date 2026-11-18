@@ -6,6 +6,7 @@ import { storeForAll } from "@/lib/access";
 import { formatIst, istDate } from "@/lib/time";
 import styles from "../admin/admin.module.css";
 import { TypeBadge, TypeCounts } from "../ItemTypeBadge";
+import FoNamePicker from "./FoNamePicker";
 
 /**
  * Pick an FO (or IFO) by name from a dropdown — optionally narrowed first by city — and see
@@ -46,11 +47,13 @@ export default async function FoAssetsPage({
     .filter(([key]) => key)
     .sort((a, b) => a[1].localeCompare(b[1]));
 
-  // FOs and IFOs, narrowed by the chosen city (their own hub's city), sorted by name.
-  const fos = people
+  // Every FO and IFO, sorted by name. The City dropdown narrows the Name dropdown client-side (see
+  // FoNamePicker) rather than through a page reload, so this list is NOT pre-filtered by city here —
+  // `fos` below (server-side, for the "x FO/IFO in that city" count) still is.
+  const allFos = people
     .filter((p) => p.role === "fo" || p.role === "ifo")
-    .filter((p) => !cityFilter || hubCity.get(p.hub) === cityFilter)
     .sort((a, b) => a.name.localeCompare(b.name));
+  const fos = allFos.filter((p) => !cityFilter || hubCity.get(p.hub) === cityFilter);
 
   const selected = selectedId ? people.find((p) => p.person_id === selectedId) : undefined;
 
@@ -79,29 +82,18 @@ export default async function FoAssetsPage({
       </p>
 
       <Form action="/fo-assets" className={styles.row} scroll={false} data-progress="1">
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <strong style={{ fontWeight: 600 }}>City</strong>
-          <select name="city" defaultValue={cityFilter} aria-label="City">
-            <option value="">All cities</option>
-            {cityOptions.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <strong style={{ fontWeight: 600 }}>FO name</strong>
-          <select name="fo" defaultValue={selectedId} aria-label="FO / IFO name">
-            <option value="">Choose…</option>
-            {fos.map((p) => (
-              <option key={p.person_id} value={p.person_id}>
-                {p.name} ({ROLE_LABELS[p.role] ?? p.role}, {hubName.get(p.hub) ?? p.hub})
-              </option>
-            ))}
-          </select>
-        </label>
+        <FoNamePicker
+          fos={allFos.map((p) => ({
+            id: p.person_id,
+            name: p.name,
+            role: ROLE_LABELS[p.role] ?? p.role,
+            hub: hubName.get(p.hub) ?? p.hub,
+            city: hubCity.get(p.hub) ?? "",
+          }))}
+          cityOptions={cityOptions.map(([value, label]) => ({ value, label }))}
+          defaultCity={cityFilter}
+          defaultFo={selectedId}
+        />
 
         <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <strong style={{ fontWeight: 600 }}>From</strong>
