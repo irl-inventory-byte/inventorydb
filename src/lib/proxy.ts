@@ -1,5 +1,5 @@
 import NextAuth from "next-auth";
-import { authConfig } from "@/auth.config";
+import { authConfig } from "../auth.config";
 
 // Redirects signed-out visitors to /login. Real permission checks happen in
 // server code via requireRole(); this is only the first gate.
