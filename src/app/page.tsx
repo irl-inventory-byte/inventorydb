@@ -96,9 +96,9 @@ const WORK: Tile[] = [
   {
     href: "/fo-assets",
     title: "FO Assets",
-    desc: "Pick an FO or IFO and see every asset they currently hold, with totals by type.",
+    desc: "Every FO/IFO with mobile number and current assets, or drill into one person.",
     icon: "search",
-    roles: INVENTORY_ROLES,
+    roles: ["admin", "im"],
   },
   {
     href: "/admin/people",

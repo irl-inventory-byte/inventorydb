@@ -7,11 +7,13 @@ import { formatIst, istDate } from "@/lib/time";
 import styles from "../admin/admin.module.css";
 import { TypeBadge, TypeCounts } from "../ItemTypeBadge";
 import FoNamePicker from "./FoNamePicker";
+import FoDirectory from "./FoDirectory";
 
 /**
- * Pick an FO (or IFO) by name from a dropdown — optionally narrowed first by city — and see
- * everything they currently hold: total count, a breakdown by item type, and each item's ID,
- * status and hub. From / To narrows further to items assigned within that date range.
+ * Admin/IM only. Shows every FO/IFO with their mobile number and current asset total up front (the
+ * directory table — filter it yourself, client-side, no searching one at a time required), plus a
+ * dropdown-based search for drilling into one person's full item-by-item breakdown, optionally
+ * narrowed by role/city and a From/To assigned-date range.
  *
  * Only CURRENTLY assigned items ever show here. This isn't a separate filter — items.current_holder
  * is cleared the moment an item is received back into stock (see lib/handover.ts), so an item that was
@@ -22,7 +24,7 @@ export default async function FoAssetsPage({
 }: {
   searchParams: { [key: string]: string | string[] | undefined } | Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const user = await requireRole();
+  const user = await requireRole("admin", "im");
   const sp = await searchParams;
 
   const roleFilter = one(sp.role) === "fo" || one(sp.role) === "ifo" ? one(sp.role) : "";
@@ -58,6 +60,30 @@ export default async function FoAssetsPage({
     (p) => (!roleFilter || p.role === roleFilter) && (!cityFilter || hubCity.get(p.hub) === cityFilter),
   );
 
+  // Current assigned items, grouped by holder, computed once for every FO/IFO — this feeds both the
+  // directory table's Total/Breakdown columns and the single-person detail section below.
+  const assignedByFo = new Map<string, typeof items>();
+  for (const it of items) {
+    if (!it.current_holder) continue;
+    const list = assignedByFo.get(it.current_holder) ?? [];
+    list.push(it);
+    assignedByFo.set(it.current_holder, list);
+  }
+
+  const directory = allFos.map((p) => {
+    const list = assignedByFo.get(p.person_id) ?? [];
+    return {
+      id: p.person_id,
+      name: p.name,
+      mobile: p.mobile ?? "",
+      roleLabel: ROLE_LABELS[p.role] ?? p.role,
+      hub: hubName.get(p.hub) ?? p.hub,
+      city: hubCity.get(p.hub) ?? "",
+      total: list.length,
+      types: list.map((i) => i.item_type),
+    };
+  });
+
   const selected = selectedId ? people.find((p) => p.person_id === selectedId) : undefined;
 
   const assigned = selected
@@ -80,15 +106,19 @@ export default async function FoAssetsPage({
       </div>
 
       <p className={styles.muted}>
-        Pick an FO or IFO to see everything they currently hold. Only currently assigned items show
-        here — anything returned or transferred drops off automatically.
+        Every FO/IFO, their mobile number, and what they currently hold — filter the table yourself,
+        or use the search below to drill into one person&apos;s full item-by-item list. Only currently
+        assigned items show here — anything returned or transferred drops off automatically.
       </p>
+
+      <FoDirectory rows={directory} selectedId={selectedId} />
 
       <Form action="/fo-assets" className={styles.row} scroll={false} data-progress="1">
         <FoNamePicker
           fos={allFos.map((p) => ({
             id: p.person_id,
             name: p.name,
+            mobile: p.mobile ?? "",
             roleRaw: p.role as "fo" | "ifo",
             roleLabel: ROLE_LABELS[p.role] ?? p.role,
             hub: hubName.get(p.hub) ?? p.hub,

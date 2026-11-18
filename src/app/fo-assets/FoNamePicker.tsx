@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 export interface FoOption {
   id: string;
   name: string;
+  mobile: string;
   roleRaw: "fo" | "ifo";
   roleLabel: string;
   hub: string;
@@ -88,7 +89,8 @@ export default function FoNamePicker({
           <option value="">Choose…</option>
           {filtered.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.name} ({p.roleLabel}, {p.hub})
+              {p.name}
+              {p.mobile ? ` — ${p.mobile}` : ""} ({p.roleLabel}, {p.hub})
             </option>
           ))}
         </select>
