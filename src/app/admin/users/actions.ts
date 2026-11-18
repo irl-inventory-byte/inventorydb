@@ -8,10 +8,15 @@ import { getStore } from "@/lib/store";
 import { checkUserLink, type LoginRole } from "@/lib/user-link";
 import type { Role } from "@/lib/schema";
 
+// "ic" was missing from both enums below: the Add/edit forms (this page and UserRow.tsx) already
+// offer "IC" as a choice, but picking it always failed this validation and showed "Please enter a
+// valid email and role." — the form never actually had a way to save someone as IC. (Not adding
+// "ifo" here: it's a valid Role elsewhere — see lib/access.ts — but isn't offered in either form,
+// and lib/user-link.ts's LoginRole type, which `role` is passed as below, doesn't include it either.)
 const UserInput = z.object({
   email: z.email().transform((e) => e.toLowerCase()),
-  role: z.enum(["admin", "im", "rig", "fo", "hardware", "qc", "internal"]), // primary role, required
-  secondary: z.enum(["", "admin", "im", "rig", "fo", "hardware", "qc", "internal"]), // optional
+  role: z.enum(["admin", "im", "rig", "fo", "hardware", "qc", "internal", "ic"]), // primary role, required
+  secondary: z.enum(["", "admin", "im", "rig", "fo", "hardware", "qc", "internal", "ic"]), // optional
   person: z.string(),
 });
 
