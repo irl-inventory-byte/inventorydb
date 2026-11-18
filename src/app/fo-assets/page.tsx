@@ -1,13 +1,24 @@
 import Form from "next/form";
 import Link from "next/link";
 import { requireRole } from "@/lib/authz";
-import { ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
+import { ITEM_TYPE_LABELS, ROLE_LABELS, STATUS_LABELS, one } from "@/lib/labels";
 import { storeForAll } from "@/lib/access";
 import { formatIst, istDate } from "@/lib/time";
 import styles from "../admin/admin.module.css";
-import { TypeBadge, TypeCounts } from "../ItemTypeBadge";
+import { TypeBadge } from "../ItemTypeBadge";
 import FoNamePicker from "./FoNamePicker";
 import FoDirectory from "./FoDirectory";
+
+// Plain-text "4 Power bank, 1 Rig" instead of the icon pills ItemTypeBadge's TypeCounts draws — used
+// for both the directory table's Breakdown column and the single-person detail card.
+function typeBreakdown(types: string[]): string {
+  const counts = new Map<string, number>();
+  for (const t of types) counts.set(t, (counts.get(t) ?? 0) + 1);
+  return [...counts.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([t, n]) => `${n} ${ITEM_TYPE_LABELS[t] ?? t}`)
+    .join(", ");
+}
 
 /**
  * Admin/IM only. Shows every FO/IFO with their mobile number and current asset total up front (the
@@ -80,7 +91,7 @@ export default async function FoAssetsPage({
       hub: hubName.get(p.hub) ?? p.hub,
       city: hubCity.get(p.hub) ?? "",
       total: list.length,
-      types: list.map((i) => i.item_type),
+      breakdown: typeBreakdown(list.map((i) => i.item_type)),
     };
   });
 
@@ -110,8 +121,6 @@ export default async function FoAssetsPage({
         or use the search below to drill into one person&apos;s full item-by-item list. Only currently
         assigned items show here — anything returned or transferred drops off automatically.
       </p>
-
-      <FoDirectory rows={directory} selectedId={selectedId} />
 
       <Form action="/fo-assets" className={styles.row} scroll={false} data-progress="1">
         <FoNamePicker
@@ -169,7 +178,9 @@ export default async function FoAssetsPage({
             <p style={{ fontSize: 18, fontWeight: 700, margin: "8px 0" }}>
               {assigned.length} asset{assigned.length === 1 ? "" : "s"} currently assigned
             </p>
-            <TypeCounts types={assigned.map((i) => i.item_type)} />
+            {assigned.length > 0 && (
+              <p className={styles.muted}>{typeBreakdown(assigned.map((i) => i.item_type))}</p>
+            )}
           </div>
 
           {assigned.length === 0 ? (
@@ -218,6 +229,9 @@ export default async function FoAssetsPage({
           )}
         </>
       )}
+
+      <h2 style={{ marginTop: 28 }}>All FO/IFO</h2>
+      <FoDirectory rows={directory} selectedId={selectedId} />
     </main>
   );
 }

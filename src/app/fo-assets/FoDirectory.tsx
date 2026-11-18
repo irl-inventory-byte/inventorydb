@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { TypeCounts } from "../ItemTypeBadge";
 
 export interface DirectoryRow {
   id: string;
@@ -12,7 +11,7 @@ export interface DirectoryRow {
   hub: string;
   city: string;
   total: number;
-  types: string[];
+  breakdown: string;
 }
 
 /**
@@ -33,7 +32,8 @@ export default function FoDirectory({ rows, selectedId }: { rows: DirectoryRow[]
         r.mobile.includes(t) ||
         r.roleLabel.toLowerCase().includes(t) ||
         r.hub.toLowerCase().includes(t) ||
-        r.city.includes(t),
+        r.city.includes(t) ||
+        r.breakdown.toLowerCase().includes(t),
     );
   }, [rows, q]);
 
@@ -75,7 +75,7 @@ export default function FoDirectory({ rows, selectedId }: { rows: DirectoryRow[]
                 <td>{r.roleLabel}</td>
                 <td>{r.hub}</td>
                 <td style={{ textAlign: "right" }}>{r.total}</td>
-                <td>{r.total > 0 ? <TypeCounts types={r.types} /> : "—"}</td>
+                <td>{r.breakdown || "—"}</td>
               </tr>
             ))}
             {filtered.length === 0 && (
