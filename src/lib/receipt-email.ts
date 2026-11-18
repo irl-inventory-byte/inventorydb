@@ -220,13 +220,11 @@ export async function sendReceiptEmail(options: {
   acknowledgment?: { yesUrl: string };
 }): Promise<ReceiptEmailResult> {
   const { summary, title, pdf, fileName, receiptUrl, totalPenalty, acknowledgment } = options;
-  // Same origin the receipt link itself uses, so the SOP links work wherever this is sent from
-  // (local dev, a preview deploy, production) without a separate base-URL setting.
-  const origin = new URL(receiptUrl).origin;
-  const fieldOfficerSopUrl = `${origin}/api/docs/field-officer-sop`;
-  const foDebuggingSopUrl = `${origin}/api/docs/fo-debugging-sop`;
-  const assetHandoverNoticeUrl = `${origin}/api/docs/asset-handover-notice`;
-  const powerBankFieldGuideUrl = `${origin}/api/docs/power-bank-field-guide`;
+  // Reference documents live in Drive now (not served by the app), so these are fixed links.
+  const assetHandoverNoticeUrl = "https://drive.google.com/file/d/1yX2UtuZU_njYyOFHcGD8VwBLgLerW6jM/view?usp=drive_link";
+  const powerBankFieldGuideUrl = "https://drive.google.com/file/d/1IOCpgFgbOiKuEHBVDIFhqJqwAHgPhQgm/view?usp=drive_link";
+  const fieldOfficerSopUrl = "https://drive.google.com/file/d/1ZtkulA5ow2LXMwbhTi4hMLs0PUwdscvJ/view?usp=drive_link";
+  const foDebuggingSopUrl = "https://drive.google.com/drive/folders/1ywcIQKftr4_f6TulLeKBmI5mFaIU6nUM";
 
   const recipients = (options.people ?? [{ id: summary.toId, name: summary.toName }]).filter(
     (r) => r.id || r.name,
