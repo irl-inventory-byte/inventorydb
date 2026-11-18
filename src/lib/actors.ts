@@ -32,7 +32,22 @@ export function actorOptions(
     .sort((a, b) => a.email.localeCompare(b.email))
     .map((u) => ({ value: u.email.toLowerCase(), label: `${u.email} (Admin)` }));
 
-  return [...handlers, ...admins];
+  // IC fallback, same idea as the admin one above, gated to only when "ic" was actually asked for
+  // (today that's only app/ic/transfer/page.tsx, via its actorRoles: ["ic"]) so no other page's actor
+  // list changes. Unlike IM/rig/QC/hardware/internal, an IC login isn't always linked to a People row —
+  // this is literally the login used by an Admin's "Transfer to FO" flow too, often unlinked — and
+  // without this, an unlinked-but-active IC account couldn't appear here at all: the page would show
+  // "Your login is not linked to an active person in People" AND, if that check were bypassed in the UI
+  // alone, the server-side resolveActor() in handover/actions.ts (same actorOptions lookup) would still
+  // reject the transfer, since there'd be no matching entry for their email either way.
+  const icUsers = roles.includes("ic")
+    ? users
+        .filter((u) => u.role === "ic" && u.active !== "false" && !(u.person_id && linked.has(u.person_id)))
+        .sort((a, b) => a.email.localeCompare(b.email))
+        .map((u) => ({ value: u.email.toLowerCase(), label: `${u.email} (IC)` }))
+    : [];
+
+  return [...handlers, ...admins, ...icUsers];
 }
 
 /** A person's name for the sheet, so the log reads without lookups. An admin's email stays as it is. */
