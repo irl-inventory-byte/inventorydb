@@ -54,28 +54,28 @@ export default function FoDirectory({ rows, selectedId }: { rows: DirectoryRow[]
       </div>
 
       <div role="region" aria-label="FO/IFO directory" tabIndex={0} style={{ width: "100%", maxWidth: "100%", overflowX: "auto", maxHeight: 420, overflowY: "auto" }}>
-        <table>
+        <table style={{ borderCollapse: "collapse", width: "100%" }}>
           <thead>
             <tr>
-              <th scope="col" style={{ textAlign: "left" }}>Name</th>
-              <th scope="col" style={{ textAlign: "left" }}>Mobile</th>
-              <th scope="col" style={{ textAlign: "left" }}>Role</th>
-              <th scope="col" style={{ textAlign: "left" }}>Hub</th>
-              <th scope="col" style={{ textAlign: "right" }}>Total</th>
-              <th scope="col" style={{ textAlign: "left" }}>Breakdown</th>
+              <th scope="col" style={{ textAlign: "left", padding: "6px 16px 6px 0" }}>Name</th>
+              <th scope="col" style={{ textAlign: "left", padding: "6px 16px 6px 0" }}>Mobile</th>
+              <th scope="col" style={{ textAlign: "left", padding: "6px 16px 6px 0" }}>Role</th>
+              <th scope="col" style={{ textAlign: "left", padding: "6px 16px 6px 0" }}>Hub</th>
+              <th scope="col" style={{ textAlign: "right", padding: "6px 16px 6px 0" }}>Total</th>
+              <th scope="col" style={{ textAlign: "left", padding: "6px 0" }}>Breakdown</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((r) => (
               <tr key={r.id} style={r.id === selectedId ? { outline: "2px solid #2563eb" } : undefined}>
-                <td>
+                <td style={{ padding: "6px 16px 6px 0" }}>
                   <Link href={`/fo-assets?fo=${encodeURIComponent(r.id)}`}>{r.name}</Link>
                 </td>
-                <td>{r.mobile || "—"}</td>
-                <td>{r.roleLabel}</td>
-                <td>{r.hub}</td>
-                <td style={{ textAlign: "right" }}>{r.total}</td>
-                <td>{r.breakdown || "—"}</td>
+                <td style={{ padding: "6px 16px 6px 0" }}>{r.mobile || "—"}</td>
+                <td style={{ padding: "6px 16px 6px 0" }}>{r.roleLabel}</td>
+                <td style={{ padding: "6px 16px 6px 0" }}>{r.hub}</td>
+                <td style={{ textAlign: "right", padding: "6px 16px 6px 0" }}>{r.total}</td>
+                <td style={{ padding: "6px 0" }}>{r.breakdown || "—"}</td>
               </tr>
             ))}
             {filtered.length === 0 && (
