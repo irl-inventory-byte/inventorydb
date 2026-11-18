@@ -228,8 +228,7 @@ export async function sendReceiptEmail(options: {
   const assetHandoverNoticeUrl = `${origin}/docs/Asset-Handover-and-Custody-Notice.pdf`;
   const fieldOfficerSopUrl = `${origin}/docs/Field-Officer-SOP.pdf`;
   const foDebuggingSopUrl = `${origin}/docs/FO-Debugging-SOP.pdf`;
-  // Not yet added to public/docs/ — still pointing at Drive until that file is in place.
-  const powerBankFieldGuideUrl = "https://drive.google.com/file/d/1IOCpgFgbOiKuEHBVDIFhqJqwAHgPhQgm/view?usp=drive_link";
+  const powerBankFieldGuideUrl = `${origin}/docs/Power-Bank-Field-Guide.pdf`;
 
   const recipients = (options.people ?? [{ id: summary.toId, name: summary.toName }]).filter(
     (r) => r.id || r.name,
