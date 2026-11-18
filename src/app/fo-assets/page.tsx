@@ -25,6 +25,7 @@ export default async function FoAssetsPage({
   const user = await requireRole();
   const sp = await searchParams;
 
+  const roleFilter = one(sp.role) === "fo" || one(sp.role) === "ifo" ? one(sp.role) : "";
   const cityFilter = one(sp.city).trim().toLowerCase();
   const selectedId = one(sp.fo);
   const isDay = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
@@ -53,7 +54,9 @@ export default async function FoAssetsPage({
   const allFos = people
     .filter((p) => p.role === "fo" || p.role === "ifo")
     .sort((a, b) => a.name.localeCompare(b.name));
-  const fos = allFos.filter((p) => !cityFilter || hubCity.get(p.hub) === cityFilter);
+  const fos = allFos.filter(
+    (p) => (!roleFilter || p.role === roleFilter) && (!cityFilter || hubCity.get(p.hub) === cityFilter),
+  );
 
   const selected = selectedId ? people.find((p) => p.person_id === selectedId) : undefined;
 
@@ -86,11 +89,13 @@ export default async function FoAssetsPage({
           fos={allFos.map((p) => ({
             id: p.person_id,
             name: p.name,
-            role: ROLE_LABELS[p.role] ?? p.role,
+            roleRaw: p.role as "fo" | "ifo",
+            roleLabel: ROLE_LABELS[p.role] ?? p.role,
             hub: hubName.get(p.hub) ?? p.hub,
             city: hubCity.get(p.hub) ?? "",
           }))}
           cityOptions={cityOptions.map(([value, label]) => ({ value, label }))}
+          defaultRole={roleFilter}
           defaultCity={cityFilter}
           defaultFo={selectedId}
         />
@@ -105,12 +110,12 @@ export default async function FoAssetsPage({
         </label>
 
         <button type="submit">Search</button>
-        {(selectedId || cityFilter || from || to) && <Link href="/fo-assets">Clear</Link>}
+        {(selectedId || roleFilter || cityFilter || from || to) && <Link href="/fo-assets">Clear</Link>}
       </Form>
 
       {!selectedId && (
         <p className={styles.muted}>
-          {cityFilter ? `${fos.length} FO/IFO in that city. ` : ""}Choose a name above to see their assets.
+          {roleFilter || cityFilter ? `${fos.length} match${fos.length === 1 ? "" : "es"}. ` : ""}Choose a name above to see their assets.
         </p>
       )}
 
