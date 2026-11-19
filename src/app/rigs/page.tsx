@@ -39,6 +39,11 @@ export default async function RigsPage({
   const readyOnly = one(sp.ready) === "1";
   // ?state=…: one rig state from the dashboard tiles (In stock, QC pending, RTD, …).
   const stateFilter = (RIG_STATES as readonly string[]).includes(one(sp.state)) ? (one(sp.state) as RigState) : "";
+  // ?rtdpending=1: within state=rtd, only the ones still on their way to the IM (status "pending"),
+  // not the ones already received (status "in_stock") — the dashboard's "RTD pending (to IM)" tile.
+  const rtdPendingOnly = one(sp.rtdpending) === "1";
+  // ?hwpending=1: sent to hardware, not received by them yet — the dashboard's "Hardware to receive" tile.
+  const hwPendingOnly = one(sp.hwpending) === "1";
   const q = one(sp.q).trim().toLowerCase();
   // ?from=/?to=: filter by the rig's Last QC date (YYYY-MM-DD, inclusive both ends). A rig with no QC
   // yet is excluded once either bound is set — there's no QC date to compare, so "no match" is correct,
@@ -73,6 +78,8 @@ export default async function RigsPage({
   const shown = rigs
     .filter((r) => !qcFilter || (latestQc.get(r.item_id)?.qc_status ?? "qc_pending") === qcFilter)
     .filter((r) => !stateFilter || rigState(r.status, latestQc.get(r.item_id)?.qc_status) === stateFilter)
+    .filter((r) => !rtdPendingOnly || r.status === "pending")
+    .filter((r) => !hwPendingOnly || r.status === "pending_hardware")
     .filter((r) => !readyOnly || (r.status === "in_stock" && rigCondition(r.status, latestQc.get(r.item_id)?.qc_status).ready))
     .filter(
       (r) =>
@@ -117,6 +124,14 @@ export default async function RigsPage({
           <>
             {" "}
             <strong>Showing only: {RIG_STATE_LABELS[stateFilter]}.</strong> <Link href="/rigs">Show all</Link>
+          </>
+        )}
+        {(stateFilter === "qc_fail" || qcFilter === "fail") && user.role === "qc" && (
+          <>
+            {" "}
+            <Link href="/qc/handover" style={{ fontWeight: 700 }}>
+              Handover to hardware →
+            </Link>
           </>
         )}
         {readyOnly && (

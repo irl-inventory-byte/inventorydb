@@ -137,6 +137,11 @@ export async function sendCards(formData: FormData) {
   const hwOutcome = String(formData.get("hwOutcome") ?? "");
   if (hwOutcome === "rnd" || hwOutcome === "dead") return markHardwareOutcome(formData, hwOutcome);
 
+  // QC team: Fail never sends the rig anywhere by itself — it just gets flagged QC fail and stays
+  // exactly where it is (With QC team). Moving it to the hardware team is now a separate, deliberate
+  // action (see handoverToHardware below), not something Fail does on its own.
+  if (String(formData.get("qcResult") ?? "") === "fail") return recordQcFail(formData);
+
   // The person (or a typed "Internal" name) and the location are both required; planSend refuses the
   // send if either is missing.
   const subTeamRaw = String(formData.get("sub_team") ?? "");
@@ -190,16 +195,13 @@ export async function sendCards(formData: FormData) {
           return { events: [], items: [], errors: ["Choose another QC person, not yourself."] };
         }
       } else if (ctx.senderRole === "qc") {
-        if (qcResult !== "pass" && qcResult !== "fail") {
-          return { events: [], items: [], errors: ["Choose the QC result: Pass, Fail or Transfer."] };
+        if (qcResult !== "pass") {
+          return { events: [], items: [], errors: ["Choose Pass to send this rig to an IM, or Transfer to send it to another QC person."] };
         }
         if (ctx.people.find((p) => p.person_id === input.recipient)?.role === "qc") {
           return { events: [], items: [], errors: ["To send to another QC person, choose Transfer."] };
         }
-        if (qcResult === "fail" && !qcComment) {
-          return { events: [], items: [], errors: ["Write what failed."] };
-        }
-        // The result applies to every rig in this send (Pass → IM, Fail → hardware team).
+        // Pass applies to every rig in this send, and goes to an IM.
         for (const t of targets) qcStatus.set(t.item_id, qcResult);
         qcRows = targets.map((t) => ({
           check_id: ctx.newId("qc"),
@@ -343,6 +345,101 @@ async function markHardwareOutcome(formData: FormData, outcome: "rnd" | "dead") 
     (): Record<string, string> => ({ outcome }),
     async () => {
       if (updates.length) await getStore().appendRows("hardware_updates", updates);
+    },
+    { roles: SEND_ROLES, actorRoles: ["im", "rig", "qc", "hardware", "internal"] },
+  );
+}
+
+/**
+ * QC team: record a Fail. This is now the ONLY thing choosing "Fail" does — the rig stays exactly
+ * where it is (With QC team / "with_qc"), nothing changes hands, and no handover event is created.
+ * It simply gets flagged "QC fail" (via the qc_checks row), which is what puts it on the dashboard's
+ * "QC fail" tile and the "Fail" filter on Rig checks. Handing it to the hardware team afterwards is a
+ * separate, deliberate step — see handoverToHardware below.
+ */
+export async function recordQcFail(formData: FormData) {
+  const qcComment = String(formData.get("qcComment") ?? "").trim().slice(0, 1000);
+  if (!qcComment) redirect(go("/handover/send", { error: "Write what failed." }));
+  let qcRows: TabRows["qc_checks"][] = [];
+  await run(
+    formData,
+    "/handover/send",
+    (targets, ctx) => {
+      if (ctx.senderRole !== "qc") {
+        return { events: [], items: [], errors: ["Only the QC team can record a Fail."] };
+      }
+      const notHeld = targets.filter(
+        (t) => t.item_type !== "rig" || t.status !== "with_qc" || t.current_holder !== ctx.actorPersonId,
+      );
+      if (notHeld.length) {
+        return {
+          events: [],
+          items: [],
+          errors: [
+            `You can only fail rigs that are with you right now (receive them first on Receive items): ${notHeld
+              .map((t) => t.item_id)
+              .join(", ")}.`,
+          ],
+        };
+      }
+      qcRows = targets.map((t) => ({
+        check_id: ctx.newId("qc"),
+        item_id: t.item_id,
+        recorded_at: ctx.now,
+        recorded_by: ctx.by,
+        recorded_by_name: displayName(ctx.people, ctx.actorPersonId),
+        qc_status: "fail" as const,
+        comment: qcComment,
+      }));
+      // No handover: status, holder and hub are all unchanged — only updated_at moves, so a failed
+      // rig doesn't look stale on a list sorted by that.
+      return { events: [], items: targets.map((t) => ({ ...t, updated_at: ctx.now })), errors: [] };
+    },
+    (): Record<string, string> => ({ status: "qc_fail" }),
+    async () => {
+      if (qcRows.length) await getStore().appendRows("qc_checks", qcRows);
+    },
+    { roles: SEND_ROLES, actorRoles: ["im", "rig", "qc", "hardware", "internal"] },
+  );
+}
+
+/**
+ * QC team: hand a QC-failed rig over to the hardware team. This is now the ONLY action that actually
+ * moves a failed rig to hardware — recording Fail (above) never does it on its own. Reached from its
+ * own page (/qc/handover), linked from the "QC fail" tile and from Rig checks.
+ */
+export async function handoverToHardware(formData: FormData) {
+  await run(
+    formData,
+    "/qc/handover",
+    async (targets, ctx) => {
+      if (ctx.senderRole !== "qc") {
+        return { events: [], items: [], errors: ["Only the QC team can hand a rig over to hardware."] };
+      }
+      const qcStatus = new Map<string, string>();
+      for (const c of await getStore().list("qc_checks")) qcStatus.set(c.item_id, c.qc_status);
+      const notFailed = targets.filter((t) => t.item_type !== "rig" || qcStatus.get(t.item_id) !== "fail");
+      if (notFailed.length) {
+        return {
+          events: [],
+          items: [],
+          errors: [`Only QC-failed rigs can be handed over to hardware: ${notFailed.map((t) => t.item_id).join(", ")}.`],
+        };
+      }
+      const input = {
+        fromHub: "",
+        recipient: String(formData.get("recipient") ?? ""),
+        toHub: "",
+        note: String(formData.get("note") ?? ""),
+      };
+      return planSend(targets, input, { ...ctx, qcStatus });
+    },
+    (plan): Record<string, string> => ({ person: plan.items[0]?.current_holder ?? "" }),
+    async (plan) => {
+      const batchId = plan.events[0]?.batch_id;
+      if (!batchId) return;
+      const base = await siteUrl();
+      after(() => archiveReceipt(batchId, base));
     },
     { roles: SEND_ROLES, actorRoles: ["im", "rig", "qc", "hardware", "internal"] },
   );

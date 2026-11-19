@@ -33,7 +33,8 @@ const SEND_TO: Record<string, Role[]> = {
   im: ["im", "ifo", "fo", "rig", "qc", "internal"],
   internal: ["im", "ifo", "fo", "rig", "qc", "internal"], // works like an IM
   rig: ["im", "ifo", "fo", "rig", "internal"],
-  qc: ["im", "hardware", "qc"], // QC pass → IM, QC fail → hardware team, transfer → another QC person
+  qc: ["im", "qc"], // QC pass → IM, transfer → another QC person. Fail no longer sends anywhere from
+  // here — it just flags the rig. Handing a failed rig to hardware is its own step: see /qc/handover.
   hardware: ["im", "hardware"], // repaired → IM, or a transfer to another hardware person (R&D and Dead: nobody)
 };
 
@@ -65,7 +66,7 @@ export default async function SendPage({
   const powerBankDetail = (raw: string): string | undefined => {
     try {
       const a = JSON.parse(raw || "{}") as Record<string, unknown>;
-      const parts = [a.brand, a.model].map((v) => (typeof v === "string" ? v.trim() : "")).filter(Boolean);
+      const parts = [a.brand, a.model, a.capacity].map((v) => (typeof v === "string" ? v.trim() : "")).filter(Boolean);
       return parts.length > 0 ? parts.join(" · ") : undefined;
     } catch {
       return undefined;
@@ -82,7 +83,7 @@ export default async function SendPage({
     // Rigs show their condition while scanning, e.g. "QC passed · Idle" or "Repaired · Ready for field".
     // (Not for the hardware team: they only see where the rig is, e.g. "With hardware team".)
     ...(i.item_type === "rig" && user.role !== "hardware" && { note: rigCondition(i.status, latestQc.get(i.item_id)).label }),
-    // Power banks show their brand/model while scanning, e.g. "Portronics · PBX20".
+    // Power banks show their brand/model/capacity while scanning, e.g. "Portronics · 20000 20000mAh".
     ...(i.item_type === "power_bank" && powerBankDetail(i.attributes) && { note: powerBankDetail(i.attributes) }),
   }));
   const hubName = new Map(hubs.map((h) => [h.hub_id, h.name]));
@@ -230,7 +231,13 @@ export default async function SendPage({
             Marked {one(sp.done)} rig(s) as {one(sp.outcome) === "dead" ? "Dead / Retired" : "R&D"}.
           </p>
         )}
-        {one(sp.done) && !one(sp.outcome) && (
+        {one(sp.done) && one(sp.status) === "qc_fail" && (
+          <p className={`${styles.ok} ${styles.result}`}>
+            Marked {one(sp.done)} rig(s) as QC fail. They stay with you for now — hand them to the hardware team
+            from <Link href="/qc/handover">Handover to hardware</Link> when you&apos;re ready.
+          </p>
+        )}
+        {one(sp.done) && !one(sp.outcome) && one(sp.status) !== "qc_fail" && (
           <p className={`${styles.ok} ${styles.result}`}>
             Sent {one(sp.done)} item(s) to {toPerson} at {toHubName}. Status: {status}.{" "}
             {one(sp.batch) && <Link href={`/handover/receipt/${one(sp.batch)}`}>View / print receipt →</Link>}

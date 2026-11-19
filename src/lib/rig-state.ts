@@ -5,7 +5,8 @@ import type { QcCheck, Status } from "./schema";
  *   QC pending                      → "QC pending"
  *   QC passed, in stock             → "QC passed · Idle"
  *   repaired by hardware (sent to IM or already in stock) → "RTD · Ready to deploy"
- *   QC failed                       → "QC failed · Send to hardware"
+ *   QC failed                       → "QC fail · Handover to hardware" (a separate, deliberate step —
+ *                                     recording Fail no longer sends it there by itself)
  */
 export type RigCondition = { label: string; color: string; ready: boolean };
 
@@ -16,7 +17,7 @@ const AMBER = "#8A4B00";
 export function rigCondition(status: Status | string, qc: string | undefined): RigCondition {
   const q = qc || "qc_pending";
   const inStock = status === "in_stock";
-  if (q === "fail") return { label: "QC fail · Send to hardware", color: RED, ready: false };
+  if (q === "fail") return { label: "QC fail · Handover to hardware", color: RED, ready: false };
   // Repaired by hardware: RTD the moment it's sent to the IM, not only once received — matches the
   // dashboard's "rtd" rig state (see rigState below).
   if (q === "repaired") return { label: "RTD · Ready to deploy", color: GREEN, ready: true };
