@@ -28,14 +28,15 @@ export function rigCondition(status: Status | string, qc: string | undefined): R
 /**
  * RIG STATES on the dashboard (one per rig):
  *   in_stock    In stock            with the IM (received), or moving IM → IM
- *   hardware    With hardware team  the hardware team has received it
+ *   hardware    With hardware team  sent to the hardware team, whether or not they've received it yet
  *   fo          With field officer  the IM checked it out to an FO
  *   transit     In transit          the IM sent it to an IFO (courier) — only this
  *   internal    Internal            the IM checked it out to an internal person (e.g. a demo rig)
  *   qc_pending  QC pending          sent to QC or with QC (incl. QC → QC transfers), no result yet
  *   qc_pass     QC passed           QC passed it and sent it to an IM, not received yet (once the IM
  *                                   receives it, it is In stock)
- *   qc_fail     QC fail             QC marked Fail; the hardware team has not received it yet
+ *   qc_fail     QC fail             QC marked Fail; not yet sent to the hardware team (once sent, it
+ *                                   moves to "With hardware team" — see "hardware" above)
  *   rtd         RTD                 repaired by hardware — RTD from the moment hardware sends it to an
  *                                   IM, whether or not the IM has received it yet
  *   dead        Dead / Retired      the hardware team declared it dead
@@ -83,9 +84,13 @@ export function rigState(status: Status | string, qc: string | undefined): RigSt
     case "damaged":
       return "lost";
     case "with_hardware":
-      return "hardware";
     case "pending_hardware":
-      return "qc_fail";
+      // Counts as "With hardware team" the moment it's sent, not only once hardware actually receives
+      // it — same treatment as "rtd" below for a repaired rig sent back to an IM. Before this,
+      // pending_hardware was counted under "qc_fail" too, so a QC-failed rig that had already been
+      // handed off showed in BOTH the "QC fail" tile and the "Hardware to receive" tile at the same
+      // time, double-counting it and making the two totals look wrong next to each other.
+      return "hardware";
     case "with_qc":
       return qc === "fail" ? "qc_fail" : "qc_pending";
     case "with_internal":
