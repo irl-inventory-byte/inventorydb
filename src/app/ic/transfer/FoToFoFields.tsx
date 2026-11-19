@@ -8,6 +8,7 @@ export interface OverdueItem {
   label: string; // "SD card · SanDisk Extreme"
   since: string; // formatted, e.g. "17 Nov 2026, 6:40 pm"
   hoursAgo: number;
+  overdue: boolean; // held 48h+
 }
 
 /**
@@ -18,8 +19,9 @@ export interface OverdueItem {
  * is actually "with_fo" before moving it.
  *
  * When `overdueItems` is given (a "From" FO was picked above — see FromFoPicker.tsx and page.tsx),
- * this also shows a checklist of that FO's items held 48+ hours with no hub submission, each with its
- * own checkbox — ticking one writes its id into the Items box below instead of typing/scanning it.
+ * this also shows a checklist of ALL that FO's current items (not only ones past 48h — a 0-48h item
+ * is still worth seeing and moving), each with its own checkbox — ticking one writes its id into the
+ * Items box below instead of typing/scanning it. Items held 48h+ are flagged "Overdue".
  *
  * When `lockedCity` is given, the recipient must be in that same city (the "From" FO's city) — the
  * City dropdown becomes a fixed label instead of a choice, and the Name dropdown only lists FOs there.
@@ -74,17 +76,16 @@ export default function FoToFoFields({
     <>
       {overdueItems && (
         <div className={styles.field}>
-          <label className={styles.label}>48h+ with no hub submission</label>
+          <label className={styles.label}>Items with this FO</label>
           <div className={styles.control}>
             {overdueItems.length === 0 ? (
-              <p className={styles.hint}>
-                Nothing overdue — every item this FO holds was last updated within the last 48 hours.
-              </p>
+              <p className={styles.hint}>Nothing currently with this FO.</p>
             ) : (
               <>
                 <p className={styles.hint} style={{ marginBottom: 6 }}>
-                  {overdueItems.length} item{overdueItems.length === 1 ? "" : "s"} held 48+ hours with no
-                  submission back to a hub. Tick the ones to move — they&apos;re added to Items below.
+                  {overdueItems.length} item{overdueItems.length === 1 ? "" : "s"} currently with this FO
+                  ({overdueItems.filter((i) => i.overdue).length} held 48h+ with no hub submission). Tick
+                  the ones to move — they&apos;re added to Items below.
                 </p>
                 <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, fontWeight: 600 }}>
                   <input type="checkbox" checked={allChecked} onChange={() => toggleAll()} />
@@ -117,6 +118,11 @@ export default function FoToFoFields({
                       />
                       <span style={{ flex: 1 }}>
                         <strong>{item.id}</strong> — {item.label}
+                        {item.overdue && (
+                          <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: "#b91c1c" }}>
+                            OVERDUE
+                          </span>
+                        )}
                       </span>
                       <span className={styles.hint} style={{ whiteSpace: "nowrap" }}>
                         since {item.since} ({Math.floor(item.hoursAgo)}h)

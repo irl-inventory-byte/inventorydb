@@ -48,13 +48,12 @@ export default async function IcTransferPage({
   const fromPerson = fromId ? people.find((p) => p.person_id === fromId && p.role === "fo") : undefined;
   const fromCity = fromPerson ? (hubName.get(fromPerson.hub) ?? fromPerson.hub) : "";
 
-  // That FO's items held 48+ hours with no submission back to a hub: still "with_fo" and assigned to
-  // them, last touched more than 48h ago. Oldest first — the most overdue items need moving most.
+  // ALL of that FO's current items (not just ones past 48h — a 0-48h item is still worth seeing and
+  // moving, just not yet "overdue"). Oldest-held first; each row below flags 48h+ ones separately.
   const cutoff = Date.now() - HOURS_48;
   const overdueItems: OverdueItem[] | undefined = fromPerson
     ? items
         .filter((i) => i.current_holder === fromPerson.person_id && i.status === "with_fo" && i.updated_at)
-        .filter((i) => Date.parse(i.updated_at) <= cutoff)
         .sort((a, b) => Date.parse(a.updated_at) - Date.parse(b.updated_at))
         .map((i) => ({
           id: i.item_id,
@@ -63,6 +62,7 @@ export default async function IcTransferPage({
             .join(" · "),
           since: formatIst(i.updated_at),
           hoursAgo: (Date.now() - Date.parse(i.updated_at)) / (60 * 60 * 1000),
+          overdue: Date.parse(i.updated_at) <= cutoff,
         }))
     : undefined;
 
