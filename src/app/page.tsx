@@ -153,6 +153,13 @@ const ADMIN: Tile[] = [
     icon: "clock",
     roles: ["admin"],
   },
+  {
+    href: "/admin/login-locations",
+    title: "Login Locations",
+    desc: "Where each sign-in happened, from the browser's location prompt.",
+    icon: "pin",
+    roles: ["admin"],
+  },
 ];
 
 function Section({
