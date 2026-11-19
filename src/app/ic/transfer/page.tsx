@@ -25,6 +25,11 @@ export default async function IcTransferPage({
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((p) => ({ id: p.person_id, name: p.name, city: hubName.get(p.hub) ?? p.hub }));
 
+  // Who's actually recording this transfer — the signed-in person's real name when they're linked to
+  // a People row, falling back to their login email (e.g. an Admin with no People link).
+  const me = people.find((p) => p.person_id === user.personId);
+  const loggedInAs = me?.name || user.email || "";
+
   return (
     <main className={styles.page}>
       <p className={styles.back}>
@@ -38,6 +43,13 @@ export default async function IcTransferPage({
       </p>
 
       <form action={transferFoToFo} className={styles.form}>
+        <div className={styles.field}>
+          <label className={styles.label}>Logged in as</label>
+          <div className={styles.control}>
+            <p style={{ margin: 0, fontWeight: 600 }}>{loggedInAs}</p>
+          </div>
+        </div>
+
         <FoToFoFields fos={fos} />
 
         <div className={styles.field}>
