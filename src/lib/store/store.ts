@@ -85,7 +85,8 @@ export class Store {
       tab === "settings" ||
       tab === "sd_card_durations" ||
       tab === "attention_notes" ||
-      tab === "delay_notes";
+      tab === "delay_notes" ||
+      tab === "login_locations";
     const rows = optional
       ? await this.readOptional(tab)
       : await this.backend.readAll(tab);
@@ -95,7 +96,8 @@ export class Store {
       tab === "settings" ||
       tab === "sd_card_durations" ||
       tab === "attention_notes" ||
-      tab === "delay_notes"
+      tab === "delay_notes" ||
+      tab === "login_locations"
     )
       return rows as unknown as TabRows[T][];
 

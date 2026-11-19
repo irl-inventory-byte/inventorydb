@@ -190,6 +190,18 @@ export const TABS = {
     "recorded_by", // login email
     "recorded_by_name",
   ],
+  // One row per browser location capture, taken right after a successful sign-in (see
+  // app/GeoCapture.tsx + app/api/login-location/route.ts). Only recorded if the person's browser
+  // grants the location permission prompt — nothing is written if they decline.
+  login_locations: [
+    "login_location_id",
+    "email",
+    "role",
+    "latitude",
+    "longitude",
+    "address", // reverse-geocoded city/area, best-effort — "" if the lookup failed
+    "recorded_at",
+  ],
 } as const;
 
 export type TabName = keyof typeof TABS;
@@ -457,6 +469,16 @@ export interface DelayNote extends Row {
   recorded_by_name: string;
 }
 
+export interface LoginLocation extends Row {
+  login_location_id: string;
+  email: string;
+  role: string;
+  latitude: string;
+  longitude: string;
+  address: string;
+  recorded_at: string;
+}
+
 export interface TabRows {
   items: Item;
   events: ItemEvent;
@@ -477,4 +499,5 @@ export interface TabRows {
   sd_card_durations: SdCardDuration;
   attention_notes: AttentionNote;
   delay_notes: DelayNote;
+  login_locations: LoginLocation;
 }

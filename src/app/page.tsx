@@ -1,5 +1,6 @@
 import Link from "next/link";
 import RoleSwitch from "./RoleSwitch";
+import GeoCapture from "./GeoCapture";
 import { IC_TRANSFER_ROLES, INVENTORY_ROLES, MY_DASHBOARD_ROLES, RECEIVE_ROLES, SEND_ROLES, VIEW_ROLES } from "@/lib/access";
 import { signOut } from "@/auth";
 import { requireRole } from "@/lib/authz";
@@ -234,6 +235,7 @@ export default async function Home({
 
   return (
     <div className={styles.root}>
+      <GeoCapture />
       <main className={styles.wrap}>
         <div className={styles.top}>
           <div className={styles.brand}>
