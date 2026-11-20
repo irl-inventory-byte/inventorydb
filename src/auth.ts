@@ -42,7 +42,8 @@ export const normalizeRole = (raw: string | undefined): Role | undefined =>
 // Only people listed in the `users` tab can sign in. Role changes apply at once (see lib/authz.ts).
 async function findUser(email: string) {
   const users = await getStore().list("users");
-  return users.find((u) => u.email.toLowerCase() === email.toLowerCase() && u.active !== "false");
+  const wanted = email.trim().toLowerCase();
+  return users.find((u) => u.email.trim().toLowerCase() === wanted && u.active !== "false");
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
