@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import styles from "../form.module.css";
 import SendToFields, { type PersonGroup } from "./SendToFields";
 
@@ -49,13 +50,13 @@ export default function QcSendFields({
               Select QC result
             </option>
             <option value="pass">Pass → send to IM</option>
-            <option value="fail">Fail (not sent anywhere)</option>
+            <option value="fail">Fail → hardware</option>
             <option value="transfer">Transfer (another QC person)</option>
           </select>
           <p className={styles.hint}>
-            Pass → an IM. Fail → just records the Fail; the rig stays with you — hand it to the hardware
-            team later from &quot;Handover to hardware&quot;. Transfer → another QC person, who receives
-            it and checks it themselves.
+            Pass → an IM. Fail → hardware, but in two steps: this just records the Fail (the rig stays
+            with you); use the &quot;Handover to hardware&quot; button below to actually send it. Transfer
+            → another QC person, who receives it and checks it themselves.
           </p>
         </div>
       </div>
@@ -67,7 +68,27 @@ export default function QcSendFields({
           </label>
           <div className={styles.control}>
             <textarea id="qcComment" name="qcComment" rows={3} className={styles.textarea} required />
-            <p className={styles.hint}>Required — say what failed. Nothing is sent; this just flags the rig.</p>
+            <p className={styles.hint}>
+              Required — say what failed. Click &quot;Send items&quot; below to record it — nothing is sent
+              yet, the rig just gets flagged QC fail and stays with you.
+            </p>
+            <Link
+              href="/qc/handover"
+              style={{
+                display: "inline-block",
+                marginTop: 10,
+                padding: "8px 14px",
+                borderRadius: 8,
+                border: "1px solid var(--border, #e2e8f0)",
+                fontWeight: 700,
+              }}
+            >
+              Handover to hardware →
+            </Link>
+            <p className={styles.hint}>
+              Once a rig is flagged Fail, come back here (or use this link) to actually hand it to the
+              hardware team — that is a separate step, not part of recording the Fail.
+            </p>
           </div>
         </div>
       )}
