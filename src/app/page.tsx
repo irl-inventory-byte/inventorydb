@@ -58,6 +58,13 @@ const WORK: Tile[] = [
     roles: ["admin", "im", "hardware", "qc"],
   },
   {
+    href: "/qc/handover",
+    title: "QC Fail to Hardware",
+    desc: "Hand QC-failed rigs over to the hardware team.",
+    icon: "truck",
+    roles: ["admin", "qc"],
+  },
+  {
     href: "/rigs/unknown",
     title: "Rig Audit",
     desc: "Rigs with no activity for 2+ days: where they are, who has them, why, with a photo.",
@@ -128,13 +135,6 @@ const WORK: Tile[] = [
     desc: "Every IM and rig team entry in one filterable table, with totals.",
     icon: "list",
     roles: ["admin", "im", "rig"],
-  },
-  {
-    href: "/attention",
-    title: "Need attention",
-    desc: "Every Rig, SD card, Mobile and Power bank needing attention, in one place — with a one-click PDF download.",
-    icon: "alert",
-    roles: ["admin", "im"],
   },
 ];
 

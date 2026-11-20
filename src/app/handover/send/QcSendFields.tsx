@@ -50,13 +50,13 @@ export default function QcSendFields({
               Select QC result
             </option>
             <option value="pass">Pass → send to IM</option>
-            <option value="fail">Fail → hardware</option>
+            <option value="fail">Fail</option>
             <option value="transfer">Transfer (another QC person)</option>
           </select>
           <p className={styles.hint}>
-            Pass → an IM. Fail → hardware, but in two steps: this just records the Fail (the rig stays
-            with you); use the &quot;Handover to hardware&quot; button below to actually send it. Transfer
-            → another QC person, who receives it and checks it themselves.
+            Pass → an IM. Fail → just records the Fail; the rig stays with you — use the &quot;Handover
+            to hardware&quot; button below when you&apos;re ready to actually send it. Transfer → another
+            QC person, who receives it and checks it themselves.
           </p>
         </div>
       </div>

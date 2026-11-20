@@ -54,7 +54,7 @@ export default function HandoverToHardwareFields({
   return (
     <>
       <div className={styles.field}>
-        <label className={styles.label}>QC-failed rigs with you</label>
+        <label className={styles.label}>Rigs *</label>
         <div className={styles.control}>
           {rigs.length === 0 ? (
             <p className={styles.hint}>No QC-failed rigs with you right now.</p>
@@ -111,7 +111,7 @@ export default function HandoverToHardwareFields({
 
       <div className={styles.field}>
         <label className={styles.label} htmlFor="recipient">
-          Hand over to (hardware person)
+          Send to hardware *
         </label>
         <div className={styles.control}>
           <select id="recipient" name="recipient" required defaultValue="">
