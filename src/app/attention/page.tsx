@@ -2,16 +2,15 @@ import Link from "next/link";
 import { requireRole } from "@/lib/authz";
 import { LATE_AFTER_HOURS } from "@/lib/dashboard";
 import type { DelayNote } from "@/lib/schema";
-import { VIEW_ROLES, storeForAll } from "@/lib/access";
+import { storeForAll } from "@/lib/access";
 import { getStore } from "@/lib/store";
 import { buildAttentionReport, howLong } from "@/lib/attention";
 import styles from "../dashboard/dashboard.module.css";
 import { Icon } from "../dashboard/icons";
 
 export default async function AttentionPage() {
-  // Same roles as the "City / Hub Audit" tile on the home page — every role that can view the
-  // dashboard, except Internal.
-  const user = await requireRole(...VIEW_ROLES.filter((r) => r !== "internal"));
+  // Same roles as the "Need attention" tile on the home page — Admin and IM only.
+  const user = await requireRole("admin", "im");
 
   // All item types this login can see at once — the same storeForAll(role) pattern dashboard/page.tsx
   // uses for its Monthly report, so a rig-only login (QC, hardware) still only sees rigs, while an IM
