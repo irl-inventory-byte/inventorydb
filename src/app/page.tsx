@@ -37,6 +37,14 @@ const WORK: Tile[] = [
     roles: VIEW_ROLES,
   },
   {
+    href: "/attention",
+    title: "Need attention",
+    desc: "Every Rig, SD card, Mobile and Power bank needing attention, in one place — with a one-click PDF download.",
+    icon: "alert",
+    // VIEW_ROLES minus "internal" — same restriction as the City / Hub Audit tile below.
+    roles: VIEW_ROLES.filter((r) => r !== "internal"),
+  },
+  {
     href: "/inventory",
     title: "Inventory",
     desc: "Search, filter and open any item and its history.",
