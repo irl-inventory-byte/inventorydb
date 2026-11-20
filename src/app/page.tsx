@@ -167,6 +167,13 @@ const ADMIN: Tile[] = [
     icon: "pin",
     roles: ["admin"],
   },
+  {
+    href: "https://web.ezykam.com/login",
+    title: "CCTV Audit",
+    desc: "Opens the CCTV portal in a new tab.",
+    icon: "activity",
+    roles: ["admin"],
+  },
 ];
 
 function Section({
