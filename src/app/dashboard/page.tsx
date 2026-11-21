@@ -1348,9 +1348,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   // Every hub's city, not just cities that already have a person assigned — a hub with no FO/IFO
   // assigned yet (e.g. a newly added city like Indore) still needs to show up as a filter option,
   // even though it will read "No acknowledgments recorded yet" until someone is added there.
-  const ackCities = [...new Set(hubs.map((h) => (h.city || h.name || h.hub_id).trim()).filter(Boolean))].sort((a, b) =>
-    a.localeCompare(b),
-  );
+  const ackCities = [
+    ...new Set(hubs.filter((h) => h.active !== "false").map((h) => (h.city || h.name || h.hub_id).trim()).filter(Boolean)),
+  ].sort((a, b) => a.localeCompare(b));
   const ackInRange = acknowledgments.filter((a) => {
     const t = Date.parse(a.created_at || "");
     if (Number.isNaN(t)) return true; // keep undated rows rather than silently dropping them
@@ -1840,7 +1840,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
             .filter((p) => p.active !== "false")
             .sort((a, b) => a.name.localeCompare(b.name))
             .map((p) => ({ id: p.person_id, label: `${p.name} (${ROLE_LABELS[p.role] ?? p.role})` }))}
-          cities={[...new Set(hubs.map((h) => (h.city || h.name || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b))}
+          cities={[...new Set(hubs.filter((h) => h.active !== "false").map((h) => (h.city || h.name || "").trim()).filter(Boolean))].sort(
+            (a, b) => a.localeCompare(b),
+          )}
           types={[...allowedTypes(user.role)]}
         />
 

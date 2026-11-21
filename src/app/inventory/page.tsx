@@ -276,7 +276,7 @@ export default async function InventoryPage({
   const cityLabelOf = (h: (typeof hubs)[number]) => (h.city ?? "").trim() || h.name.trim();
   const hubCity = new Map(hubs.map((h) => [h.hub_id, cityLabelOf(h).toLowerCase()]));
   const cityOptions = [
-    ...new Map(hubs.map((h) => [cityLabelOf(h).toLowerCase(), cityLabelOf(h)])).entries(),
+    ...new Map(hubs.filter((h) => h.active !== "false").map((h) => [cityLabelOf(h).toLowerCase(), cityLabelOf(h)])).entries(),
   ]
     .filter(([key]) => key)
     .sort((a, b) => a[1].localeCompare(b[1]))
