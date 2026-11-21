@@ -296,8 +296,8 @@ export default async function NeedsAttentionPage({
   if (roleFilter.length) keep.role = roleFilter.join(",");
   if (dfrom) keep.from = dfrom;
   if (dto) keep.to = dto;
-  const detailHref = (key: string) => `/needs-attention?${new URLSearchParams({ ...keep, detail: key })}#delayed-items`;
-  const closeDetailHref = `/needs-attention?${new URLSearchParams(keep)}`;
+  const detailHref = (key: string) => `/attention?${new URLSearchParams({ ...keep, detail: key })}#delayed-items`;
+  const closeDetailHref = `/attention?${new URLSearchParams(keep)}`;
 
   // CSV export: one row per delayed item, respecting every filter above.
   const csvEscape = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
@@ -332,13 +332,13 @@ export default async function NeedsAttentionPage({
 
           {typeOptions.length > 1 && (
             <p style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "0 0 10px", fontSize: "0.85rem" }}>
-              <Link href="/needs-attention" className={!type ? styles.link : undefined} style={!type ? { fontWeight: 700 } : undefined}>
+              <Link href="/attention" className={!type ? styles.link : undefined} style={!type ? { fontWeight: 700 } : undefined}>
                 All
               </Link>
               {typeOptions.map((t) => (
                 <Link
                   key={t}
-                  href={`/needs-attention?${new URLSearchParams({ type: t })}`}
+                  href={`/attention?${new URLSearchParams({ type: t })}`}
                   className={type === t ? styles.link : undefined}
                   style={type === t ? { fontWeight: 700 } : undefined}
                 >
@@ -350,7 +350,7 @@ export default async function NeedsAttentionPage({
 
           <form
             method="GET"
-            action="/needs-attention"
+            action="/attention"
             style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", margin: "4px 0 14px" }}
           >
             {type && <input type="hidden" name="type" value={type} />}
@@ -389,21 +389,32 @@ export default async function NeedsAttentionPage({
             </button>
             {(dfrom || dto || cityFilter.length || roleFilter.length) && (
               <Link
-                href={`/needs-attention${type ? `?${new URLSearchParams({ type })}` : ""}`}
+                href={`/attention${type ? `?${new URLSearchParams({ type })}` : ""}`}
                 className={styles.link}
                 style={{ fontSize: "0.85rem" }}
               >
                 Clear filters
               </Link>
             )}
-            <a
-              href={csvHref}
-              download="needs-attention.csv"
-              className={styles.link}
-              style={{ marginLeft: "auto", fontSize: "0.85rem", whiteSpace: "nowrap" }}
-            >
-              ⬇ Download CSV{dfrom || dto || cityFilter.length || roleFilter.length ? " (filtered)" : ""}
-            </a>
+            <div style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
+              <a
+                href="/attention/pdf"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.link}
+                style={{ fontSize: "0.85rem", whiteSpace: "nowrap" }}
+              >
+                ⬇ Download PDF
+              </a>
+              <a
+                href={csvHref}
+                download="needs-attention.csv"
+                className={styles.link}
+                style={{ fontSize: "0.85rem", whiteSpace: "nowrap" }}
+              >
+                ⬇ Download CSV{dfrom || dto || cityFilter.length || roleFilter.length ? " (filtered)" : ""}
+              </a>
+            </div>
           </form>
 
           {delayedInRange.length > 0 && shownDelayed.length === 0 ? (

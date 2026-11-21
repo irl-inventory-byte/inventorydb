@@ -19,8 +19,8 @@ export async function GET() {
   ]);
 
   const now = new Date();
-  const { shownDelayed, byType } = buildAttentionReport(items, events, people, hubs, now);
-  const pdf = await buildAttentionPdf(shownDelayed, now, byType);
+  const { shownDelayed, byType, delayed } = buildAttentionReport(items, events, people, hubs, now);
+  const pdf = await buildAttentionPdf(shownDelayed, now, byType, delayed);
 
   return new NextResponse(Buffer.from(pdf), {
     headers: {

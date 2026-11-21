@@ -64,7 +64,7 @@ const WORK: Tile[] = [
     roles: ["admin", "qc"],
   },
   {
-    href: "/needs-attention",
+    href: "/attention",
     title: "Needs attention",
     desc: "Items an FO, IFO, rig team or internal person has held too long, or sent to a hub and not received.",
     icon: "alert",
@@ -290,7 +290,7 @@ export default async function Home({
         {!ROLE_LABELS[user.role] && (
           <p className={styles.banner}>
             Your login has no valid role
-            {user.roleRaw ? ` (the users tab says “${user.roleRaw}”)` : ""}. Ask an admin to set your role on
+            {user.roleRaw ? ` (the users tab says "${user.roleRaw}")` : ""}. Ask an admin to set your role on
             Manage users, then sign out and sign in again.
           </p>
         )}

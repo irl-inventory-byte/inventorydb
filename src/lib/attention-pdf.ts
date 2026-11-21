@@ -1,6 +1,8 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
-import type { DelayedRow } from "./attention";
+import type { AttentionReport, DelayedRow } from "./attention";
 import { formatIst } from "./time";
+
+type DelayedItem = AttentionReport["delayed"][number];
 
 /** Drops characters pdf-lib's Helvetica can't render (same guard used in receipt-archive.ts). */
 function pdfSafe(value: string): string {
@@ -27,13 +29,31 @@ const COLS: { label: string; width: number }[] = [
   { label: "Count", width: 40 },
 ];
 
+// Detail table columns, left to right: Item ID, Type, Person, Role, City, Sent by, Sent on, Status, Out for.
+const DETAIL_COLS: { label: string; width: number }[] = [
+  { label: "Item ID", width: 90 },
+  { label: "Type", width: 55 },
+  { label: "Person", width: 95 },
+  { label: "Role", width: 50 },
+  { label: "City", width: 70 },
+  { label: "Sent by", width: 90 },
+  { label: "Sent on", width: 65 },
+  { label: "Status", width: 75 },
+  { label: "Out for", width: 55 },
+];
+
 /**
  * The "Need attention" report as a PDF: one row per delayed-item group (same rows as the /attention
  * page's table), paginated. Modeled on buildReceiptPdf() in receipt-archive.ts (A4 page, Helvetica,
  * fit() for truncation) but a separate, standalone builder — nothing here is shared with or changes
  * the receipt PDF.
  */
-export async function buildAttentionPdf(rows: DelayedRow[], generatedAt: Date, byType: Map<string, number>): Promise<Uint8Array> {
+export async function buildAttentionPdf(
+  rows: DelayedRow[],
+  generatedAt: Date,
+  byType: Map<string, number>,
+  detailItems: DelayedItem[] = [],
+): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   doc.setTitle("Need attention report");
   doc.setAuthor("Instawork");
@@ -101,6 +121,52 @@ export async function buildAttentionPdf(rows: DelayedRow[], generatedAt: Date, b
 
   if (rows.length === 0) {
     page.drawText("Nothing needs attention right now.", { x: margin + 6, y: y - 13, size: 10, font: regular, color: grey });
+  }
+
+  // ---- Section 2: one row per individual late item (Item ID + Status), not grouped/counted. ----
+  if (detailItems.length > 0) {
+    page = doc.addPage(A4);
+    y = A4[1] - margin;
+
+    page.drawText("Late item details", { x: margin, y, size: 14, font: bold, color: black });
+    y -= 18;
+    page.drawText(`${detailItems.length} item${detailItems.length === 1 ? "" : "s"}`, {
+      x: margin,
+      y,
+      size: 9.5,
+      font: regular,
+      color: grey,
+    });
+    y -= 20;
+
+    const drawDetailHeader = () => {
+      page.drawRectangle({ x: margin, y: y - headerHeight + 4, width: contentWidth, height: headerHeight, color: headerBg });
+      let x = margin + 6;
+      for (const col of DETAIL_COLS) {
+        page.drawText(col.label, { x, y: y - 13, size: 9, font: bold, color: black });
+        x += col.width;
+      }
+      y -= headerHeight;
+      page.drawLine({ start: { x: margin, y }, end: { x: margin + contentWidth, y }, thickness: 0.5, color: line });
+    };
+
+    drawDetailHeader();
+
+    for (const it of detailItems) {
+      if (y - rowHeight < margin) {
+        page = doc.addPage(A4);
+        y = A4[1] - margin;
+        drawDetailHeader();
+      }
+      const cells = [it.id, it.type, it.person, it.role, it.city, it.sentBy, it.sentOn, it.status, howLongLabel(it.hours)];
+      let x = margin + 6;
+      for (let c = 0; c < DETAIL_COLS.length; c++) {
+        page.drawText(fit(cells[c], regular, 9, DETAIL_COLS[c].width - 8), { x, y: y - 13, size: 9, font: regular, color: black });
+        x += DETAIL_COLS[c].width;
+      }
+      y -= rowHeight;
+      page.drawLine({ start: { x: margin, y }, end: { x: margin + contentWidth, y }, thickness: 0.5, color: line });
+    }
   }
 
   return doc.save();
