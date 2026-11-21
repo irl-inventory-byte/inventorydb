@@ -1470,7 +1470,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
             items={items}
             rigView={rigView}
             attentionHref={
-              user.role === "admin" || user.role === "im" ? `/needs-attention${rigView ? "?type=rig" : ""}` : undefined
+              user.role === "admin" || user.role === "im" ? `/attention${rigView ? "?type=rig" : ""}` : undefined
             }
             baselineTotal={rigView ? undefined : brokenBaselineTotal + (retiredBaseline ?? 0)}
             baselineStorage={rigView ? undefined : brokenStorageOverride}
@@ -1484,7 +1484,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
           <PowerBankSummary
             d={d}
             items={items}
-            attentionHref={user.role === "admin" || user.role === "im" ? "/needs-attention?type=power_bank" : undefined}
+            attentionHref={user.role === "admin" || user.role === "im" ? "/attention?type=power_bank" : undefined}
             brokenCount={powerBankBrokenValue}
             retiredCount={powerBankRetiredValue}
           />
