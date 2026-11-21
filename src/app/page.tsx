@@ -6,7 +6,6 @@ import { signOut } from "@/auth";
 import { requireRole } from "@/lib/authz";
 import { ROLE_LABELS, one } from "@/lib/labels";
 import type { Role } from "@/lib/schema";
-import { getStore } from "@/lib/store";
 import { istTimestamp } from "@/lib/time";
 import styles from "./dashboard/dashboard.module.css";
 import { Icon, type IconName } from "./dashboard/icons";
@@ -122,27 +121,6 @@ const WORK: Tile[] = [
     icon: "users",
     roles: ["admin", "im"],
   },
-  {
-    href: "/sd-details/im",
-    title: "IM SD card details",
-    desc: "Record SD Card Duration Hour details — saved here and also sent to the Google Sheet.",
-    icon: "database",
-    roles: ["admin", "im"],
-  },
-  {
-    href: "/sd-details/rig",
-    title: "Rig team SD card details",
-    desc: "Record SD Card Duration Hour details — saved here and also sent to the Google Sheet.",
-    icon: "database",
-    roles: ["admin", "rig"],
-  },
-  {
-    href: "/sd-details",
-    title: "SD card details table",
-    desc: "Every IM and rig team entry in one filterable table, with totals.",
-    icon: "list",
-    roles: ["admin", "im", "rig"],
-  },
 ];
 
 const ADMIN: Tile[] = [
@@ -248,18 +226,7 @@ export default async function Home({
         ? "Good afternoon"
         : "Good evening";
 
-  // SD Card Duration counts for this week, shown on the IM / Rig team SD card details tiles below.
-  // Only fetched for logins that can actually see one of those tiles.
-  const showSdCounts = user.role === "admin" || user.role === "im" || user.role === "rig";
-  const sdDurations = showSdCounts ? await getStore().list("sd_card_durations").catch(() => []) : [];
-  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  const sdCountThisWeek = (team: "im" | "rig") =>
-    sdDurations.filter((r) => r.team === team && Date.parse(r.recorded_at || "0") >= weekAgo).length;
-  const workTiles = WORK.map((t) => {
-    if (t.href === "/sd-details/im") return { ...t, desc: `${t.desc} ${sdCountThisWeek("im")} entries this week.` };
-    if (t.href === "/sd-details/rig") return { ...t, desc: `${t.desc} ${sdCountThisWeek("rig")} entries this week.` };
-    return t;
-  });
+  const workTiles = WORK;
 
   return (
     <div className={styles.root}>
