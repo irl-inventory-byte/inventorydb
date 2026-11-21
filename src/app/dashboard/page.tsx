@@ -1446,11 +1446,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
           <Link href="/handover/receipts" className={styles.tab}>
             Receipts
           </Link>
-          {(user.role === "admin" || user.role === "im" || user.role === "rig") && (
-            <Link href="/sd-details" className={styles.tab}>
-              SD card details
-            </Link>
-          )}
           {user.role === "admin" && (
             <Link href="/admin/hubs" className={styles.tab}>
               Hubs
@@ -2172,4 +2167,4 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
       </main>
     </div>
   );
-}   
+}
