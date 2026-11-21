@@ -259,8 +259,6 @@ const TYPE_LABELS: Record<string, string> = { sd_card: "SD cards", rig: "Rigs", 
 export default async function DashboardPage({ searchParams }: { searchParams: Record<string, string | string[] | undefined> | Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requireRole();
   const sp = await searchParams;
-  // "Needs attention" as its own page, reached from the Home tile (?view=attention) — admin/IM only.
-  const attentionOnly = one(sp.view) === "attention" && (user.role === "admin" || user.role === "im");
   // Filter values: a multi-select sends ?x=a&x=b, links carry "a,b"; both are read as a list.
   const many = (k: string) => manyValues(sp[k] as string | string[] | undefined);
   const val = (k: string) => many(k).join(",");
@@ -1231,28 +1229,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
     )
     .sort((x, y) => y.hours - x.hours || x.id.localeCompare(y.id));
 
-  // Date filter for the standalone "Needs attention" page (?afrom=&ato=), by the day of each item's
-  // last move (sentOn, an IST YYYY-MM-DD string already). Only wired up there — attentionOnly is false
-  // on the normal dashboard, so afrom/ato are always blank there and delayedInRange === delayed.
-  const isDay = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
-  const afrom = attentionOnly && isDay(one(sp.afrom)) ? one(sp.afrom) : "";
-  const ato = attentionOnly && isDay(one(sp.ato)) ? one(sp.ato) : "";
-  const delayedInRange =
-    afrom || ato ? delayed.filter((r) => (!afrom || r.sentOn >= afrom) && (!ato || r.sentOn <= ato)) : delayed;
-
   // Filter by cities and roles (several allowed, comma separated: ?acity=Bangalore,Pune&arole=FO,IFO).
   // City list: every hub's city, not just the ones with a delayed item right now — otherwise a city with
   // nothing currently delayed (e.g. Indore) never shows up as a choice at all.
-  const cityOptions = [...new Set([...hubCity.values(), ...delayedInRange.map((r) => r.city)].filter(Boolean))].sort((a, b) =>
+  const cityOptions = [...new Set([...hubCity.values(), ...delayed.map((r) => r.city)].filter(Boolean))].sort((a, b) =>
     a.localeCompare(b),
   );
-  const roleOptions = [...new Set(delayedInRange.map((r) => r.role).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const roleOptions = [...new Set(delayed.map((r) => r.role).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const listParam = (v: string) => v.split(",").map((x) => x.trim()).filter(Boolean);
   const cityFilter = listParam(one(sp.acity));
   const roleFilter = listParam(one(sp.arole));
   // Same type, person, role, city, sender and send date → one row with a Count. Oldest first.
   const groups = new Map<string, (typeof delayed)[number] & { count: number; key: string; items: (typeof delayed)[number][] }>();
-  for (const r of delayedInRange) {
+  for (const r of delayed) {
     if (!((cityFilter.length === 0 || cityFilter.includes(r.city)) && (roleFilter.length === 0 || roleFilter.includes(r.role)))) continue;
     const k = [r.type, r.person, r.role, r.city, r.sentBy, r.sentOn, r.issue].join("|");
     const g = groups.get(k);
@@ -1268,23 +1257,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   const detailRow = shownDelayed.find((g) => g.key === detailKey);
   const attentionKeep: Record<string, string> = {};
   for (const k of ["type", "empty", "acity", "arole", ...MOVE_KEYS, ...EXTRA_KEYS]) if (val(k)) attentionKeep[k] = val(k);
-  if (attentionOnly) attentionKeep.view = "attention";
-  if (afrom) attentionKeep.afrom = afrom;
-  if (ato) attentionKeep.ato = ato;
   const detailHref = (key: string) => `/dashboard?${new URLSearchParams({ ...attentionKeep, adetail: key })}#delayed-items`;
   const closeDetailHref = `/dashboard?${new URLSearchParams(attentionKeep)}#attention`;
-
-  // CSV export for the standalone "Needs attention" page: one row per delayed item, respecting the
-  // same city/role filters (and date range, via delayedInRange) as the table on screen.
-  const csvEscape = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-  const exportRows = delayedInRange.filter(
-    (r) => (cityFilter.length === 0 || cityFilter.includes(r.city)) && (roleFilter.length === 0 || roleFilter.includes(r.role)),
-  );
-  const csvRows = [
-    ["Item ID", "Type", "Person", "Role", "City", "Sent by", "Sent on", "Out for", "Status", "Issue"],
-    ...exportRows.map((r) => [r.id, r.type, r.person, r.role, r.city, r.sentBy, r.sentOn, howLong(r.hours), r.status, r.issue]),
-  ];
-  const csvHref = `data:text/csv;charset=utf-8,${encodeURIComponent(csvRows.map((row) => row.map((v) => csvEscape(String(v))).join(",")).join("\n"))}`;
 
   // Notes left against individual delayed cards (see dashboard/actions.ts addDelayNote), newest first.
   const delayNoteLog = delayNotes.slice().sort((a, b) => Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0"));
@@ -1293,373 +1267,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   const latestNoteByItem = new Map<string, (typeof delayNoteLog)[number]>();
   for (const note of delayNoteLog) if (!latestNoteByItem.has(note.item_id)) latestNoteByItem.set(note.item_id, note);
 
-  // Used by AttentionFilter's links (and others further down) to keep the current type/city/role/etc.
-  // filters in the URL. Declared here (moved up from its old spot further down) so the attentionOnly
-  // early return below — which renders before the rest of the function runs — can use it too.
   const keepParams: Record<string, string> = {};
   if (one(sp.type)) keepParams.type = one(sp.type);
   if (showEmpty) keepParams.empty = "1";
   for (const k of [...MOVE_KEYS, ...EXTRA_KEYS]) if (val(k)) keepParams[k] = val(k);
-
-  // "Needs attention" as its own page (?view=attention), reached from the Home tile — admin/IM only.
-  // Everything above this point is already computed and unchanged; this just renders that one section
-  // on its own, skipping the rest of the dashboard (Moved per day/hour, etc.) entirely.
-  if (attentionOnly) {
-    return (
-      <div className={styles.root}>
-        <main className={styles.wrap}>
-          <p className={styles.back}>
-            <Link href="/">← Home</Link>
-          </p>
-
-          <section className={styles.card} id="attention" aria-label="Needs attention" style={{ minWidth: 0 }}>
-            <h2>Needs attention</h2>
-            <p className={styles.muted}>
-              Only delayed cards: each item an FO, IFO, rig team or internal person has held, or that was sent to a hub
-              and not received, for more than {LATE_AFTER_HOURS} hours since its last send or receive. Cards with the same
-              person, sender and send date are one row; Count = how many. Oldest first. Click a name or the Count to see
-              only those delayed items. Only late items ever show here — nothing in stock or on time.
-            </p>
-
-            <form
-              method="GET"
-              action="/dashboard"
-              style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", margin: "4px 0 14px" }}
-            >
-              <input type="hidden" name="view" value="attention" />
-              {cityFilter.length > 0 && <input type="hidden" name="acity" value={cityFilter.join(",")} />}
-              {roleFilter.length > 0 && <input type="hidden" name="arole" value={roleFilter.join(",")} />}
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <strong style={{ fontWeight: 600, fontSize: "0.85rem" }}>From</strong>
-                <input type="date" name="afrom" defaultValue={afrom} max={ato || undefined} aria-label="From date" />
-              </label>
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <strong style={{ fontWeight: 600, fontSize: "0.85rem" }}>To</strong>
-                <input type="date" name="ato" defaultValue={ato} min={afrom || undefined} aria-label="To date" />
-              </label>
-              <button type="submit" style={{ padding: "4px 10px", fontSize: "0.85rem" }}>
-                Apply
-              </button>
-              {(afrom || ato) && (
-                <Link
-                  href={`/dashboard?${new URLSearchParams({
-                    view: "attention",
-                    ...(cityFilter.length ? { acity: cityFilter.join(",") } : {}),
-                    ...(roleFilter.length ? { arole: roleFilter.join(",") } : {}),
-                  })}`}
-                  className={styles.link}
-                  style={{ fontSize: "0.85rem" }}
-                >
-                  Clear dates
-                </Link>
-              )}
-              <a
-                href={csvHref}
-                download="needs-attention.csv"
-                className={styles.link}
-                style={{ marginLeft: "auto", fontSize: "0.85rem", whiteSpace: "nowrap" }}
-              >
-                ⬇ Download CSV{afrom || ato || cityFilter.length || roleFilter.length ? " (filtered)" : ""}
-              </a>
-            </form>
-
-            {delayedInRange.length > 0 && (
-              <AttentionFilter cities={cityOptions} roles={roleOptions} city={cityFilter} role={roleFilter} keep={keepParams} />
-            )}
-
-            {delayedInRange.length > 0 && shownDelayed.length === 0 ? (
-              <p className={styles.muted}>Nothing matches this filter.</p>
-            ) : delayedInRange.length === 0 ? (
-              <p className={styles.ok}>
-                <span className={`${styles.icon} ${styles.iconGood}`} aria-hidden>
-                  ✓
-                </span>{" "}
-                No delayed {rigView ? "rigs" : mobileView ? "mobiles" : powerBankView ? "power banks" : "cards"} right now.
-              </p>
-            ) : (
-              <div
-                className={styles.tableScroll}
-                role="region"
-                aria-label="Delayed cards — scrollable table"
-                tabIndex={0}
-                style={{ maxHeight: "560px", maxWidth: "100%", overflowY: "auto", overflowX: "auto" }}
-              >
-                <table className={styles.table} style={{ width: "100%", minWidth: "900px", borderCollapse: "separate", borderSpacing: 0 }}>
-                  <thead>
-                    <tr>
-                      {["Type", "Person", "Role", "City", "Sent by", "Sent on", "Count", "Out for", "Note", "Issue", "Action"].map((h) => (
-                        <th key={h} scope="col" style={TH_STYLE}>
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {shownDelayed.map((r) => {
-                      const itemNotes = r.items
-                        .map((it) => latestNoteByItem.get(it.id))
-                        .filter((note): note is NonNullable<typeof note> => !!note && !!note.note.trim());
-                      const distinctNotes = new Set(itemNotes.map((note) => note.note.trim()));
-                      const actionTaken = itemNotes.length > 0;
-                      const existing = itemNotes[0];
-                      const forItem = r.items.length === 1 ? r.items[0]?.id : (existing?.item_id ?? r.items[0]?.id);
-                      const showInline = distinctNotes.size <= 1;
-                      return (
-                      <tr key={r.key} style={r.key === detailKey ? { background: "#eff6ff" } : undefined}>
-                        <td>{r.type}</td>
-                        <td style={{ whiteSpace: "normal" }}>
-                          <Link href={detailHref(r.key)} title="Show only these delayed items">
-                            {r.person}
-                          </Link>
-                        </td>
-                        <td>{r.role}</td>
-                        <td>{r.city}</td>
-                        <td style={{ whiteSpace: "normal" }}>{r.sentBy}</td>
-                        <td>{r.sentOn}</td>
-                        <td className={styles.num}>
-                          <Link href={detailHref(r.key)} className={styles.link} title="Show only these delayed items">
-                            {n(r.count)}
-                          </Link>
-                        </td>
-                        <td>{howLong(r.hours)}</td>
-                        <td style={{ minWidth: 180 }}>
-                          {!forItem ? (
-                            <span className={styles.muted}>—</span>
-                          ) : !showInline ? (
-                            <Link href={detailHref(r.key)} className={styles.link} style={{ fontSize: "0.78rem" }}>
-                              {itemNotes.length} of {r.items.length} noted — view individually
-                            </Link>
-                          ) : (
-                            <form action={addDelayNote} style={{ display: "flex", gap: 4 }} data-progress="1">
-                              <input type="hidden" name="item_id" value={forItem} />
-                              <input type="hidden" name="item_type" value={r.type} />
-                              <input type="hidden" name="person" value={r.person} />
-                              <input type="hidden" name="sent_by" value={r.sentBy} />
-                              <input
-                                name="note"
-                                defaultValue={existing?.note ?? ""}
-                                placeholder="Add a note…"
-                                style={{
-                                  flex: 1,
-                                  minWidth: 0,
-                                  padding: "3px 6px",
-                                  border: "1px solid var(--border)",
-                                  borderRadius: 6,
-                                  background: "var(--surface-1)",
-                                  color: "var(--text-primary)",
-                                  fontSize: "0.8rem",
-                                }}
-                              />
-                              <button type="submit" style={{ padding: "3px 8px", fontSize: "0.78rem" }}>
-                                Save
-                              </button>
-                            </form>
-                          )}
-                        </td>
-                        <td>
-                          <span className={`${styles.icon} ${TONE.warning}`} aria-hidden>
-                            {GLYPH.warning}
-                          </span>{" "}
-                          {r.issue}
-                        </td>
-                        <td>
-                          {actionTaken ? (
-                            <span style={{ color: "#16a34a", fontWeight: 600 }}>Action taken</span>
-                          ) : (
-                            <span style={{ color: "#dc2626", fontWeight: 600 }}>Action pending</span>
-                          )}
-                        </td>
-                      </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot style={{ position: "static" }}>
-                    <tr>
-                      <th scope="row" colSpan={6} style={{ ...TFOOT_STYLE, textAlign: "left" }}>
-                        Total delayed cards
-                      </th>
-                      <td className={styles.num} style={TFOOT_STYLE}>
-                        {n(shownDelayed.reduce((t, r) => t + r.count, 0))}
-                      </td>
-                      <td colSpan={4} style={TFOOT_STYLE}>
-                        {n(shownDelayed.length)} row{shownDelayed.length === 1 ? "" : "s"}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-
-            {detailRow && (
-              <div id="delayed-items" style={{ marginTop: 20, scrollMarginTop: 80 }}>
-                <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-                  <h3 style={{ margin: 0 }}>
-                    Delayed items — {detailRow.person} ({detailRow.role}) · sent by {detailRow.sentBy} on {detailRow.sentOn} ·{" "}
-                    {n(detailRow.items.length)}
-                  </h3>
-                  <Link href={closeDetailHref} className={styles.link}>
-                    Close
-                  </Link>
-                </div>
-                <p className={styles.muted} style={{ margin: "4px 0 10px" }}>
-                  Only these items: out for more than {LATE_AFTER_HOURS} hours since their last send or receive. Oldest first.
-                </p>
-                <div
-                  className={styles.tableScroll}
-                  role="region"
-                  aria-label="Delayed items — scrollable table"
-                  tabIndex={0}
-                  style={{ maxHeight: "420px", maxWidth: "100%", overflowY: "auto", overflowX: "auto" }}
-                >
-                  <table className={styles.table} style={{ width: "100%", minWidth: "980px", borderCollapse: "separate", borderSpacing: 0 }}>
-                    <thead>
-                      <tr>
-                        {["Item ID", "Type", "City", "Sent by", "Sent at", "Out for", "Status", "Note"].map((h) => (
-                          <th key={h} scope="col" style={TH_STYLE}>
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detailRow.items.map((it) => (
-                        <tr key={it.id}>
-                          <td>
-                            <Link href={`/inventory/${encodeURIComponent(it.id)}`} className={styles.link}>
-                              {it.id}
-                            </Link>
-                          </td>
-                          <td>{it.type}</td>
-                          <td>{it.city}</td>
-                          <td>{it.sentBy}</td>
-                          <td>{it.sentAt}</td>
-                          <td>{howLong(it.hours)}</td>
-                          <td>{it.status}</td>
-                          <td style={{ minWidth: 220 }}>
-                            {(() => {
-                              const existingNote = latestNoteByItem.get(it.id);
-                              return (
-                                <div style={{ display: "flex", gap: 6 }}>
-                                  <form action={addDelayNote} style={{ display: "flex", gap: 6, flex: 1, minWidth: 0 }} data-progress="1">
-                                    <input type="hidden" name="item_id" value={it.id} />
-                                    <input type="hidden" name="item_type" value={it.type} />
-                                    <input type="hidden" name="person" value={detailRow.person} />
-                                    <input type="hidden" name="sent_by" value={it.sentBy} />
-                                    <input
-                                      name="note"
-                                      required
-                                      defaultValue={existingNote?.note ?? ""}
-                                      placeholder="Add a note…"
-                                      style={{
-                                        flex: 1,
-                                        minWidth: 0,
-                                        padding: "4px 8px",
-                                        border: "1px solid var(--border)",
-                                        borderRadius: 6,
-                                        background: "var(--surface-1)",
-                                        color: "var(--text-primary)",
-                                        fontSize: "0.85rem",
-                                      }}
-                                    />
-                                    <button type="submit" style={{ padding: "4px 10px", fontSize: "0.85rem" }}>
-                                      Save
-                                    </button>
-                                  </form>
-                                  {existingNote && (
-                                    <form action={deleteDelayNote} data-progress="1">
-                                      <input type="hidden" name="note_id" value={existingNote.note_id} />
-                                      <button
-                                        type="submit"
-                                        title="Delete this note"
-                                        style={{
-                                          padding: "4px 10px",
-                                          fontSize: "0.85rem",
-                                          color: "#dc2626",
-                                          border: "1px solid var(--border)",
-                                          borderRadius: 6,
-                                          background: "var(--surface-1)",
-                                        }}
-                                      >
-                                        Delete
-                                      </button>
-                                    </form>
-                                  )}
-                                </div>
-                              );
-                            })()}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {delayNoteLog.length > 0 && (
-              <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid var(--border)" }}>
-                <h3 style={{ margin: "0 0 10px" }}>Delay notes ({delayNoteLog.length})</h3>
-                <div
-                  className={styles.tableScroll}
-                  role="region"
-                  aria-label="Delay notes — scrollable table"
-                  tabIndex={0}
-                  style={{ maxHeight: "360px", maxWidth: "100%", overflowY: "auto", overflowX: "auto" }}
-                >
-                  <table className={styles.table} style={{ width: "100%", minWidth: "760px", borderCollapse: "separate", borderSpacing: 0 }}>
-                    <thead>
-                      <tr>
-                        {["Date", "Item", "Item ID", "Person", "With whom", "Note", ""].map((h) => (
-                          <th key={h} scope="col" style={TH_STYLE}>
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {delayNoteLog.map((note) => (
-                        <tr key={note.note_id}>
-                          <td>{note.recorded_at ? formatIst(note.recorded_at) : "—"}</td>
-                          <td>{note.item_type || "—"}</td>
-                          <td>
-                            <Link href={`/inventory/${encodeURIComponent(note.item_id)}`} className={styles.link}>
-                              {note.item_id}
-                            </Link>
-                          </td>
-                          <td>{note.person || "—"}</td>
-                          <td>{note.sent_by || "—"}</td>
-                          <td style={{ whiteSpace: "normal" }}>{note.note}</td>
-                          <td>
-                            <form action={deleteDelayNote} data-progress="1">
-                              <input type="hidden" name="note_id" value={note.note_id} />
-                              <button
-                                type="submit"
-                                title="Delete this note"
-                                style={{
-                                  padding: "3px 8px",
-                                  fontSize: "0.78rem",
-                                  color: "#dc2626",
-                                  border: "1px solid var(--border)",
-                                  borderRadius: 6,
-                                  background: "var(--surface-1)",
-                                }}
-                              >
-                                Delete
-                              </button>
-                            </form>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </section>
-        </main>
-      </div>
-    );
-  }
 
   // "Moved per day" and "Moved per hour of day": each has its own Items, Person, City and Role filters, and
   // several values can be ticked in each (?mperson=a&mperson=b, kept in links as "a,b"). Items: empty = all
@@ -1864,7 +1475,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
             items={items}
             rigView={rigView}
             attentionHref={
-              user.role === "admin" || user.role === "im" ? `/dashboard${rigView ? "?type=rig" : ""}#attention` : undefined
+              user.role === "admin" || user.role === "im" ? `/needs-attention${rigView ? "?type=rig" : ""}` : undefined
             }
             baselineTotal={rigView ? undefined : brokenBaselineTotal + (retiredBaseline ?? 0)}
             baselineStorage={rigView ? undefined : brokenStorageOverride}
@@ -1878,7 +1489,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
           <PowerBankSummary
             d={d}
             items={items}
-            attentionHref={user.role === "admin" || user.role === "im" ? "/dashboard?type=power_bank#attention" : undefined}
+            attentionHref={user.role === "admin" || user.role === "im" ? "/needs-attention?type=power_bank" : undefined}
             brokenCount={powerBankBrokenValue}
             retiredCount={powerBankRetiredValue}
           />
@@ -2561,4 +2172,4 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
       </main>
     </div>
   );
-}
+}   

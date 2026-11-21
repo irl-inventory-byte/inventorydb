@@ -65,7 +65,7 @@ const WORK: Tile[] = [
     roles: ["admin", "qc"],
   },
   {
-    href: "/dashboard#attention",
+    href: "/needs-attention",
     title: "Needs attention",
     desc: "Items an FO, IFO, rig team or internal person has held too long, or sent to a hub and not received.",
     icon: "alert",
