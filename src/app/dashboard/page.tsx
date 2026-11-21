@@ -602,21 +602,20 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   const rtdPendingCount = items.filter(
     (i) => i.item_type === "rig" && i.status === "pending" && latestQc.get(i.item_id) === "repaired",
   ).length;
-  // Sent to hardware, not received by them yet. These are already counted under "With hardware team"
-  // above (see rigState in lib/rig-state.ts) — this is just the "not yet received" slice of that same
-  // tile, shown separately below so it's clear which of them hardware still needs to pick up.
+  // Sent to hardware, not received by them yet (hardware hasn't picked it up off the "qc_fail" tile's
+  // total yet — same status the admin "To be received" tile's toHw already counts).
   const hwPendingCount = items.filter((i) => i.item_type === "rig" && i.status === "pending_hardware").length;
   const rigTotal = items.filter((i) => i.item_type === "rig").length;
   const rigShare = (v: number) => (rigTotal ? `${Math.round((v / rigTotal) * 100)}% of all rigs` : "");
   const RIG_TILE: Record<(typeof RIG_STATES)[number], { icon: IconName; color: string; hint?: string }> = {
     in_stock: { icon: "check", color: "var(--series-3)", hint: "With the IM" },
-    hardware: { icon: "wrench", color: "var(--series-1)", hint: "Sent to hardware, whether or not received yet" },
+    hardware: { icon: "wrench", color: "var(--series-1)", hint: "Received by hardware" },
     internal: { icon: "user", color: "var(--series-7)", hint: "Checked out to internal people" },
     fo: { icon: "user", color: "var(--series-2)", hint: "Checked out to an FO" },
     transit: { icon: "truck", color: "var(--series-4)", hint: "Sent by the IM to an IFO" },
     qc_pending: { icon: "shield", color: "var(--series-7)", hint: "Received by QC" },
     qc_pass: { icon: "check", color: "var(--series-3)", hint: "Passed by QC, sent to IM, not received yet" },
-    qc_fail: { icon: "alert", color: "var(--warning)", hint: "QC marked Fail, not yet sent to hardware" },
+    qc_fail: { icon: "alert", color: "var(--warning)", hint: "With QC, or sent to hardware, not received yet" },
     rtd: { icon: "send", color: "var(--series-3)", hint: "Repaired by hardware — sent to IM, whether or not received yet" },
     dead: { icon: "archive", color: "var(--text-muted)", hint: "Declared dead by hardware" },
     rnd: { icon: "wrench", color: "var(--series-7)", hint: "Moved to R&D by hardware" },
@@ -675,8 +674,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
     icon: "inbox",
     color: "var(--series-4)",
   });
-  // Sent to hardware, hardware hasn't received it yet — the not-yet-received slice of "With hardware
-  // team" (see hwPendingCount above), shown as its own tile so it's easy to see who still needs picking up.
+  // Sent to hardware, hardware hasn't received it yet — the part of "QC fail" that's still in transit.
   rigKpis.push({
     label: "Hardware to receive",
     value: hwPendingCount,
@@ -1475,7 +1473,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
             d={d}
             items={items}
             rigView={rigView}
-            attentionHref={`/dashboard${rigView ? "?type=rig" : ""}#attention`}
+            attentionHref={
+              user.role === "admin" || user.role === "im" ? `/dashboard${rigView ? "?type=rig" : ""}#attention` : undefined
+            }
             baselineTotal={rigView ? undefined : brokenBaselineTotal + (retiredBaseline ?? 0)}
             baselineStorage={rigView ? undefined : brokenStorageOverride}
             brokenCount={rigView ? undefined : brokenValue}
@@ -1488,7 +1488,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
           <PowerBankSummary
             d={d}
             items={items}
-            attentionHref="/dashboard?type=power_bank#attention"
+            attentionHref={user.role === "admin" || user.role === "im" ? "/dashboard?type=power_bank#attention" : undefined}
             brokenCount={powerBankBrokenValue}
             retiredCount={powerBankRetiredValue}
           />
@@ -2075,7 +2075,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
         />
 
         <div style={{ display: "grid", gap: 20 }}>
-          {/* NEEDS ATTENTION — table (full width, so every column shows) */}
+          {/* NEEDS ATTENTION — table (full width, so every column shows). Admin and IM only. */}
+          {(user.role === "admin" || user.role === "im") && (
           <section className={styles.card} id="attention" aria-label="Needs attention" style={{ minWidth: 0 }}>
             <h2>Needs attention</h2>
             <p className={styles.muted}>
@@ -2397,6 +2398,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
               </div>
             )}
           </section>
+          )}
 
           {/* WHO HAS ITEMS */}
           <section className={styles.card} aria-label="Who has items" style={{ minWidth: 0 }}>
