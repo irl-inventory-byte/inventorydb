@@ -296,8 +296,8 @@ export default async function NeedsAttentionPage({
   if (roleFilter.length) keep.role = roleFilter.join(",");
   if (dfrom) keep.from = dfrom;
   if (dto) keep.to = dto;
-  const detailHref = (key: string) => `/attention?${new URLSearchParams({ ...keep, detail: key })}#delayed-items`;
-  const closeDetailHref = `/attention?${new URLSearchParams(keep)}`;
+  const detailHref = (key: string) => `/needs-attention?${new URLSearchParams({ ...keep, detail: key })}#delayed-items`;
+  const closeDetailHref = `/needs-attention?${new URLSearchParams(keep)}`;
 
   // CSV export: one row per delayed item, respecting every filter above.
   const csvEscape = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
@@ -332,13 +332,13 @@ export default async function NeedsAttentionPage({
 
           {typeOptions.length > 1 && (
             <p style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "0 0 10px", fontSize: "0.85rem" }}>
-              <Link href="/attention" className={!type ? styles.link : undefined} style={!type ? { fontWeight: 700 } : undefined}>
+              <Link href="/needs-attention" className={!type ? styles.link : undefined} style={!type ? { fontWeight: 700 } : undefined}>
                 All
               </Link>
               {typeOptions.map((t) => (
                 <Link
                   key={t}
-                  href={`/attention?${new URLSearchParams({ type: t })}`}
+                  href={`/needs-attention?${new URLSearchParams({ type: t })}`}
                   className={type === t ? styles.link : undefined}
                   style={type === t ? { fontWeight: 700 } : undefined}
                 >
@@ -349,14 +349,15 @@ export default async function NeedsAttentionPage({
           )}
 
           <form
+            id="needsAttentionFilters"
             method="GET"
-            action="/attention"
+            action="/needs-attention"
             style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", margin: "4px 0 14px" }}
           >
             {type && <input type="hidden" name="type" value={type} />}
             <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
               <strong style={{ fontWeight: 600, fontSize: "0.85rem" }}>City</strong>
-              <select name="city" defaultValue={cityFilter[0] ?? ""} aria-label="City">
+              <select name="city" defaultValue={cityFilter[0] ?? ""} aria-label="City" data-auto-apply="1">
                 <option value="">All cities</option>
                 {cityOptions.map((c) => (
                   <option key={c} value={c}>
@@ -367,7 +368,7 @@ export default async function NeedsAttentionPage({
             </label>
             <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
               <strong style={{ fontWeight: 600, fontSize: "0.85rem" }}>Role</strong>
-              <select name="role" defaultValue={roleFilter[0] ?? ""} aria-label="Role">
+              <select name="role" defaultValue={roleFilter[0] ?? ""} aria-label="Role" data-auto-apply="1">
                 <option value="">All roles</option>
                 {roleOptions.map((r) => (
                   <option key={r} value={r}>
@@ -378,44 +379,55 @@ export default async function NeedsAttentionPage({
             </label>
             <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
               <strong style={{ fontWeight: 600, fontSize: "0.85rem" }}>From</strong>
-              <input type="date" name="from" defaultValue={dfrom} max={dto || undefined} aria-label="From date" />
+              <input type="date" name="from" defaultValue={dfrom} max={dto || undefined} aria-label="From date" data-auto-apply="1" />
             </label>
             <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
               <strong style={{ fontWeight: 600, fontSize: "0.85rem" }}>To</strong>
-              <input type="date" name="to" defaultValue={dto} min={dfrom || undefined} aria-label="To date" />
+              <input type="date" name="to" defaultValue={dto} min={dfrom || undefined} aria-label="To date" data-auto-apply="1" />
             </label>
             <button type="submit" style={{ padding: "4px 10px", fontSize: "0.85rem" }}>
               Apply
             </button>
             {(dfrom || dto || cityFilter.length || roleFilter.length) && (
               <Link
-                href={`/attention${type ? `?${new URLSearchParams({ type })}` : ""}`}
+                href={`/needs-attention${type ? `?${new URLSearchParams({ type })}` : ""}`}
                 className={styles.link}
                 style={{ fontSize: "0.85rem" }}
               >
                 Clear filters
               </Link>
             )}
-            <div style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
-              <a
-                href="/attention/pdf"
-                target="_blank"
-                rel="noopener noreferrer"
-                className={styles.link}
-                style={{ fontSize: "0.85rem", whiteSpace: "nowrap" }}
-              >
-                ⬇ Download PDF
-              </a>
-              <a
-                href={csvHref}
-                download="needs-attention.csv"
-                className={styles.link}
-                style={{ fontSize: "0.85rem", whiteSpace: "nowrap" }}
-              >
-                ⬇ Download CSV{dfrom || dto || cityFilter.length || roleFilter.length ? " (filtered)" : ""}
-              </a>
-            </div>
+            <a
+              href={csvHref}
+              download="needs-attention.csv"
+              className={styles.link}
+              style={{ marginLeft: "auto", fontSize: "0.85rem", whiteSpace: "nowrap" }}
+            >
+              ⬇ Download CSV{dfrom || dto || cityFilter.length || roleFilter.length ? " (filtered)" : ""}
+            </a>
           </form>
+          {/* Auto-apply: picking a city/role, or finishing a date, reloads the page with that
+              filter right away — so the Download CSV link (built server-side from the URL's
+              filters) always matches what's currently selected, without needing a separate click
+              on Apply first. */}
+          <script
+            // eslint-disable-next-line react/no-danger
+            dangerouslySetInnerHTML={{
+              __html: `
+                (function () {
+                  var form = document.getElementById("needsAttentionFilters");
+                  if (!form) return;
+                  var fields = form.querySelectorAll('[data-auto-apply="1"]');
+                  fields.forEach(function (el) {
+                    el.addEventListener("change", function () {
+                      if (typeof form.requestSubmit === "function") form.requestSubmit();
+                      else form.submit();
+                    });
+                  });
+                })();
+              `,
+            }}
+          />
 
           {delayedInRange.length > 0 && shownDelayed.length === 0 ? (
             <p className={styles.muted}>Nothing matches this filter.</p>
