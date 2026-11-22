@@ -299,14 +299,12 @@ export default async function NeedsAttentionPage({
   const detailHref = (key: string) => `/attention?${new URLSearchParams({ ...keep, detail: key })}#delayed-items`;
   const closeDetailHref = `/attention?${new URLSearchParams(keep)}`;
 
-  // CSV export: one row per delayed item, respecting every filter above.
-  const csvEscape = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  // PDF export data: one row per delayed item, respecting every filter above.
   const exportRows = delayedInRange.filter(matchesFilter);
   const csvRows = [
     ["Item ID", "Type", "Person", "Role", "City", "Sent by", "Sent on", "Out for", "Status", "Issue"],
     ...exportRows.map((r) => [r.id, r.type, r.person, r.role, r.city, r.sentBy, r.sentOnLabel, howLong(r.hours), r.status, r.issue]),
   ];
-  const csvHref = `data:text/csv;charset=utf-8,${encodeURIComponent(csvRows.map((row) => row.map((v) => csvEscape(String(v))).join(",")).join("\n"))}`;
 
   const delayNoteLog = delayNotes.slice().sort((a, b) => Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0"));
   const latestNoteByItem = new Map<string, (typeof delayNoteLog)[number]>();
@@ -397,19 +395,37 @@ export default async function NeedsAttentionPage({
                 Clear filters
               </Link>
             )}
-            <a
-              href={csvHref}
-              download="attention.csv"
+            <button
+              type="button"
+              id="downloadPdfBtn"
               className={styles.link}
-              style={{ marginLeft: "auto", fontSize: "0.85rem", whiteSpace: "nowrap" }}
+              style={{
+                marginLeft: "auto",
+                fontSize: "0.85rem",
+                whiteSpace: "nowrap",
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                font: "inherit",
+              }}
             >
-              ⬇ Download CSV{dfrom || dto || cityFilter.length || roleFilter.length ? " (filtered)" : ""}
-            </a>
+              ⬇ Download PDF{dfrom || dto || cityFilter.length || roleFilter.length ? " (filtered)" : ""}
+            </button>
           </form>
+
+          {/* Data for the PDF export below: one row per delayed item, respecting every filter above
+              (same rows the CSV export used to cover). Read by the script tag further down. */}
+          <script
+            type="application/json"
+            id="attentionExportData"
+            // eslint-disable-next-line react/no-danger
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(csvRows) }}
+          />
+
           {/* Auto-apply: picking a city/role, or finishing a date, reloads the page with that
-              filter right away — so the Download CSV link (built server-side from the URL's
-              filters) always matches what's currently selected, without needing a separate click
-              on Apply first. */}
+              filter right away — so the exported PDF (built from the URL's filters) always
+              matches what's currently selected, without needing a separate click on Apply first. */}
           <script
             // eslint-disable-next-line react/no-danger
             dangerouslySetInnerHTML={{
@@ -423,6 +439,80 @@ export default async function NeedsAttentionPage({
                       if (typeof form.requestSubmit === "function") form.requestSubmit();
                       else form.submit();
                     });
+                  });
+                })();
+              `,
+            }}
+          />
+
+          {/* Download PDF: loads jsPDF + its autotable plugin from a CDN on first click, then
+              renders the filtered table (same data the old CSV export used) into a landscape PDF. */}
+          <script
+            // eslint-disable-next-line react/no-danger
+            dangerouslySetInnerHTML={{
+              __html: `
+                (function () {
+                  var btn = document.getElementById("downloadPdfBtn");
+                  if (!btn) return;
+                  var scriptsLoaded = null;
+                  function loadScript(src) {
+                    return new Promise(function (resolve, reject) {
+                      var s = document.createElement("script");
+                      s.src = src;
+                      s.onload = resolve;
+                      s.onerror = reject;
+                      document.head.appendChild(s);
+                    });
+                  }
+                  function ensureLibs() {
+                    if (!scriptsLoaded) {
+                      scriptsLoaded = Promise.resolve()
+                        .then(function () {
+                          if (!window.jspdf) {
+                            return loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js");
+                          }
+                        })
+                        .then(function () {
+                          if (!(window.jspdf && window.jspdf.jsPDF && window.jspdf.jsPDF.API && window.jspdf.jsPDF.API.autoTable)) {
+                            return loadScript(
+                              "https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js",
+                            );
+                          }
+                        });
+                    }
+                    return scriptsLoaded;
+                  }
+                  btn.addEventListener("click", function () {
+                    var original = btn.textContent;
+                    btn.textContent = "Preparing…";
+                    btn.disabled = true;
+                    ensureLibs()
+                      .then(function () {
+                        var dataEl = document.getElementById("attentionExportData");
+                        var rows = JSON.parse(dataEl.textContent || "[]");
+                        var head = [rows[0] || []];
+                        var body = rows.slice(1);
+                        var jsPDF = window.jspdf.jsPDF;
+                        var doc = new jsPDF({ orientation: "landscape" });
+                        doc.setFontSize(14);
+                        doc.text("Needs attention — delayed items", 14, 14);
+                        doc.autoTable({
+                          head: head,
+                          body: body,
+                          startY: 20,
+                          styles: { fontSize: 8, cellPadding: 2 },
+                          headStyles: { fillColor: [30, 41, 59] },
+                          margin: { left: 10, right: 10 },
+                        });
+                        doc.save("attention.pdf");
+                      })
+                      .catch(function () {
+                        window.alert("Couldn't load the PDF library — check your internet connection and try again.");
+                      })
+                      .finally(function () {
+                        btn.textContent = original;
+                        btn.disabled = false;
+                      });
                   });
                 })();
               `,
