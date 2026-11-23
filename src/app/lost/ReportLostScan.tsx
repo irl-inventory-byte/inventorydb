@@ -8,6 +8,35 @@ import CameraScanButton, { appendLine, type ScanOutcome } from "../CameraScanBut
 import MultiSelect from "../inventory/MultiSelect";
 import { reportLostScan } from "./actions";
 
+// A Google Sheets cell holds at most 50,000 characters; the phone shrinks the photo to fit under this
+// (same limit and approach as the Rig Audit report form — see rigs/unknown/ReportForm.tsx's shrink()).
+const MAX_PHOTO_CHARS = 45_000;
+
+/** Shrink a photo on the phone to a small JPEG data: URL that fits in one sheet cell. */
+async function shrinkPhoto(file: File): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((ok, fail) => {
+      const i = new Image();
+      i.onload = () => ok(i);
+      i.onerror = () => fail(new Error("not an image"));
+      i.src = url;
+    });
+    const canvas = document.createElement("canvas");
+    const scale = Math.min(1, 1000 / Math.max(img.width, img.height));
+    canvas.width = Math.max(1, Math.round(img.width * scale));
+    canvas.height = Math.max(1, Math.round(img.height * scale));
+    canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+    for (const q of [0.7, 0.55, 0.4]) {
+      const data = canvas.toDataURL("image/jpeg", q);
+      if (data.length <= MAX_PHOTO_CHARS) return data;
+    }
+    throw new Error("too large");
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 /**
  * Admin/IM only: scan (or paste) item codes and report them as Lost or Broken right from this page,
  * instead of going to the Inventory page's Correct form. Reuses the same "correct" event under the
@@ -52,6 +81,23 @@ export default function ReportLostScan({
   const [text, setText] = useState("");
   const [note, setNote] = useState("");
   const label = status === "damaged" ? "broken" : "lost";
+  const [photo, setPhoto] = useState("");
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState("");
+
+  const onPhotoFile = async (file?: File) => {
+    setPhotoError("");
+    setPhoto("");
+    if (!file) return;
+    setPhotoBusy(true);
+    try {
+      setPhoto(await shrinkPhoto(file));
+    } catch {
+      setPhotoError("This photo could not be used. Take it again.");
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
 
   const statuses = useMemo(() => new Map(items.map((i) => [i.id, i.status])), [items]);
   const typeOf = useMemo(() => new Map(items.map((i) => [i.id, i.type ?? "sd_card"])), [items]);
@@ -88,6 +134,7 @@ export default function ReportLostScan({
         }}
       >
         <input type="hidden" name="status" value={status} />
+        <input type="hidden" name="photo" value={photo} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
           <span style={{ fontSize: "0.82rem", color: "#64748b" }}>Scan or paste item codes, one per line</span>
           <CameraScanButton onScan={(code) => { setText((t) => appendLine(t, code)); return cameraOutcome(code); }} />
@@ -162,6 +209,28 @@ export default function ReportLostScan({
               style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #cbd5e1", fontSize: "0.85rem", background: "#fff" }}
             />
           </label>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <label htmlFor="lost-photo-file" style={{ fontSize: "0.72rem", color: "#64748b" }}>
+            Photo (optional)
+          </label>
+          <input
+            id="lost-photo-file"
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={(e) => onPhotoFile(e.target.files?.[0])}
+            style={{ fontSize: "0.85rem" }}
+          />
+          {photoBusy && <p style={{ margin: 0, fontSize: "0.8rem", color: "#64748b" }}>Preparing the photo…</p>}
+          {photoError && <p style={{ margin: 0, fontSize: "0.8rem", color: "#b3261e" }}>{photoError}</p>}
+          {photo && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={photo} alt="Photo to attach" style={{ marginTop: 4, maxWidth: 200, borderRadius: 8, border: "1px solid #cbd5e1" }} />
+          )}
+          <p style={{ margin: 0, fontSize: "0.72rem", color: "#64748b" }}>
+            If more than one item is scanned above, the same photo is attached to each of them.
+          </p>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: "0.72rem", color: "#64748b" }}>

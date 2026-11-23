@@ -171,9 +171,19 @@ export default async function LostItemsPage({
                             </p>
                           )}
                           {history.map((n) => (
-                            <p key={n.note_id} style={{ margin: 0 }}>
-                              <strong>{formatIst(n.recorded_at)}</strong> ({n.recorded_by_name || n.recorded_by}): {n.note}
-                            </p>
+                            <div key={n.note_id}>
+                              <p style={{ margin: 0 }}>
+                                <strong>{formatIst(n.recorded_at)}</strong> ({n.recorded_by_name || n.recorded_by}): {n.note}
+                              </p>
+                              {n.photo && (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={n.photo}
+                                  alt={`Photo for ${r.item_id}`}
+                                  style={{ marginTop: 4, maxWidth: 180, borderRadius: 8, border: "1px solid #e2e8f0" }}
+                                />
+                              )}
+                            </div>
                           ))}
                           {canAddNote && (
                             <form action={addLostNote} style={{ display: "flex", gap: 6, marginTop: 4 }} data-progress="1">

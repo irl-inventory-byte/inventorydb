@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 /**
  * A dropdown of checkboxes for a GET filter form: tick several options and
@@ -9,6 +9,12 @@ import { useMemo, useState } from "react";
  *
  * `searchable`: adds a type-to-filter box above the list, for long lists (e.g. everyone's name).
  * Typing narrows which options are shown; already-ticked boxes stay ticked even while hidden.
+ *
+ * The header's summary ("Person: 2 selected") tracks ticks live, not just the `selected` prop — the
+ * checkboxes are uncontrolled (so they keep working without JS), but each one's onChange also updates
+ * local state the summary reads from. That matters for a form that never reloads the page after a tick
+ * (e.g. a report form with its own "Submit" button, as opposed to a GET filter bar): without this, the
+ * header kept showing whatever was selected on the page's very first render, even after ticking boxes.
  */
 export default function MultiSelect({
   name,
@@ -31,8 +37,15 @@ export default function MultiSelect({
   group?: string;
 }) {
   const [query, setQuery] = useState("");
+  const [picked, setPicked] = useState(selected);
+  // If the page re-renders with a genuinely different `selected` (e.g. after a GET filter bar reloads
+  // with a new URL), pick that up instead of staying stuck on whatever was ticked before.
+  const selectedKey = selected.join("\u0000");
+  useEffect(() => setPicked(selected), [selectedKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggle = (value: string, checked: boolean) =>
+    setPicked((prev) => (checked ? [...prev, value] : prev.filter((v) => v !== value)));
 
-  const chosen = options.filter((o) => selected.includes(o.value));
+  const chosen = options.filter((o) => picked.includes(o.value));
   const summary =
     chosen.length === 0
       ? allLabel
@@ -142,6 +155,7 @@ export default function MultiSelect({
               name={name}
               value={o.value}
               defaultChecked={selected.includes(o.value)}
+              onChange={(e) => toggle(o.value, e.target.checked)}
             />
             {o.label}
           </label>

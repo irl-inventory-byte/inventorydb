@@ -38,17 +38,23 @@ export async function addLostNote(formData: FormData) {
       recorded_at: istTimestamp(),
       recorded_by: (user.email ?? "unknown").toLowerCase(),
       recorded_by_name: displayName(people, user.personId ?? "") || user.name || user.email || "",
+      photo: ""
     },
   ]);
   revalidatePath("/lost");
   back({ saved: "1", item: itemId });
 }
 
+// A Google Sheets cell holds at most 50,000 characters; the phone shrinks the photo to fit under this
+// (same limit as rig_reports' photo — see rigs/unknown/actions.ts).
+const MAX_PHOTO = 48_000;
+
 /**
  * Report lost/broken by scan: Admin and IM scan (or paste) one or more item codes and give a
  * required note. Reuses the same Correction machinery as the Inventory page's Correct form (a
  * "correct" event is what lostList() reads as the original report), just scoped to one target
- * status and with no hub/holder fields to fill in.
+ * status and with no hub/holder fields to fill in. An optional photo is attached as the first
+ * investigation note (lost_notes) for each reported item.
  */
 export async function reportLostScan(formData: FormData) {
   const user = await requireRole("admin", "im");
@@ -82,6 +88,12 @@ export async function reportLostScan(formData: FormData) {
   // City/hub: where it actually happened, if different from the item's current hub. A hub_id
   // chosen from the dropdown (grouped by city); blank keeps each item's current hub.
   const hub = String(formData.get("hub") ?? "").trim();
+
+  // Photo: optional. Same small-JPEG-data-URL convention as rig_reports' photo (see
+  // rigs/unknown/actions.ts) — silently dropped rather than blocking the report if it looks wrong,
+  // since (unlike the rig report) a photo here was never required.
+  const photoRaw = String(formData.get("photo") ?? "");
+  const photo = photoRaw.startsWith("data:image/jpeg;base64,") && photoRaw.length <= MAX_PHOTO ? photoRaw : "";
 
   const store = storeForAll(user.role);
   const found = await store.getItemsByIds(ids);
@@ -134,6 +146,22 @@ export async function reportLostScan(formData: FormData) {
 
   if (plan.items.length) {
     await getStore().commitBatch(plan.events, plan.items);
+    if (photo) {
+      // One lost_notes row per reported item, so the photo shows up right away in that item's
+      // investigation-notes thread on the Lost items page.
+      await getStore().appendRows(
+        "lost_notes",
+        plan.items.map((item) => ({
+          note_id: `ln-${randomUUID().slice(0, 8)}`,
+          item_id: item.item_id,
+          note: `Photo attached when reported ${label}.`,
+          recorded_at: occurredAt,
+          recorded_by: (user.email ?? "unknown").toLowerCase(),
+          recorded_by_name: displayName(people, user.personId ?? "") || user.name || user.email || "",
+          photo,
+        })),
+      );
+    }
     revalidatePath("/lost");
     revalidatePath("/dashboard");
     revalidatePath("/inventory");

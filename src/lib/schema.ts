@@ -98,7 +98,15 @@ export const TABS = {
   ],
   // Investigation notes for lost (or broken) items: a free-text note per entry, oldest first,
   // shown on the Lost items page. One row per note added.
-  lost_notes: ["note_id", "item_id", "note", "recorded_at", "recorded_by", "recorded_by_name"],
+  lost_notes: [
+    "note_id",
+    "item_id",
+    "note",
+    "recorded_at",
+    "recorded_by",
+    "recorded_by_name",
+    "photo", // small JPEG as a data: URL (shrunk on the phone, same as rig_reports' photo), or blank
+  ],
   // City/Hub Audit confirmations: someone physically checked that an in-stock item is really
   // there. Doesn't change status or location — just a log entry, shown in the item's History.
   audits: ["audit_id", "item_id", "audited_at", "audited_by", "audited_by_name"],
@@ -391,6 +399,7 @@ export interface LostNote extends Row {
   recorded_at: string;
   recorded_by: string;
   recorded_by_name: string;
+  photo: string;
 }
 
 export interface Audit extends Row {
