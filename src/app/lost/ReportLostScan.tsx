@@ -212,13 +212,14 @@ export default function ReportLostScan({
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <label htmlFor="lost-photo-file" style={{ fontSize: "0.72rem", color: "#64748b" }}>
-            Photo (optional)
+            Photo *
           </label>
           <input
             id="lost-photo-file"
             type="file"
             accept="image/*"
             capture="environment"
+            required
             onChange={(e) => onPhotoFile(e.target.files?.[0])}
             style={{ fontSize: "0.85rem" }}
           />
@@ -229,7 +230,7 @@ export default function ReportLostScan({
             <img src={photo} alt="Photo to attach" style={{ marginTop: 4, maxWidth: 200, borderRadius: 8, border: "1px solid #cbd5e1" }} />
           )}
           <p style={{ margin: 0, fontSize: "0.72rem", color: "#64748b" }}>
-            If more than one item is scanned above, the same photo is attached to each of them.
+            Required. If more than one item is scanned above, the same photo is attached to each of them.
           </p>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
@@ -319,21 +320,22 @@ export default function ReportLostScan({
         </div>
         <button
           type="submit"
-          disabled={ready === 0}
+          disabled={ready === 0 || !photo}
           style={{
             alignSelf: "flex-start",
             fontSize: "0.85rem",
             padding: "6px 14px",
             borderRadius: 6,
             border: "1px solid #1e293b",
-            background: ready === 0 ? "#94a3b8" : "#1e293b",
-            borderColor: ready === 0 ? "#94a3b8" : "#1e293b",
+            background: ready === 0 || !photo ? "#94a3b8" : "#1e293b",
+            borderColor: ready === 0 || !photo ? "#94a3b8" : "#1e293b",
             color: "#fff",
-            cursor: ready === 0 ? "not-allowed" : "pointer",
+            cursor: ready === 0 || !photo ? "not-allowed" : "pointer",
           }}
         >
           Report {ready > 0 ? ready : ""} {label}
         </button>
+        {ready > 0 && !photo && !photoBusy && <span style={{ fontSize: "0.8rem", color: "#64748b" }}>Add a photo to report.</span>}
       </form>
     </details>
   );

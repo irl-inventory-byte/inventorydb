@@ -53,7 +53,7 @@ const MAX_PHOTO = 48_000;
  * Report lost/broken by scan: Admin and IM scan (or paste) one or more item codes and give a
  * required note. Reuses the same Correction machinery as the Inventory page's Correct form (a
  * "correct" event is what lostList() reads as the original report), just scoped to one target
- * status and with no hub/holder fields to fill in. An optional photo is attached as the first
+ * status and with no hub/holder fields to fill in. A required photo is attached as the first
  * investigation note (lost_notes) for each reported item.
  */
 export async function reportLostScan(formData: FormData) {
