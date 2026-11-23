@@ -60,6 +60,37 @@ export function howLong(hours: number): string {
   return hours < 48 ? `${Math.floor(hours)} hours` : `${Math.floor(hours / 24)} days`;
 }
 
+export interface AttentionFilters {
+  minDays?: number; // out for more than this many days; 0/undefined = no cutoff beyond LATE_AFTER_HOURS
+  type?: string; // r.type, e.g. "SD card" — blank = all
+  role?: string; // r.role, e.g. "FO", "IFO", "Hub" — blank = all
+  city?: string; // r.city — blank = all
+}
+
+/** Narrows an already-built shownDelayed/delayed list down to one page's (or the PDF's) filters. */
+export function filterDelayed<T extends { hours: number; type: string; role: string; city: string }>(
+  rows: T[],
+  f: AttentionFilters,
+): T[] {
+  return rows.filter(
+    (r) =>
+      (!f.minDays || r.hours > f.minDays * 24) &&
+      (!f.type || r.type === f.type) &&
+      (!f.role || r.role === f.role) &&
+      (!f.city || r.city === f.city),
+  );
+}
+
+/** Distinct Type / Role / City values across a shownDelayed list, for building filter dropdowns. */
+export function filterOptions<T extends { type: string; role: string; city: string }>(rows: T[]) {
+  const uniq = (values: string[]) => [...new Set(values.filter(Boolean))].sort();
+  return {
+    types: uniq(rows.map((r) => r.type)),
+    roles: uniq(rows.map((r) => r.role)),
+    cities: uniq(rows.map((r) => r.city)),
+  };
+}
+
 /** Everything needing attention right now, across every item type passed in. Pure, like computeDashboard. */
 export function buildAttentionReport(items: Item[], events: ItemEvent[], people: Person[], hubs: Hub[], now: Date): AttentionReport {
   const d = computeDashboard(items, events, people, hubs, { hub: "", days: 14, now });
