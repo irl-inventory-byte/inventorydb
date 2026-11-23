@@ -267,7 +267,12 @@ export default async function NeedsAttentionPage({
   const cityOptions = [...new Set([...activeHubCities, ...delayedInRange.map((r) => r.city)].filter(Boolean))].sort((a, b) =>
     a.localeCompare(b),
   );
-  const roleOptions = [...new Set(delayedInRange.map((r) => r.role).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  // Always offer Rig team / Productivity team as choices, even when nothing of theirs is currently
+  // late — same reasoning as the city list: a filter option shouldn't disappear just because today
+  // there's nothing to show for it.
+  const roleOptions = [...new Set([...delayedInRange.map((r) => r.role), "Rig team", "Productivity team"].filter(Boolean))].sort(
+    (a, b) => a.localeCompare(b),
+  );
   const listParam = (v: string) => v.split(",").map((x) => x.trim()).filter(Boolean);
   const cityFilter = listParam(one(sp.city));
   const roleFilter = listParam(one(sp.role));
@@ -454,7 +459,6 @@ export default async function NeedsAttentionPage({
                 (function () {
                   var btn = document.getElementById("downloadPdfBtn");
                   if (!btn) return;
-                  var scriptsLoaded = null;
                   function loadScript(src) {
                     return new Promise(function (resolve, reject) {
                       var s = document.createElement("script");
@@ -465,28 +469,29 @@ export default async function NeedsAttentionPage({
                     });
                   }
                   function ensureLibs() {
-                    if (!scriptsLoaded) {
-                      scriptsLoaded = Promise.resolve()
-                        .then(function () {
-                          if (!window.jspdf) {
-                            return loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js");
-                          }
-                        })
-                        .then(function () {
-                          if (!(window.jspdf && window.jspdf.jsPDF && window.jspdf.jsPDF.API && window.jspdf.jsPDF.API.autoTable)) {
-                            return loadScript(
-                              "https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js",
-                            );
-                          }
-                        });
-                    }
-                    return scriptsLoaded;
+                    return Promise.resolve()
+                      .then(function () {
+                        if (!window.jspdf) {
+                          return loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js");
+                        }
+                      })
+                      .then(function () {
+                        if (!(window.jspdf && window.jspdf.jsPDF && window.jspdf.jsPDF.API && window.jspdf.jsPDF.API.autoTable)) {
+                          return loadScript(
+                            "https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js",
+                          );
+                        }
+                      });
                   }
+                  // Start fetching the PDF library right away, in the background, instead of
+                  // waiting for the click — so by the time someone actually hits the button, it's
+                  // almost always already loaded and the PDF comes out immediately.
+                  var scriptsLoaded = ensureLibs();
                   btn.addEventListener("click", function () {
                     var original = btn.textContent;
                     btn.textContent = "Preparing…";
                     btn.disabled = true;
-                    ensureLibs()
+                    scriptsLoaded
                       .then(function () {
                         var dataEl = document.getElementById("attentionExportData");
                         var rows = JSON.parse(dataEl.textContent || "[]");
