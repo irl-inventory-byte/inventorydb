@@ -202,12 +202,15 @@ export async function addDelayNote(formData: FormData) {
     await store.appendRows("delay_notes", [row]);
   }
 
-  // No redirect: this form is always submitted from the Dashboard it's already shown on, so saving just
-  // revalidates this same page in place instead of forcing a full navigation. That used to make every
-  // single save feel like a slow full page reload, and meant a note being typed into another row's box
-  // got wiped out the moment any other row was saved — now each Save only refreshes the data, so several
-  // rows can be filled in and saved one after another without losing what's typed in the others.
+  // No redirect: this form is always submitted from whichever page it's shown on (Dashboard or
+  // /attention), so saving just revalidates in place instead of forcing a full navigation. That used
+  // to make every single save feel like a slow full page reload, and meant a note being typed into
+  // another row's box got wiped out the moment any other row was saved — now each Save only refreshes
+  // the data, so several rows can be filled in and saved one after another without losing what's typed
+  // in the others. Both pages read the same delay_notes rows, so a note saved on one shows up on the
+  // other too.
   revalidatePath("/dashboard");
+  revalidatePath("/attention");
 }
 
 /**
@@ -226,4 +229,5 @@ export async function deleteDelayNote(formData: FormData) {
   await store.deleteRow("delay_notes", noteId);
 
   revalidatePath("/dashboard");
+  revalidatePath("/attention");
 }

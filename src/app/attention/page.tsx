@@ -5,8 +5,10 @@ import { LATE_AFTER_HOURS } from "@/lib/dashboard";
 import type { DelayNote } from "@/lib/schema";
 import { storeForAll } from "@/lib/access";
 import { getStore } from "@/lib/store";
+import { formatIst } from "@/lib/time";
 import { buildAttentionReport, filterDelayed, filterOptions, howLong, type AttentionFilters } from "@/lib/attention";
 import { one } from "@/lib/labels";
+import { addDelayNote, deleteDelayNote } from "../dashboard/actions";
 import styles from "../dashboard/dashboard.module.css";
 import { Icon } from "../dashboard/icons";
 
@@ -46,12 +48,29 @@ export default async function AttentionPage({
     store.list("people"),
     store.list("hubs"),
   ]);
-  // Delay notes aren't shown on this page yet, but fetched to keep the shape ready for later; harmless
-  // if the tab doesn't exist.
-  await getStore().list("delay_notes").catch(() => [] as DelayNote[]);
+  // Notes left against individual delayed cards — same delay_notes table and addDelayNote/
+  // deleteDelayNote actions the Dashboard's own "Needs attention" table uses (src/app/dashboard/
+  // actions.ts); a note saved here shows up there too, and vice versa, since both just read/write
+  // the same per-item rows.
+  const delayNotes = await getStore().list("delay_notes").catch(() => [] as DelayNote[]);
+  const delayNoteLog = delayNotes.slice().sort((a, b) => Date.parse(b.recorded_at || "0") - Date.parse(a.recorded_at || "0"));
+  // Latest note per item_id — delayNoteLog is already newest-first, so the first one seen per item wins.
+  const latestNoteByItem = new Map<string, (typeof delayNoteLog)[number]>();
+  for (const note of delayNoteLog) if (!latestNoteByItem.has(note.item_id)) latestNoteByItem.set(note.item_id, note);
 
   const now = new Date();
-  const { shownDelayed: allDelayed, byType: byTypeAll } = buildAttentionReport(items, events, people, hubs, now);
+  const { shownDelayed: allDelayed, byType: byTypeAll, delayed: allFlat } = buildAttentionReport(items, events, people, hubs, now);
+
+  // Each shownDelayed row is several real items grouped together (same type/person/role/city/sentBy/
+  // sentOn/issue, collapsed to one row with a Count) — g.key is exactly that grouping key, so this
+  // rebuilds "which real items are in this row" from the flat per-item list, for the Note column below.
+  const itemsByGroupKey = new Map<string, typeof allFlat>();
+  for (const r of allFlat) {
+    const k = [r.type, r.person, r.role, r.city, r.sentBy, r.sentOn, r.issue].join("|");
+    const arr = itemsByGroupKey.get(k);
+    if (arr) arr.push(r);
+    else itemsByGroupKey.set(k, [r]);
+  }
 
   // Dropdown options come from the FULL list (before filtering), so picking one filter doesn't hide
   // the others you could still switch to.
@@ -228,23 +247,125 @@ export default async function AttentionPage({
                     <th>Issue</th>
                     <th>Out for</th>
                     <th>Count</th>
+                    <th>Note — what happened</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {shownDelayed.map((g) => (
-                    <tr key={g.key}>
-                      <td>{g.type}</td>
+                  {shownDelayed.map((g) => {
+                    // A grouped row can be several real items — each has its own note, so only offer
+                    // the quick inline box when they all agree (or only one has a note so far). A row
+                    // that disagrees links out to that group instead of showing just one note as if it
+                    // spoke for all of them.
+                    const groupItems = itemsByGroupKey.get(g.key) ?? [];
+                    const itemNotes = groupItems
+                      .map((it) => latestNoteByItem.get(it.id))
+                      .filter((note): note is NonNullable<typeof note> => !!note && !!note.note.trim());
+                    const distinctNotes = new Set(itemNotes.map((note) => note.note.trim()));
+                    const existing = itemNotes[0];
+                    const forItem = groupItems.length === 1 ? groupItems[0]?.id : (existing?.item_id ?? groupItems[0]?.id);
+                    const showInline = distinctNotes.size <= 1;
+                    return (
+                      <tr key={g.key}>
+                        <td>{g.type}</td>
+                        <td>
+                          <Link href={g.href}>{g.person}</Link>
+                        </td>
+                        <td>{g.role}</td>
+                        <td>{g.city}</td>
+                        <td>{g.sentBy}</td>
+                        <td>{g.sentOn}</td>
+                        <td>{g.issue}</td>
+                        <td>{howLong(g.hours)}</td>
+                        <td>
+                          <Link href={g.href}>{g.count}</Link>
+                        </td>
+                        <td style={{ minWidth: 220 }}>
+                          {!forItem ? (
+                            <span className={styles.muted}>—</span>
+                          ) : !showInline ? (
+                            <Link href={g.href} style={{ fontSize: "0.8rem" }}>
+                              {itemNotes.length} of {groupItems.length} noted — view individually
+                            </Link>
+                          ) : (
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <form action={addDelayNote} style={{ display: "flex", gap: 6, flex: 1, minWidth: 0 }} data-progress="1">
+                                <input type="hidden" name="item_id" value={forItem} />
+                                <input type="hidden" name="item_type" value={g.type} />
+                                <input type="hidden" name="person" value={g.person} />
+                                <input type="hidden" name="sent_by" value={g.sentBy} />
+                                <input
+                                  name="note"
+                                  defaultValue={existing?.note ?? ""}
+                                  placeholder="What happened? e.g. Called Chandu, will courier it back Mon…"
+                                  style={{ flex: 1, minWidth: 0, padding: "4px 8px", border: "1px solid #cbd5e1", borderRadius: 6, fontSize: "0.82rem" }}
+                                />
+                                <button type="submit" style={{ padding: "4px 10px", fontSize: "0.8rem" }}>
+                                  Save
+                                </button>
+                              </form>
+                              {existing && (
+                                <form action={deleteDelayNote} data-progress="1">
+                                  <input type="hidden" name="note_id" value={existing.note_id} />
+                                  <button
+                                    type="submit"
+                                    title="Delete this note"
+                                    style={{ padding: "4px 10px", fontSize: "0.8rem", color: "#dc2626", border: "1px solid #cbd5e1", borderRadius: 6, background: "#fff" }}
+                                  >
+                                    Delete
+                                  </button>
+                                </form>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+        {delayNoteLog.length > 0 && (
+          <section className={styles.card} aria-label="Delay notes log" style={{ minWidth: 0 }}>
+            <h2>Delay notes ({delayNoteLog.length})</h2>
+            <p className={styles.muted}>Every note saved above, against an individual item — newest first.</p>
+            <div className={styles.tableScroll} style={{ maxHeight: "360px", maxWidth: "100%", overflowY: "auto", overflowX: "auto" }}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Item type</th>
+                    <th>Item ID</th>
+                    <th>Person</th>
+                    <th>With whom</th>
+                    <th>Note</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {delayNoteLog.map((note) => (
+                    <tr key={note.note_id}>
+                      <td>{note.recorded_at ? formatIst(note.recorded_at) : "—"}</td>
+                      <td>{note.item_type || "—"}</td>
                       <td>
-                        <Link href={g.href}>{g.person}</Link>
+                        <Link href={`/inventory/${encodeURIComponent(note.item_id)}`}>{note.item_id}</Link>
                       </td>
-                      <td>{g.role}</td>
-                      <td>{g.city}</td>
-                      <td>{g.sentBy}</td>
-                      <td>{g.sentOn}</td>
-                      <td>{g.issue}</td>
-                      <td>{howLong(g.hours)}</td>
+                      <td>{note.person || "—"}</td>
+                      <td>{note.sent_by || "—"}</td>
+                      <td style={{ whiteSpace: "normal" }}>{note.note}</td>
                       <td>
-                        <Link href={g.href}>{g.count}</Link>
+                        <form action={deleteDelayNote} data-progress="1">
+                          <input type="hidden" name="note_id" value={note.note_id} />
+                          <button
+                            type="submit"
+                            title="Delete this note"
+                            style={{ padding: "3px 8px", fontSize: "0.78rem", color: "#dc2626", border: "1px solid #cbd5e1", borderRadius: 6, background: "#fff" }}
+                          >
+                            Delete
+                          </button>
+                        </form>
                       </td>
                     </tr>
                   ))}
