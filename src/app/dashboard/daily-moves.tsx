@@ -3,6 +3,7 @@ import { ROLE_LABELS } from "@/lib/labels";
 import type { Role } from "@/lib/schema";
 import { compact, type MoveDay, type MoveHour } from "@/lib/daily-moves";
 import MultiSelect from "../inventory/MultiSelect";
+import DateRangeInputs from "./DateRangeInputs";
 import { n } from "./charts";
 import styles from "./dashboard.module.css";
 
@@ -122,14 +123,7 @@ function MoveFilters({
         selected={role}
         group={`${prefix}filters`}
       />
-      <label>
-        From
-        <input type="date" name={`${prefix}from`} defaultValue={from} max={today} />
-      </label>
-      <label>
-        To
-        <input type="date" name={`${prefix}to`} defaultValue={to} max={today} />
-      </label>
+      <DateRangeInputs prefix={prefix} from={from} to={to} today={today} />
       <button type="submit">Apply</button>
       {filtered && (
         <Link href={clearHref} className={styles.link}>
