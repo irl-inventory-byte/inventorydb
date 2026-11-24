@@ -500,8 +500,12 @@ export default async function InventoryPage({
               const storage = isMobile ? mobileDetails(item.attributes)["Storage"] || "Not set" : card.storage;
               const cardType = isMobile ? "—" : card.cardType;
 
+              // Power banks jump to the Dashboard's own "Power bank history" section (Dashboard → Power
+              // Bank tab) instead of the generic item page, since that's where their history now lives.
               const itemUrl =
-                `/inventory/${encodeURIComponent(item.item_id)}`;
+                item.item_type === "power_bank"
+                  ? `/dashboard?type=power_bank&pb=${encodeURIComponent(item.item_id)}#pb-history`
+                  : `/inventory/${encodeURIComponent(item.item_id)}`;
 
               // From / To of the latest movement (send, receive or correction).
               const last = eventById.get(item.last_event_id);

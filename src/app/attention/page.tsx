@@ -28,7 +28,7 @@ export default async function AttentionPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   // Same roles as the "Need attention" tile on the home page — Admin and IM only.
-  const user = await requireRole();
+  const user = await requireRole("admin", "im");
 
   const sp = await searchParams;
   const minDaysRaw = Number(one(sp.days) || "0");
@@ -264,11 +264,19 @@ export default async function AttentionPage({
                     const existing = itemNotes[0];
                     const forItem = groupItems.length === 1 ? groupItems[0]?.id : (existing?.item_id ?? groupItems[0]?.id);
                     const showInline = distinctNotes.size <= 1;
+                    // A single power bank's row can jump straight to its history on the Dashboard
+                    // (the "Power bank history" section) instead of the plain filtered Inventory list —
+                    // only makes sense when the row is exactly one item, since that section shows one
+                    // power bank at a time.
+                    const rowHref =
+                      g.type === "Power bank" && groupItems.length === 1
+                        ? `/dashboard?type=power_bank&pb=${encodeURIComponent(groupItems[0]!.id)}#pb-history`
+                        : g.href;
                     return (
                       <tr key={g.key}>
                         <td>{g.type}</td>
                         <td>
-                          <Link href={g.href}>{g.person}</Link>
+                          <Link href={rowHref}>{g.person}</Link>
                         </td>
                         <td>{g.role}</td>
                         <td>{g.city}</td>
@@ -277,7 +285,7 @@ export default async function AttentionPage({
                         <td>{g.issue}</td>
                         <td>{howLong(g.hours)}</td>
                         <td>
-                          <Link href={g.href}>{g.count}</Link>
+                          <Link href={rowHref}>{g.count}</Link>
                         </td>
                         <td style={{ minWidth: 220 }}>
                           {!forItem ? (
@@ -350,7 +358,15 @@ export default async function AttentionPage({
                       <td>{note.recorded_at ? formatIst(note.recorded_at) : "—"}</td>
                       <td>{note.item_type || "—"}</td>
                       <td>
-                        <Link href={`/inventory/${encodeURIComponent(note.item_id)}`}>{note.item_id}</Link>
+                        <Link
+                          href={
+                            note.item_type === "Power bank"
+                              ? `/dashboard?type=power_bank&pb=${encodeURIComponent(note.item_id)}#pb-history`
+                              : `/inventory/${encodeURIComponent(note.item_id)}`
+                          }
+                        >
+                          {note.item_id}
+                        </Link>
                       </td>
                       <td>{note.person || "—"}</td>
                       <td>{note.sent_by || "—"}</td>
