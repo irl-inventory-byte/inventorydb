@@ -147,6 +147,13 @@ const ADMIN: Tile[] = [
     roles: ["admin"],
   },
   {
+    href: "/admin/corrections",
+    title: "Correction entries",
+    desc: "Every item corrected by hand: what changed, when, and who did it.",
+    icon: "clock",
+    roles: ["admin"],
+  },
+  {
     href: "/admin/login-locations",
     title: "Login Locations",
     desc: "Where each sign-in happened, from the browser's location prompt.",
