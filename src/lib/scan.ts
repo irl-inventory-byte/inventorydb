@@ -1,14 +1,26 @@
 /** The IMEI-like numbers (14 to 17 digits) in a scanned line, e.g. a phone QR code "IMEI1 - IMEI2". */
 export const imeiRuns = (code: string): string[] => String(code ?? "").match(/\d{14,17}/g) ?? [];
 
+// A power bank's id is "Power Bank - <number>" (see power-bank-actions.ts's ASSET_TAG_FORMAT) — the
+// only id format in this app that contains spaces. Matched loosely here (extra/missing spaces around
+// the dash) and normalized to the exact canonical form, so it survives collectIds() below instead of
+// being split apart word by word like any other line.
+const POWER_BANK_LINE = /^power\s*bank\s*-\s*(\d+)$/i;
+
 /**
  * Merges ticked ids with scanned/pasted text (one serial per line), trimmed and de-duplicated.
  * A line with an IMEI in it (a phone QR code, e.g. "356… - 357…") is kept whole: it is one phone.
+ * A line that's a power bank's "Power Bank - <number>" id is also kept whole (normalized to that
+ * exact form) instead of being split into separate words by its spaces and dash.
  */
 export function collectIds(scanned: string, ticked: string[] = []): string[] {
-  const fromScan = scanned
-    .split(/\r?\n/)
-    .flatMap((line) => (imeiRuns(line).length ? [line.trim()] : line.split(/[\s,]+/)));
+  const fromScan = scanned.split(/\r?\n/).flatMap((line) => {
+    const trimmed = line.trim();
+    if (imeiRuns(line).length) return [trimmed];
+    const powerBank = POWER_BANK_LINE.exec(trimmed);
+    if (powerBank) return [`Power Bank - ${powerBank[1]}`];
+    return line.split(/[\s,]+/);
+  });
   const all = [...ticked, ...fromScan].map((s) => s.trim()).filter(Boolean);
   return [...new Set(all)];
 }
