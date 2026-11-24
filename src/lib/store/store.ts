@@ -82,6 +82,7 @@ export class Store {
       tab === "acknowledgments" ||
       tab === "lost_notes" ||
       tab === "lost_attachments" ||
+      tab === "login_locations" ||
       tab === "audits" ||
       tab === "settings" ||
       tab === "sd_card_durations" ||
@@ -96,7 +97,8 @@ export class Store {
       tab === "settings" ||
       tab === "sd_card_durations" ||
       tab === "attention_notes" ||
-      tab === "delay_notes"
+      tab === "delay_notes" ||
+      tab === "login_locations"
     )
       return rows as unknown as TabRows[T][];
 

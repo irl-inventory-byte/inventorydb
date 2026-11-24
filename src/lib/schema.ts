@@ -187,6 +187,20 @@ export const TABS = {
     "recorded_by", // login email
     "recorded_by_name",
   ],
+  // One row per login: where it came from, for admins to review (src/app/admin/login-locations).
+  // NOTE: best-effort guess at the columns — I don't have src/app/api/login-location/route.ts's actual
+  // content. If the build complains about a missing/extra property on a LoginLocation, tell me which
+  // and I'll adjust this list and the interface below to match.
+  login_locations: [
+    "login_id",
+    "email",
+    "ip",
+    "city",
+    "region",
+    "country",
+    "user_agent",
+    "logged_at",
+  ],
 } as const;
 
 export type TabName = keyof typeof TABS;
@@ -461,6 +475,17 @@ export interface DelayNote extends Row {
   recorded_by_name: string;
 }
 
+export interface LoginLocation extends Row {
+  login_id: string;
+  email: string;
+  ip: string;
+  city: string;
+  region: string;
+  country: string;
+  user_agent: string;
+  logged_at: string;
+}
+
 export interface TabRows {
   items: Item;
   events: ItemEvent;
@@ -482,4 +507,5 @@ export interface TabRows {
   sd_card_durations: SdCardDuration;
   attention_notes: AttentionNote;
   delay_notes: DelayNote;
+  login_locations: LoginLocation;
 }
