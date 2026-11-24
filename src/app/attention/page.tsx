@@ -264,14 +264,7 @@ export default async function AttentionPage({
                     const existing = itemNotes[0];
                     const forItem = groupItems.length === 1 ? groupItems[0]?.id : (existing?.item_id ?? groupItems[0]?.id);
                     const showInline = distinctNotes.size <= 1;
-                    // A single power bank's row can jump straight to its history on the Dashboard
-                    // (the "Power bank history" section) instead of the plain filtered Inventory list —
-                    // only makes sense when the row is exactly one item, since that section shows one
-                    // power bank at a time.
-                    const rowHref =
-                      g.type === "Power bank" && groupItems.length === 1
-                        ? `/dashboard?type=power_bank&pb=${encodeURIComponent(groupItems[0]!.id)}#pb-history`
-                        : g.href;
+                    const rowHref = g.href;
                     return (
                       <tr key={g.key}>
                         <td>{g.type}</td>
@@ -358,13 +351,7 @@ export default async function AttentionPage({
                       <td>{note.recorded_at ? formatIst(note.recorded_at) : "—"}</td>
                       <td>{note.item_type || "—"}</td>
                       <td>
-                        <Link
-                          href={
-                            note.item_type === "Power bank"
-                              ? `/dashboard?type=power_bank&pb=${encodeURIComponent(note.item_id)}#pb-history`
-                              : `/inventory/${encodeURIComponent(note.item_id)}`
-                          }
-                        >
+                        <Link href={`/inventory/${encodeURIComponent(note.item_id)}`}>
                           {note.item_id}
                         </Link>
                       </td>
