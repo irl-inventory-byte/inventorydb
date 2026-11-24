@@ -500,8 +500,12 @@ export default async function InventoryPage({
               const storage = isMobile ? mobileDetails(item.attributes)["Storage"] || "Not set" : card.storage;
               const cardType = isMobile ? "—" : card.cardType;
 
-              const itemUrl =
-                `/inventory/${encodeURIComponent(item.item_id)}`;
+              const itemPath = `/inventory/${encodeURIComponent(item.item_id)}`;
+              // ?type= disambiguates items that share the same item_id text across types (e.g. an SD
+              // card "IC-…" code re-typed as a power bank's Asset Tag) — see the matching comment in
+              // inventory/[id]/page.tsx for why that lookup needs the hint. Kept off itemPath (used for
+              // /delete) since that route doesn't take a type hint.
+              const itemUrl = `${itemPath}?type=${encodeURIComponent(item.item_type || "sd_card")}`;
 
               // From / To of the latest movement (send, receive or correction).
               const last = eventById.get(item.last_event_id);
@@ -533,7 +537,7 @@ export default async function InventoryPage({
                       {isAdmin && (
                         <div style={{ marginTop: 8 }}>
                           <Link
-                            href={`${itemUrl}/delete`}
+                            href={`${itemPath}/delete`}
                             aria-label={`Delete item ${item.item_id}`}
                             style={{
                               display: "inline-block",
@@ -618,7 +622,7 @@ export default async function InventoryPage({
                       {isAdmin && (
                         <div style={{ marginTop: 8 }}>
                           <Link
-                            href={`${itemUrl}/delete`}
+                            href={`${itemPath}/delete`}
                             aria-label={`Delete item ${item.item_id}`}
                             style={{
                               display: "inline-block",
@@ -678,7 +682,7 @@ export default async function InventoryPage({
                     {isAdmin && (
                       <div style={{ marginTop: 8 }}>
                         <Link
-                          href={`${itemUrl}/delete`}
+                          href={`${itemPath}/delete`}
                           aria-label={`Delete item ${item.item_id}`}
                           style={{
                             display: "inline-block",

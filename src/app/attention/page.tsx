@@ -351,7 +351,11 @@ export default async function AttentionPage({
                       <td>{note.recorded_at ? formatIst(note.recorded_at) : "—"}</td>
                       <td>{note.item_type || "—"}</td>
                       <td>
-                        <Link href={`/inventory/${encodeURIComponent(note.item_id)}`}>
+                        <Link
+                          href={`/inventory/${encodeURIComponent(note.item_id)}${
+                            note.item_type ? `?type=${encodeURIComponent(note.item_type)}` : ""
+                          }`}
+                        >
                           {note.item_id}
                         </Link>
                       </td>

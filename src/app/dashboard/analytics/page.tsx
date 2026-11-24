@@ -767,7 +767,9 @@ export default async function AnalyticsPage({
                   {d.longestOut.map((r) => (
                     <tr key={r.item_id}>
                       <td>
-                        <Link href={`/inventory/${encodeURIComponent(r.item_id)}`}>
+                        <Link
+                          href={`/inventory/${encodeURIComponent(r.item_id)}?type=${encodeURIComponent(r.item_type)}`}
+                        >
                           {r.item_id}
                         </Link>
                       </td>

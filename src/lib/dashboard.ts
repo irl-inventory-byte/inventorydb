@@ -48,6 +48,7 @@ export interface LateGroup {
 
 export interface AgingRow {
   item_id: string;
+  item_type: string;
   status: Status;
   holder: string;
   hub: string;
@@ -162,6 +163,7 @@ export function computeDashboard(
   const longestOut: AgingRow[] = out
     .map((i) => ({
       item_id: i.item_id,
+      item_type: i.item_type || "sd_card",
       status: i.status,
       holder: personById.get(i.current_holder)?.name ?? i.current_holder,
       hub: hubName.get(i.current_hub) ?? i.current_hub,

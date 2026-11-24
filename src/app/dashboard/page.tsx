@@ -2071,7 +2071,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
                       <strong>{selected.item_id}</strong> — {STATUS_LABELS[selected.status] ?? selected.status} ·{" "}
                       {pbHubName.get(selected.current_hub) ?? selected.current_hub} · held by{" "}
                       {pbPersonName.get(selected.current_holder) ?? (selected.current_holder || "—")} ·{" "}
-                      <Link href={`/inventory/${encodeURIComponent(selected.item_id)}`} className={styles.link}>
+                      <Link
+                        href={`/inventory/${encodeURIComponent(selected.item_id)}?type=power_bank`}
+                        className={styles.link}
+                      >
                         Open full item page
                       </Link>
                     </p>
@@ -2364,7 +2367,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
                       {detailRow.items.map((it) => (
                         <tr key={it.id}>
                           <td>
-                            <Link href={`/inventory/${encodeURIComponent(it.id)}`} className={styles.link}>
+                            <Link
+                              href={`/inventory/${encodeURIComponent(it.id)}${it.type ? `?type=${encodeURIComponent(it.type)}` : ""}`}
+                              className={styles.link}
+                            >
                               {it.id}
                             </Link>
                           </td>
@@ -2466,7 +2472,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
                           <td>{note.recorded_at ? formatIst(note.recorded_at) : "—"}</td>
                           <td>{note.item_type || "—"}</td>
                           <td>
-                            <Link href={`/inventory/${encodeURIComponent(note.item_id)}`} className={styles.link}>
+                            <Link
+                              href={`/inventory/${encodeURIComponent(note.item_id)}${
+                                note.item_type ? `?type=${encodeURIComponent(note.item_type)}` : ""
+                              }`}
+                              className={styles.link}
+                            >
                               {note.item_id}
                             </Link>
                           </td>

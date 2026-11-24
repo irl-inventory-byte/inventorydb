@@ -11,11 +11,6 @@ import { applyCorrection } from "../actions";
 import CorrectionPanel from "../CorrectionPanel";
 import RigChecks from "./RigChecks";
 
-// Always render this page fresh for whatever id is in the URL — never serve a cached render from a
-// different item. (Fixes: clicking one item sometimes showed another item's page/content.)
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
 type InventoryItemPageProps = {
   params: Promise<{ id: string }>;
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -32,7 +27,18 @@ export default async function ItemPage({ params, searchParams }: InventoryItemPa
   // whitespace, or the browser/another page encoding a space or special character differently than this
   // route decodes it. decodeURIComponent is tried too, since an id with a space or "-" sometimes arrives
   // double-encoded from a Link built with a template string instead of encodeURIComponent. Falls back to
-  // a case-insensitive, trimmed match across every item before finally giving up with notFound().
+  // a normalized match across every item (case-insensitive, trimmed, runs of whitespace collapsed to one
+  // space, and look-alike dash characters — en dash "–", em dash "—", minus sign "−" — folded to a plain
+  // hyphen) before finally giving up with notFound(). Power Bank Asset Tags ("Power Bank - 20") are the
+  // main reason this needs to be this tolerant: that text is free-typed at creation time, so a stray
+  // double space or a dash typed/pasted as something other than "-" produces an item_id that LOOKS
+  // identical in every list and table but will never match a byte-for-byte comparison.
+  const normalize = (s: string) =>
+    s
+      .trim()
+      .toUpperCase()
+      .replace(/[‒–—−]/g, "-") // en dash, em dash, figure dash, minus sign → "-"
+      .replace(/\s+/g, " "); // any run of whitespace (incl. non-breaking space) → one plain space
   let item = await store.getItem(id);
   if (!item) {
     let decoded = id;
@@ -41,9 +47,22 @@ export default async function ItemPage({ params, searchParams }: InventoryItemPa
     } catch {
       // Not valid percent-encoding — fall through and try the raw id as-is below.
     }
-    const wanted = decoded.trim().toUpperCase();
+    const wanted = normalize(decoded);
     const items = await store.list("items");
-    item = items.find((i) => i.item_id.trim().toUpperCase() === wanted);
+    item = items.find((i) => normalize(i.item_id) === wanted);
+  }
+  // Two different items (e.g. an SD card and a power bank) can end up with the same item_id text —
+  // usually an old SD card code re-typed as a power bank's Asset Tag. getItem()/the fallback above just
+  // return whichever one happens to come first in the list, which could be the wrong type entirely (a
+  // power bank link opening an SD card's "IC-…" history instead). The list page already knows each row's
+  // real type when it builds the link, so it passes it along as ?type=; when that hint is present and the
+  // item we found doesn't match it, look for another item with the same (normalized) id that does.
+  const typeHint = one(sp.type);
+  if (item && typeHint && itemType(item) !== typeHint) {
+    const items = await store.list("items");
+    const wanted = normalize(item.item_id);
+    const match = items.find((i) => normalize(i.item_id) === wanted && itemType(i) === typeHint);
+    if (match) item = match;
   }
   if (!item) notFound();
   const isRig = itemType(item) === "rig";

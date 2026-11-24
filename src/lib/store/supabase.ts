@@ -338,14 +338,33 @@ export class SupabaseBackend implements TableBackend {
 
   /**
    * All rows, oldest first. Supabase gives at most PAGE rows per request, so a big table (events) needs
-   * many requests. The first one also asks for the total, then the rest are fetched AT THE SAME TIME
-   * (PARALLEL at once) instead of one after another, so 50 pages take about as long as 7, not 50.
+   * many requests.
+   *
+   * These are fetched by `_seq` RANGE (`_seq=gt.lo&_seq=lte.hi`), not by `OFFSET`. OFFSET makes Postgres
+   * walk and discard that many rows every single time, which gets slower the deeper a page is — at
+   * ~295K rows that became slow enough to exceed Postgres's own statement timeout ("canceling statement
+   * due to statement timeout") and fail outright. A `_seq` range is a direct indexed lookup instead, so
+   * it's equally fast regardless of how deep into the table it starts.
+   *
+   * Ranges are first split evenly by VALUE across the known span of `_seq`, sized with a safety margin
+   * (aiming for well under PAGE rows each) so uneven density rarely matters. If a range still comes back
+   * at the row cap anyway (meaning it may hold more than we asked for), it's split in half and re-fetched
+   * instead of silently dropping rows — so correctness never depends on the density guess being right,
+   * only on it being a reasonable starting point.
    */
   private async download(tab: TabName, afterSeq?: number): Promise<{ rows: Row[]; maxSeq: number }> {
     const columns = TABS[tab];
-    const since = afterSeq === undefined ? "" : `&_seq=gt.${afterSeq}`;
-    const select = `select=${columns.join(",")},_seq${since}&order=_seq.asc`;
-    let maxSeq = afterSeq ?? 0;
+    const lo0 = afterSeq ?? 0;
+
+    const [countRes, maxRes] = await Promise.all([
+      this.call("GET", tab, `select=_seq&_seq=gt.${lo0}&limit=1`, undefined, { Prefer: "count=exact" }),
+      this.call("GET", tab, `select=_seq&_seq=gt.${lo0}&order=_seq.desc&limit=1`),
+    ]);
+    const total = Number(countRes.headers.get("content-range")?.split("/")[1]);
+    const maxRow = ((await maxRes.json()) as { _seq: number | string }[])[0];
+    const hi0 = maxRow ? Number(maxRow._seq) : lo0;
+
+    let maxSeq = lo0;
     const toRows = (page: Record<string, unknown>[]): Row[] =>
       page.map((r) => {
         const row: Row = {};
@@ -354,42 +373,46 @@ export class SupabaseBackend implements TableBackend {
         if (seq > maxSeq) maxSeq = seq;
         return row;
       });
-    const fetchPage = async (offset: number, count = false) => {
+
+    if (!Number.isFinite(total) || total <= 0 || hi0 <= lo0) return { rows: [], maxSeq };
+
+    const fetchRange = async (lo: number, hi: number) => {
       const res = await this.call(
         "GET",
         tab,
-        `${select}&limit=${PAGE}&offset=${offset}`,
-        undefined,
-        count ? { Prefer: "count=exact" } : {},
+        `select=${columns.join(",")},_seq&_seq=gt.${lo}&_seq=lte.${hi}&order=_seq.asc&limit=${PAGE}`,
       );
-      return { res, page: (await res.json()) as Record<string, unknown>[] };
+      const page = (await res.json()) as Record<string, unknown>[];
+      return { page, truncated: page.length >= PAGE };
     };
 
-    // First page, with the total ("Content-Range: 0-999/53412").
-    const first = await fetchPage(0, true);
-    const total = Number(first.res.headers.get("content-range")?.split("/")[1]);
-    const pages: Record<string, unknown>[][] = [first.page];
+    // Safety margin: twice as many buckets as a naive total/PAGE split, so an uneven spread of rows
+    // across the range rarely trips the split-and-retry path below.
+    const bucketCount = Math.max(1, Math.ceil(total / (PAGE / 2)));
+    const span = hi0 - lo0;
+    const initial: [number, number][] = [];
+    for (let i = 0; i < bucketCount; i++) {
+      const lo = lo0 + Math.floor((span * i) / bucketCount);
+      const hi = i === bucketCount - 1 ? hi0 : lo0 + Math.floor((span * (i + 1)) / bucketCount);
+      if (hi > lo) initial.push([lo, hi]);
+    }
 
-    if (Number.isFinite(total) && total > PAGE) {
-      const offsets: number[] = [];
-      for (let o = PAGE; o < total; o += PAGE) offsets.push(o);
-      const rest: Record<string, unknown>[][] = new Array(offsets.length);
-      let next = 0;
-      const worker = async () => {
-        while (next < offsets.length) {
-          const i = next++;
-          rest[i] = (await fetchPage(offsets[i])).page;
+    const pages: Record<string, unknown>[][] = [];
+    const pending = initial;
+    while (pending.length) {
+      const batch = pending.splice(0, PARALLEL);
+      const results = await Promise.all(batch.map(([lo, hi]) => fetchRange(lo, hi)));
+      results.forEach((result, i) => {
+        const [lo, hi] = batch[i];
+        if (result.truncated && hi - lo > 1) {
+          // This range hit the row cap — it may hold more rows than fit in one response. Split it and
+          // retry both halves rather than silently losing whatever didn't fit.
+          const mid = lo + Math.floor((hi - lo) / 2);
+          pending.push([lo, mid], [mid, hi]);
+        } else {
+          pages.push(result.page);
         }
-      };
-      await Promise.all(Array.from({ length: Math.min(PARALLEL, offsets.length) }, worker));
-      pages.push(...rest);
-      // Rows added while reading: pick them up the old way.
-      for (let o = PAGE * (offsets.length + 1); pages[pages.length - 1].length === PAGE; o += PAGE) {
-        pages.push((await fetchPage(o)).page);
-      }
-    } else if (!Number.isFinite(total)) {
-      // No total in the answer: fall back to one page after another.
-      for (let o = PAGE; pages[pages.length - 1].length === PAGE; o += PAGE) pages.push((await fetchPage(o)).page);
+      });
     }
 
     const rows = pages.flatMap(toRows);
