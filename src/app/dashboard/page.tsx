@@ -602,20 +602,21 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   const rtdPendingCount = items.filter(
     (i) => i.item_type === "rig" && i.status === "pending" && latestQc.get(i.item_id) === "repaired",
   ).length;
-  // Sent to hardware, not received by them yet (hardware hasn't picked it up off the "qc_fail" tile's
-  // total yet — same status the admin "To be received" tile's toHw already counts).
+  // Sent to hardware, not received by them yet. These are already counted under "With hardware team"
+  // above (see rigState in lib/rig-state.ts) — this is just the "not yet received" slice of that same
+  // tile, shown separately below so it's clear which of them hardware still needs to pick up.
   const hwPendingCount = items.filter((i) => i.item_type === "rig" && i.status === "pending_hardware").length;
   const rigTotal = items.filter((i) => i.item_type === "rig").length;
   const rigShare = (v: number) => (rigTotal ? `${Math.round((v / rigTotal) * 100)}% of all rigs` : "");
   const RIG_TILE: Record<(typeof RIG_STATES)[number], { icon: IconName; color: string; hint?: string }> = {
     in_stock: { icon: "check", color: "var(--series-3)", hint: "With the IM" },
-    hardware: { icon: "wrench", color: "var(--series-1)", hint: "Received by hardware" },
+    hardware: { icon: "wrench", color: "var(--series-1)", hint: "Sent to hardware, whether or not received yet" },
     internal: { icon: "user", color: "var(--series-7)", hint: "Checked out to internal people" },
     fo: { icon: "user", color: "var(--series-2)", hint: "Checked out to an FO" },
     transit: { icon: "truck", color: "var(--series-4)", hint: "Sent by the IM to an IFO" },
     qc_pending: { icon: "shield", color: "var(--series-7)", hint: "Received by QC" },
     qc_pass: { icon: "check", color: "var(--series-3)", hint: "Passed by QC, sent to IM, not received yet" },
-    qc_fail: { icon: "alert", color: "var(--warning)", hint: "With QC, or sent to hardware, not received yet" },
+    qc_fail: { icon: "alert", color: "var(--warning)", hint: "QC marked Fail, not yet sent to hardware" },
     rtd: { icon: "send", color: "var(--series-3)", hint: "Repaired by hardware — sent to IM, whether or not received yet" },
     dead: { icon: "archive", color: "var(--text-muted)", hint: "Declared dead by hardware" },
     rnd: { icon: "wrench", color: "var(--series-7)", hint: "Moved to R&D by hardware" },
@@ -674,7 +675,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
     icon: "inbox",
     color: "var(--series-4)",
   });
-  // Sent to hardware, hardware hasn't received it yet — the part of "QC fail" that's still in transit.
+  // Sent to hardware, hardware hasn't received it yet — the not-yet-received slice of "With hardware
+  // team" (see hwPendingCount above), shown as its own tile so it's easy to see who still needs picking up.
   rigKpis.push({
     label: "Hardware to receive",
     value: hwPendingCount,
@@ -1266,12 +1268,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   // delayNoteLog is already newest-first, so the first one seen per item wins.
   const latestNoteByItem = new Map<string, (typeof delayNoteLog)[number]>();
   for (const note of delayNoteLog) if (!latestNoteByItem.has(note.item_id)) latestNoteByItem.set(note.item_id, note);
-
-  const keepParams: Record<string, string> = {};
-  if (one(sp.type)) keepParams.type = one(sp.type);
-  if (showEmpty) keepParams.empty = "1";
-  for (const k of [...MOVE_KEYS, ...EXTRA_KEYS]) if (val(k)) keepParams[k] = val(k);
-
   // "Moved per day" and "Moved per hour of day": each has its own Items, Person, City and Role filters, and
   // several values can be ticked in each (?mperson=a&mperson=b, kept in links as "a,b"). Items: empty = all
   // the types this login can see. Default range: the last 14 days.
@@ -1327,6 +1323,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   for (const k of ["type", "empty", "acity", "arole", ...MOVE_KEYS, "ufrom", "uto", "ucity", "uperson", "umodel", "uout"])
     if (val(k)) hourKeep[k] = val(k);
 
+  const keepParams: Record<string, string> = {};
+  if (one(sp.type)) keepParams.type = one(sp.type);
+  if (showEmpty) keepParams.empty = "1";
+  for (const k of [...MOVE_KEYS, ...EXTRA_KEYS]) if (val(k)) keepParams[k] = val(k);
+
   // QC team leaderboard date filter (Rig dashboard): "" means no filter, show all-time.
   const qcFrom = one(sp.qcfrom);
   const qcTo = one(sp.qcto);
@@ -1348,9 +1349,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   // Every hub's city, not just cities that already have a person assigned — a hub with no FO/IFO
   // assigned yet (e.g. a newly added city like Indore) still needs to show up as a filter option,
   // even though it will read "No acknowledgments recorded yet" until someone is added there.
-  const ackCities = [
-    ...new Set(hubs.filter((h) => h.active !== "false").map((h) => (h.city || h.name || h.hub_id).trim()).filter(Boolean)),
-  ].sort((a, b) => a.localeCompare(b));
+  const ackCities = [...new Set(hubs.map((h) => (h.city || h.name || h.hub_id).trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b),
+  );
   const ackInRange = acknowledgments.filter((a) => {
     const t = Date.parse(a.created_at || "");
     if (Number.isNaN(t)) return true; // keep undated rows rather than silently dropping them
@@ -1446,6 +1447,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
           <Link href="/handover/receipts" className={styles.tab}>
             Receipts
           </Link>
+          {(user.role === "admin" || user.role === "im" || user.role === "rig") && (
+            <Link href="/sd-details" className={styles.tab}>
+              SD card details
+            </Link>
+          )}
           {user.role === "admin" && (
             <Link href="/admin/hubs" className={styles.tab}>
               Hubs
@@ -1469,9 +1475,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
             d={d}
             items={items}
             rigView={rigView}
-            attentionHref={
-              user.role === "admin" || user.role === "im" ? `/attention${rigView ? "?type=rig" : ""}` : undefined
-            }
+            attentionHref={`/dashboard${rigView ? "?type=rig" : ""}#attention`}
             baselineTotal={rigView ? undefined : brokenBaselineTotal + (retiredBaseline ?? 0)}
             baselineStorage={rigView ? undefined : brokenStorageOverride}
             brokenCount={rigView ? undefined : brokenValue}
@@ -1484,7 +1488,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
           <PowerBankSummary
             d={d}
             items={items}
-            attentionHref={user.role === "admin" || user.role === "im" ? "/attention?type=power_bank" : undefined}
+            attentionHref="/dashboard?type=power_bank#attention"
             brokenCount={powerBankBrokenValue}
             retiredCount={powerBankRetiredValue}
           />
@@ -1840,9 +1844,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
             .filter((p) => p.active !== "false")
             .sort((a, b) => a.name.localeCompare(b.name))
             .map((p) => ({ id: p.person_id, label: `${p.name} (${ROLE_LABELS[p.role] ?? p.role})` }))}
-          cities={[...new Set(hubs.filter((h) => h.active !== "false").map((h) => (h.city || h.name || "").trim()).filter(Boolean))].sort(
-            (a, b) => a.localeCompare(b),
-          )}
+          cities={[...new Set(hubs.map((h) => (h.city || h.name || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b))}
           types={[...allowedTypes(user.role)]}
         />
 
@@ -2014,6 +2016,109 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
 
         {mobileView && <MobileCharts items={items} />}
         {powerBankView && <PowerBankCharts items={items} />}
+        {powerBankView &&
+          (() => {
+            // Pick any power bank and see its full history (every handover, correction and status
+            // change) without leaving the Dashboard — same event data /inventory/<id>'s own History
+            // table reads, just filtered to one item and shown inline here instead.
+            const pbItems = items.filter((i) => i.item_type === "power_bank");
+            const pbHubName = new Map(hubs.map((h) => [h.hub_id, h.name]));
+            const pbPersonName = new Map(people.map((p) => [p.person_id, p.name]));
+            const selectedId = one(sp.pb);
+            const selected = selectedId ? pbItems.find((i) => i.item_id === selectedId) : undefined;
+            const pbHistory = selected
+              ? events
+                  .filter((e) => e.item_id === selected.item_id)
+                  .slice()
+                  .sort((a, b) => Date.parse(a.occurred_at || "0") - Date.parse(b.occurred_at || "0"))
+              : [];
+            return (
+              <section className={styles.card} aria-label="Power bank history" id="pb-history">
+                <h2>Power bank history</h2>
+                <p className={styles.muted}>Pick a power bank to see its full history right here.</p>
+                <form method="get" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", margin: "8px 0" }}>
+                  <input type="hidden" name="type" value="power_bank" />
+                  <select
+                    name="pb"
+                    defaultValue={selectedId}
+                    style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #cbd5e1", minWidth: 220 }}
+                  >
+                    <option value="">Choose a power bank…</option>
+                    {pbItems
+                      .slice()
+                      .sort((a, b) => a.item_id.localeCompare(b.item_id))
+                      .map((i) => (
+                        <option key={i.item_id} value={i.item_id}>
+                          {i.item_id}
+                          {i.brand ? ` — ${i.brand}` : ""}
+                          {i.model ? ` ${i.model}` : ""}
+                        </option>
+                      ))}
+                  </select>
+                  <button type="submit">Show history</button>
+                  {selectedId && (
+                    <Link href="/dashboard?type=power_bank#pb-history" className={styles.link}>
+                      Clear
+                    </Link>
+                  )}
+                </form>
+
+                {selectedId && !selected && <p className={styles.error}>That power bank wasn&apos;t found.</p>}
+
+                {selected && (
+                  <>
+                    <p style={{ margin: "4px 0 10px" }}>
+                      <strong>{selected.item_id}</strong> — {STATUS_LABELS[selected.status] ?? selected.status} ·{" "}
+                      {pbHubName.get(selected.current_hub) ?? selected.current_hub} · held by{" "}
+                      {pbPersonName.get(selected.current_holder) ?? (selected.current_holder || "—")} ·{" "}
+                      <Link href={`/inventory/${encodeURIComponent(selected.item_id)}`} className={styles.link}>
+                        Open full item page
+                      </Link>
+                    </p>
+                    {pbHistory.length === 0 ? (
+                      <p className={styles.muted}>No events yet for this power bank.</p>
+                    ) : (
+                      <div
+                        className={styles.tableScroll}
+                        role="region"
+                        aria-label="Power bank history — scrollable table"
+                        tabIndex={0}
+                        style={{ maxHeight: 420, maxWidth: "100%", overflowY: "auto", overflowX: "auto" }}
+                      >
+                        <table className={styles.table} style={{ width: "100%", minWidth: 760, borderCollapse: "separate", borderSpacing: 0 }}>
+                          <thead>
+                            <tr>
+                              {["When", "Action", "From → To", "Hub", "Status", "By", "Note"].map((h) => (
+                                <th key={h} scope="col" style={TH_STYLE}>
+                                  {h}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pbHistory.map((e) => (
+                              <tr key={e.event_id}>
+                                <td style={{ whiteSpace: "nowrap" }}>{formatIst(e.occurred_at)} IST</td>
+                                <td>{e.action}</td>
+                                <td>
+                                  {pbPersonName.get(e.from_person) ?? (e.from_person || "—")} →{" "}
+                                  {pbPersonName.get(e.to_person) ?? (e.to_person || "—")}
+                                </td>
+                                <td>{pbHubName.get(e.hub) ?? e.hub}</td>
+                                <td>{STATUS_LABELS[e.status_after] ?? e.status_after}</td>
+                                <td>{e.recorded_by}</td>
+                                <td style={{ whiteSpace: "normal" }}>{e.note}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </>
+                )}
+              </section>
+            );
+          })()}
 
         <DailyMoves
           title={`${typesTitle(moveTypes)} moved per day`}
@@ -2073,6 +2178,329 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
         />
 
         <div style={{ display: "grid", gap: 20 }}>
+          {/* NEEDS ATTENTION — table (full width, so every column shows) */}
+          <section className={styles.card} id="attention" aria-label="Needs attention" style={{ minWidth: 0 }}>
+            <h2>Needs attention</h2>
+            <p className={styles.muted}>
+              Only delayed cards: each item an FO, IFO, rig team or internal person has held, or that was sent to a hub
+              and not received, for more than {LATE_AFTER_HOURS} hours since its last send or receive. Cards with the same
+              person, sender and send date are one row; Count = how many. Oldest first. Click a name or the Count to see
+              only those delayed items.
+            </p>
+
+            {delayed.length > 0 && (
+              <AttentionFilter cities={cityOptions} roles={roleOptions} city={cityFilter} role={roleFilter} keep={keepParams} />
+            )}
+
+            {delayed.length > 0 && shownDelayed.length === 0 ? (
+              <p className={styles.muted}>Nothing matches this filter.</p>
+            ) : delayed.length === 0 ? (
+              <p className={styles.ok}>
+                <span className={`${styles.icon} ${styles.iconGood}`} aria-hidden>
+                  ✓
+                </span>{" "}
+                No delayed {rigView ? "rigs" : mobileView ? "mobiles" : powerBankView ? "power banks" : "cards"} right now.
+              </p>
+            ) : (
+              <div
+                className={styles.tableScroll}
+                role="region"
+                aria-label="Delayed cards — scrollable table"
+                tabIndex={0}
+                style={{ maxHeight: "560px", maxWidth: "100%", overflowY: "auto", overflowX: "auto" }}
+              >
+                <table className={styles.table} style={{ width: "100%", minWidth: "900px", borderCollapse: "separate", borderSpacing: 0 }}>
+                  <thead>
+                    <tr>
+                      {["Type", "Person", "Role", "City", "Sent by", "Sent on", "Count", "Out for", "Note", "Issue", "Action"].map((h) => (
+                        <th key={h} scope="col" style={TH_STYLE}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shownDelayed.map((r) => {
+                      // This row can be several items (same type/person/role/city/sender/send-date)
+                      // grouped into one Count. Each item has its OWN note (saved per item_id below in
+                      // the drill-down table), so collect every one of them here instead of picking just
+                      // one — a single inline box can't honestly represent several different notes.
+                      const itemNotes = r.items
+                        .map((it) => latestNoteByItem.get(it.id))
+                        .filter((note): note is NonNullable<typeof note> => !!note && !!note.note.trim());
+                      const distinctNotes = new Set(itemNotes.map((note) => note.note.trim()));
+                      // Action column: taken as soon as ANY item in the row has a note — not pending just
+                      // because they don't all match yet.
+                      const actionTaken = itemNotes.length > 0;
+                      // Single-item rows (the common case) still get the quick inline editor, attached to
+                      // that one item. Multi-item rows where every noted item agrees (or only one of them
+                      // has a note so far) also get it, editing/adding against that one item. Only once
+                      // the items actually disagree does the inline box stop making sense — those rows
+                      // point at the drill-down below instead, where each item's note is its own.
+                      const existing = itemNotes[0];
+                      const forItem = r.items.length === 1 ? r.items[0]?.id : (existing?.item_id ?? r.items[0]?.id);
+                      const showInline = distinctNotes.size <= 1;
+                      return (
+                      <tr key={r.key} style={r.key === detailKey ? { background: "#eff6ff" } : undefined}>
+                        <td>{r.type}</td>
+                        <td style={{ whiteSpace: "normal" }}>
+                          <Link href={detailHref(r.key)} title="Show only these delayed items">
+                            {r.person}
+                          </Link>
+                        </td>
+                        <td>{r.role}</td>
+                        <td>{r.city}</td>
+                        <td style={{ whiteSpace: "normal" }}>{r.sentBy}</td>
+                        <td>{r.sentOn}</td>
+                        <td className={styles.num}>
+                          <Link href={detailHref(r.key)} className={styles.link} title="Show only these delayed items">
+                            {n(r.count)}
+                          </Link>
+                        </td>
+                        <td>{howLong(r.hours)}</td>
+                        <td style={{ minWidth: 180 }}>
+                          {!forItem ? (
+                            <span className={styles.muted}>—</span>
+                          ) : !showInline ? (
+                            // These items don't all have the same note (or some have none) — showing just
+                            // one here would hide that, so link to the drill-down instead, where each
+                            // item's own note is shown and edited separately.
+                            <Link href={detailHref(r.key)} className={styles.link} style={{ fontSize: "0.78rem" }}>
+                              {itemNotes.length} of {r.items.length} noted — view individually
+                            </Link>
+                          ) : (
+                            <form action={addDelayNote} style={{ display: "flex", gap: 4 }} data-progress="1">
+                              <input type="hidden" name="item_id" value={forItem} />
+                              <input type="hidden" name="item_type" value={r.type} />
+                              <input type="hidden" name="person" value={r.person} />
+                              <input type="hidden" name="sent_by" value={r.sentBy} />
+                              <input
+                                name="note"
+                                defaultValue={existing?.note ?? ""}
+                                placeholder="Add a note…"
+                                style={{
+                                  flex: 1,
+                                  minWidth: 0,
+                                  padding: "3px 6px",
+                                  border: "1px solid var(--border)",
+                                  borderRadius: 6,
+                                  background: "var(--surface-1)",
+                                  color: "var(--text-primary)",
+                                  fontSize: "0.8rem",
+                                }}
+                              />
+                              <button type="submit" style={{ padding: "3px 8px", fontSize: "0.78rem" }}>
+                                Save
+                              </button>
+                            </form>
+                          )}
+                        </td>
+                        <td>
+                          <span className={`${styles.icon} ${TONE.warning}`} aria-hidden>
+                            {GLYPH.warning}
+                          </span>{" "}
+                          {r.issue}
+                        </td>
+                        <td>
+                          {actionTaken ? (
+                            <span style={{ color: "#16a34a", fontWeight: 600 }}>Action taken</span>
+                          ) : (
+                            <span style={{ color: "#dc2626", fontWeight: 600 }}>Action pending</span>
+                          )}
+                        </td>
+                      </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot style={{ position: "static" }}>
+                    <tr>
+                      <th scope="row" colSpan={6} style={{ ...TFOOT_STYLE, textAlign: "left" }}>
+                        Total delayed cards
+                      </th>
+                      <td className={styles.num} style={TFOOT_STYLE}>
+                        {n(shownDelayed.reduce((t, r) => t + r.count, 0))}
+                      </td>
+                      <td colSpan={4} style={TFOOT_STYLE}>
+                        {n(shownDelayed.length)} row{shownDelayed.length === 1 ? "" : "s"}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+
+            {detailRow && (
+              <div id="delayed-items" style={{ marginTop: 20, scrollMarginTop: 80 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                  <h3 style={{ margin: 0 }}>
+                    Delayed items — {detailRow.person} ({detailRow.role}) · sent by {detailRow.sentBy} on {detailRow.sentOn} ·{" "}
+                    {n(detailRow.items.length)}
+                  </h3>
+                  <Link href={closeDetailHref} className={styles.link}>
+                    Close
+                  </Link>
+                </div>
+                <p className={styles.muted} style={{ margin: "4px 0 10px" }}>
+                  Only these items: out for more than {LATE_AFTER_HOURS} hours since their last send or receive. Oldest first.
+                </p>
+                <div
+                  className={styles.tableScroll}
+                  role="region"
+                  aria-label="Delayed items — scrollable table"
+                  tabIndex={0}
+                  style={{ maxHeight: "420px", maxWidth: "100%", overflowY: "auto", overflowX: "auto" }}
+                >
+                  <table className={styles.table} style={{ width: "100%", minWidth: "980px", borderCollapse: "separate", borderSpacing: 0 }}>
+                    <thead>
+                      <tr>
+                        {["Item ID", "Type", "City", "Sent by", "Sent at", "Out for", "Status", "Note"].map((h) => (
+                          <th key={h} scope="col" style={TH_STYLE}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detailRow.items.map((it) => (
+                        <tr key={it.id}>
+                          <td>
+                            <Link href={`/inventory/${encodeURIComponent(it.id)}`} className={styles.link}>
+                              {it.id}
+                            </Link>
+                          </td>
+                          <td>{it.type}</td>
+                          <td>{it.city}</td>
+                          <td>{it.sentBy}</td>
+                          <td>{it.sentAt}</td>
+                          <td>{howLong(it.hours)}</td>
+                          <td>{it.status}</td>
+                          <td style={{ minWidth: 220 }}>
+                            {(() => {
+                              const existingNote = latestNoteByItem.get(it.id);
+                              return (
+                                <div style={{ display: "flex", gap: 6 }}>
+                                  <form action={addDelayNote} style={{ display: "flex", gap: 6, flex: 1, minWidth: 0 }} data-progress="1">
+                                    <input type="hidden" name="item_id" value={it.id} />
+                                    <input type="hidden" name="item_type" value={it.type} />
+                                    <input type="hidden" name="person" value={detailRow.person} />
+                                    <input type="hidden" name="sent_by" value={it.sentBy} />
+                                    <input
+                                      name="note"
+                                      required
+                                      // Was always blank here before, even right after saving — the saved
+                                      // note never got read back into the box, so it LOOKED like nothing
+                                      // had been saved. Now it's prefilled with whatever's actually saved.
+                                      defaultValue={existingNote?.note ?? ""}
+                                      placeholder="Add a note…"
+                                      style={{
+                                        flex: 1,
+                                        minWidth: 0,
+                                        padding: "4px 8px",
+                                        border: "1px solid var(--border)",
+                                        borderRadius: 6,
+                                        background: "var(--surface-1)",
+                                        color: "var(--text-primary)",
+                                        fontSize: "0.85rem",
+                                      }}
+                                    />
+                                    <button type="submit" style={{ padding: "4px 10px", fontSize: "0.85rem" }}>
+                                      Save
+                                    </button>
+                                  </form>
+                                  {existingNote && (
+                                    <form action={deleteDelayNote} data-progress="1">
+                                      <input type="hidden" name="note_id" value={existingNote.note_id} />
+                                      <button
+                                        type="submit"
+                                        title="Delete this note"
+                                        style={{
+                                          padding: "4px 10px",
+                                          fontSize: "0.85rem",
+                                          color: "#dc2626",
+                                          border: "1px solid var(--border)",
+                                          borderRadius: 6,
+                                          background: "var(--surface-1)",
+                                        }}
+                                      >
+                                        Delete
+                                      </button>
+                                    </form>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* DELAY NOTES LOG — every note saved above (against an individual delayed item), in its own
+                table: Date, Item type, Item ID, Person, With whom, Note. Newest first. */}
+            {delayNoteLog.length > 0 && (
+              <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid var(--border)" }}>
+                <h3 style={{ margin: "0 0 10px" }}>Delay notes ({delayNoteLog.length})</h3>
+                <div
+                  className={styles.tableScroll}
+                  role="region"
+                  aria-label="Delay notes — scrollable table"
+                  tabIndex={0}
+                  style={{ maxHeight: "360px", maxWidth: "100%", overflowY: "auto", overflowX: "auto" }}
+                >
+                  <table className={styles.table} style={{ width: "100%", minWidth: "760px", borderCollapse: "separate", borderSpacing: 0 }}>
+                    <thead>
+                      <tr>
+                        {["Date", "Item", "Item ID", "Person", "With whom", "Note", ""].map((h) => (
+                          <th key={h} scope="col" style={TH_STYLE}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {delayNoteLog.map((note) => (
+                        <tr key={note.note_id}>
+                          <td>{note.recorded_at ? formatIst(note.recorded_at) : "—"}</td>
+                          <td>{note.item_type || "—"}</td>
+                          <td>
+                            <Link href={`/inventory/${encodeURIComponent(note.item_id)}`} className={styles.link}>
+                              {note.item_id}
+                            </Link>
+                          </td>
+                          <td>{note.person || "—"}</td>
+                          <td>{note.sent_by || "—"}</td>
+                          <td style={{ whiteSpace: "normal" }}>{note.note}</td>
+                          <td>
+                            <form action={deleteDelayNote} data-progress="1">
+                              <input type="hidden" name="note_id" value={note.note_id} />
+                              <button
+                                type="submit"
+                                title="Delete this note"
+                                style={{
+                                  padding: "3px 8px",
+                                  fontSize: "0.78rem",
+                                  color: "#dc2626",
+                                  border: "1px solid var(--border)",
+                                  borderRadius: 6,
+                                  background: "var(--surface-1)",
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </form>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </section>
+
           {/* WHO HAS ITEMS */}
           <section className={styles.card} aria-label="Who has items" style={{ minWidth: 0 }}>
             <h2>Who has items</h2>
