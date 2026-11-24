@@ -221,7 +221,10 @@ export class SupabaseBackend implements TableBackend {
     // every request: instead of every instance redownloading 295K rows independently, they all share
     // one copy in Supabase itself (the events_cache table), kept current the same way below.
     if (!this.events) {
-      const shared = await this.readSharedEventsCache().catch(() => null);
+      const shared = await this.readSharedEventsCache().catch((err) => {
+        console.error("[events_cache] read failed:", err);
+        return null;
+      });
       if (shared) this.events = shared;
     }
 
@@ -232,7 +235,9 @@ export class SupabaseBackend implements TableBackend {
         if (this.events === kept && total === kept.rows.length + added.rows.length) {
           kept.rows.push(...added.rows);
           kept.maxSeq = Math.max(kept.maxSeq, added.maxSeq);
-          if (added.rows.length) await this.writeSharedEventsCache(kept).catch(() => {});
+          if (added.rows.length) {
+            await this.writeSharedEventsCache(kept).catch((err) => console.error("[events_cache] write failed:", err));
+          }
           return kept.rows;
         }
       } catch {
@@ -243,7 +248,7 @@ export class SupabaseBackend implements TableBackend {
     this.events = { rows: full.rows, maxSeq: full.maxSeq, at: Date.now() };
     // Shows in Vercel → Logs: how often the whole history is downloaded (each one counts as egress).
     console.log(`[supabase] full events download: ${full.rows.length} rows${kept ? "" : " (server start)"}`);
-    await this.writeSharedEventsCache(this.events).catch(() => {});
+    await this.writeSharedEventsCache(this.events).catch((err) => console.error("[events_cache] write failed:", err));
     return full.rows;
   }
 
@@ -471,7 +476,7 @@ export class SupabaseBackend implements TableBackend {
     if (this.events && deletedEventRows.length) {
       const removedIds = new Set(deletedEventRows.map((r) => r.event_id));
       this.events = { ...this.events, rows: this.events.rows.filter((r) => !removedIds.has(r.event_id)) };
-      await this.writeSharedEventsCache(this.events).catch(() => {});
+      await this.writeSharedEventsCache(this.events).catch((err) => console.error("[events_cache] write failed:", err));
     }
 
     return { deletedItems, deletedEvents };
