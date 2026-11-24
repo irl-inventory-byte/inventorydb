@@ -188,18 +188,14 @@ export const TABS = {
     "recorded_by_name",
   ],
   // One row per login: where it came from, for admins to review (src/app/admin/login-locations).
-  // NOTE: best-effort guess at the columns — I don't have src/app/api/login-location/route.ts's actual
-  // content. If the build complains about a missing/extra property on a LoginLocation, tell me which
-  // and I'll adjust this list and the interface below to match.
   login_locations: [
-    "login_id",
+    "login_location_id",
     "email",
-    "ip",
-    "city",
-    "region",
-    "country",
-    "user_agent",
-    "logged_at",
+    "role",
+    "latitude",
+    "longitude",
+    "address",
+    "recorded_at",
   ],
 } as const;
 
@@ -476,14 +472,13 @@ export interface DelayNote extends Row {
 }
 
 export interface LoginLocation extends Row {
-  login_id: string;
+  login_location_id: string;
   email: string;
-  ip: string;
-  city: string;
-  region: string;
-  country: string;
-  user_agent: string;
-  logged_at: string;
+  role: Role;
+  latitude: string;
+  longitude: string;
+  address: string;
+  recorded_at: string;
 }
 
 export interface TabRows {
