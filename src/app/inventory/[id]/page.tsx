@@ -11,6 +11,11 @@ import { applyCorrection } from "../actions";
 import CorrectionPanel from "../CorrectionPanel";
 import RigChecks from "./RigChecks";
 
+// Always render this page fresh for whatever id is in the URL — never serve a cached render from a
+// different item. (Fixes: clicking one item sometimes showed another item's page/content.)
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 type InventoryItemPageProps = {
   params: Promise<{ id: string }>;
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
