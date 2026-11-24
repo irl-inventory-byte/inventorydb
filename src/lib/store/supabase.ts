@@ -19,7 +19,9 @@ export interface SupabaseConfig {
 const PAGE = 1000; // Supabase returns at most 1000 rows per request
 const CHUNK = 500; // rows per write request
 const EVENT_ID_CHUNK = 150; // ids per getEventsByIds request — keeps the "in.(...)" URL well under length limits
-const PARALLEL = 16; // page requests at the same time when reading a big table
+const PARALLEL = 6; // page requests at the same time when reading a big table — lowered from 16;
+// that many simultaneous connections was likely exceeding Supabase's connection limit and causing
+// the ECONNRESET failures seen on the 294K-row events full download.
 // Events only ever grow (a send or receive adds rows), so after one full download only the new rows are
 // fetched. The whole history is downloaded again only when the row count shows rows were removed, after an
 // event is edited on this server, or this often (to pick up a rare edit made on another server). Each full
@@ -61,17 +63,33 @@ export class SupabaseBackend implements TableBackend {
     body?: unknown,
     extra: Record<string, string> = {},
   ): Promise<Response> {
-    const res = await fetch(`${this.base}/${tab}?${query}`, {
-      method,
-      headers: this.headers(extra),
-      body: body === undefined ? undefined : JSON.stringify(body),
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Supabase ${method} ${tab} failed (${res.status}): ${text.slice(0, 500)}`);
+    const attempt = async () => {
+      const res = await fetch(`${this.base}/${tab}?${query}`, {
+        method,
+        headers: this.headers(extra),
+        body: body === undefined ? undefined : JSON.stringify(body),
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`Supabase ${method} ${tab} failed (${res.status}): ${text.slice(0, 500)}`);
+      }
+      return res;
+    };
+    // GETs have no side effects, so they're safe to retry. A transient blip (e.g. ECONNRESET, which
+    // showed up under the heavy parallel load of a full events download) would otherwise throw and
+    // crash the whole page instead of just trying again.
+    if (method !== "GET") return attempt();
+    let lastErr: unknown;
+    for (let i = 0; i < 3; i++) {
+      try {
+        return await attempt();
+      } catch (err) {
+        lastErr = err;
+        if (i < 2) await new Promise((r) => setTimeout(r, 300 * (i + 1)));
+      }
     }
-    return res;
+    throw lastErr;
   }
 
   /** Every column of the tab as text, nothing else (the REST API needs the same keys in every row). */
@@ -374,7 +392,10 @@ export class SupabaseBackend implements TableBackend {
   /** Permanent deletion of one item and its history. The calling server action checks it is an admin. */
   async deleteItemAndHistory(itemId: string): Promise<DeleteItemResult> {
     if (!itemId.trim()) throw new Error("An item ID is required.");
-    return this.writing(["items", "events"], () => this.deleteNow(itemId));
+    // "items" only, not "events": deleteNow() below patches the kept events copy itself (removing
+    // exactly the rows it deleted) instead of invalidating it, so a delete here no longer forces a
+    // full 294K-row re-download of the events table on the very next read.
+    return this.writing(["items"], () => this.deleteNow(itemId));
   }
 
   private async deleteNow(itemId: string): Promise<DeleteItemResult> {
@@ -386,11 +407,21 @@ export class SupabaseBackend implements TableBackend {
     const ev = await this.call("DELETE", "events", `item_id=eq.${id}&select=event_id`, undefined, {
       Prefer: "return=representation",
     });
-    const deletedEvents = ((await ev.json()) as unknown[]).length;
+    const deletedEventRows = (await ev.json()) as { event_id: string }[];
+    const deletedEvents = deletedEventRows.length;
     const it = await this.call("DELETE", "items", `item_id=eq.${id}&select=item_id`, undefined, {
       Prefer: "return=representation",
     });
     const deletedItems = ((await it.json()) as unknown[]).length;
+
+    // Patch the kept events copy in place instead of throwing it away: remove exactly the rows that
+    // were just deleted, so the next read's incremental check (kept rows + newly added rows == total
+    // count) still lines up and doesn't fall back to a full re-download. See refreshEvents() above.
+    if (this.events && deletedEventRows.length) {
+      const removedIds = new Set(deletedEventRows.map((r) => r.event_id));
+      this.events = { ...this.events, rows: this.events.rows.filter((r) => !removedIds.has(r.event_id)) };
+    }
+
     return { deletedItems, deletedEvents };
   }
 }
