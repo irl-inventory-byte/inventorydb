@@ -1,3 +1,4 @@
+import { gzipSync, gunzipSync } from "zlib";
 import { TABS, type Row, type TabName } from "../schema";
 import type { DeleteItemResult, TableBackend } from "./backend";
 
@@ -58,7 +59,7 @@ export class SupabaseBackend implements TableBackend {
 
   private async call(
     method: "GET" | "POST" | "DELETE",
-    tab: TabName | "table_versions",
+    tab: TabName | "table_versions" | "events_cache",
     query: string,
     body?: unknown,
     extra: Record<string, string> = {},
@@ -177,7 +178,53 @@ export class SupabaseBackend implements TableBackend {
     return this.eventsRead;
   }
 
+  /** Reads the shared, compressed copy of the events table that any instance may have written. */
+  private async readSharedEventsCache(): Promise<{ rows: Row[]; maxSeq: number; at: number } | null> {
+    const res = await this.call(
+      "GET",
+      "events_cache",
+      "select=data_gzip_b64,max_seq,row_count,updated_at&id=eq.1&limit=1",
+    );
+    const rows = (await res.json()) as { data_gzip_b64: string; max_seq: number; row_count: number }[];
+    const row = rows[0];
+    if (!row || !row.data_gzip_b64) return null;
+    const json = gunzipSync(Buffer.from(row.data_gzip_b64, "base64")).toString("utf8");
+    const parsed = JSON.parse(json) as Row[];
+    // Trust it only if the row count still lines up — a cheap sanity check against drift.
+    if (parsed.length !== row.row_count) return null;
+    return { rows: parsed, maxSeq: Number(row.max_seq), at: Date.now() };
+  }
+
+  /** Writes the current in-memory events copy back so every other instance can reuse it. */
+  private async writeSharedEventsCache(events: { rows: Row[]; maxSeq: number }): Promise<void> {
+    const gz = gzipSync(Buffer.from(JSON.stringify(events.rows), "utf8")).toString("base64");
+    await this.call(
+      "POST",
+      "events_cache",
+      "on_conflict=id",
+      [
+        {
+          id: 1,
+          data_gzip_b64: gz,
+          max_seq: events.maxSeq,
+          row_count: events.rows.length,
+          updated_at: new Date().toISOString(),
+        },
+      ],
+      { Prefer: "resolution=merge-duplicates,return=minimal" },
+    );
+  }
+
   private async refreshEvents(): Promise<Row[]> {
+    // A fresh/cold instance has nothing locally yet — try the shared copy before resorting to a full
+    // download of its own. This is what stops "(server start)" full downloads from happening on nearly
+    // every request: instead of every instance redownloading 295K rows independently, they all share
+    // one copy in Supabase itself (the events_cache table), kept current the same way below.
+    if (!this.events) {
+      const shared = await this.readSharedEventsCache().catch(() => null);
+      if (shared) this.events = shared;
+    }
+
     const kept = this.events;
     if (kept && Date.now() - kept.at < EVENTS_FULL_MS) {
       try {
@@ -185,6 +232,7 @@ export class SupabaseBackend implements TableBackend {
         if (this.events === kept && total === kept.rows.length + added.rows.length) {
           kept.rows.push(...added.rows);
           kept.maxSeq = Math.max(kept.maxSeq, added.maxSeq);
+          if (added.rows.length) await this.writeSharedEventsCache(kept).catch(() => {});
           return kept.rows;
         }
       } catch {
@@ -195,6 +243,7 @@ export class SupabaseBackend implements TableBackend {
     this.events = { rows: full.rows, maxSeq: full.maxSeq, at: Date.now() };
     // Shows in Vercel → Logs: how often the whole history is downloaded (each one counts as egress).
     console.log(`[supabase] full events download: ${full.rows.length} rows${kept ? "" : " (server start)"}`);
+    await this.writeSharedEventsCache(this.events).catch(() => {});
     return full.rows;
   }
 
@@ -417,9 +466,12 @@ export class SupabaseBackend implements TableBackend {
     // Patch the kept events copy in place instead of throwing it away: remove exactly the rows that
     // were just deleted, so the next read's incremental check (kept rows + newly added rows == total
     // count) still lines up and doesn't fall back to a full re-download. See refreshEvents() above.
+    // Also write that correction to the shared copy, so other instances get the same fix immediately
+    // instead of hitting the mismatch themselves and triggering their own full re-download.
     if (this.events && deletedEventRows.length) {
       const removedIds = new Set(deletedEventRows.map((r) => r.event_id));
       this.events = { ...this.events, rows: this.events.rows.filter((r) => !removedIds.has(r.event_id)) };
+      await this.writeSharedEventsCache(this.events).catch(() => {});
     }
 
     return { deletedItems, deletedEvents };
