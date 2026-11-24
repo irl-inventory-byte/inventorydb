@@ -126,15 +126,36 @@ export default function ReportLostScan({
 
   const statuses = useMemo(() => new Map(items.map((i) => [i.id, i.status])), [items]);
   const typeOf = useMemo(() => new Map(items.map((i) => [i.id, i.type ?? "sd_card"])), [items]);
+  // Power banks are stored as "Power Bank - <number>" (see power-bank-actions.ts), but what's printed
+  // on the device (or typed by hand) is usually just the number. Map bare numbers to their full id so
+  // those still match here, the same way mobiles are found by IMEI elsewhere in this app.
+  const powerBankByNumber = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const i of items) {
+      if (i.type !== "power_bank") continue;
+      const m = /^Power Bank - (\d+)$/.exec(i.id);
+      if (m) map.set(m[1], i.id);
+    }
+    return map;
+  }, [items]);
+  const resolveCode = (line: string) => {
+    const trimmed = line.trim();
+    return /^\d+$/.test(trimmed) ? (powerBankByNumber.get(trimmed) ?? line) : line;
+  };
+  const resolveText = (value: string) =>
+    value
+      .split(/\r?\n/)
+      .map(resolveCode)
+      .join("\n");
   // Anything not already at the target status can be reported.
   const allowed = useMemo(() => new Set(STATUSES.filter((s) => s !== status)), [status]);
-  const results = useMemo(() => classifyScans(text, statuses, allowed), [text, statuses, allowed]);
+  const results = useMemo(() => classifyScans(resolveText(text), statuses, allowed), [text, statuses, allowed, powerBankByNumber]);
   const ready = results.filter((r) => r.state === "ok").length;
   const duplicate = results.filter((r) => r.state === "duplicate").length;
   const alreadyMarked = results.filter((r) => r.state === "wrong").length;
 
   function cameraOutcome(code: string): ScanOutcome {
-    const r = classifyScans(code, statuses, allowed)[0];
+    const r = classifyScans(resolveCode(code), statuses, allowed)[0];
     if (!r || !r.id) return { ok: false, message: "Not found in the inventory" };
     const type = ITEM_TYPE_LABELS[typeOf.get(r.id) ?? "sd_card"];
     if (r.state === "wrong") return { id: r.id, type, ok: false, message: `Already ${label}` };

@@ -85,8 +85,7 @@ export class Store {
       tab === "settings" ||
       tab === "sd_card_durations" ||
       tab === "attention_notes" ||
-      tab === "delay_notes" ||
-      tab === "login_locations";
+      tab === "delay_notes";
     const rows = optional
       ? await this.readOptional(tab)
       : await this.backend.readAll(tab);
@@ -96,8 +95,7 @@ export class Store {
       tab === "settings" ||
       tab === "sd_card_durations" ||
       tab === "attention_notes" ||
-      tab === "delay_notes" ||
-      tab === "login_locations"
+      tab === "delay_notes"
     )
       return rows as unknown as TabRows[T][];
 
@@ -150,6 +148,50 @@ export class Store {
   }
 
   /**
+   * When getItem() finds nothing — even after normalizeId's fallback — this is the next place to look:
+   * every stored item_id that's close to the one being searched for (same text after lowercasing, one
+   * contained in the other, or just a shared prefix), each shown with its length and raw hex code points
+   * right next to the searched id's own. Used only to build a diagnostic "not found" page for admins —
+   * never for an actual lookup — so a genuine mismatch (a trailing character, a different case, a typo
+   * from an earlier bad add) is visible immediately on the page itself, instead of needing a screenshot
+   * round-trip of some separate debug tool.
+   */
+  async findSimilarItemIds(itemId: string, limit = 8) {
+    const items = await this.list("items");
+    const needle = itemId.trim().toLowerCase();
+
+    const scored = items
+      .map((item) => {
+        const id = item.item_id ?? "";
+        const hay = id.trim().toLowerCase();
+        let score = 0;
+        if (hay === needle) score = 100; // shouldn't happen (getItem would've found it), but just in case
+        else if (hay.includes(needle) || needle.includes(hay)) score = 80;
+        else {
+          let shared = 0;
+          while (shared < hay.length && shared < needle.length && hay[shared] === needle[shared]) shared++;
+          score = shared;
+        }
+        return { item, score };
+      })
+      .filter((s) => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+
+    const toHex = (s: string) => Array.from(s).map((ch) => ch.codePointAt(0)!.toString(16).padStart(4, "0")).join(" ");
+
+    return {
+      searched: { raw: itemId, length: itemId.length, hex: toHex(itemId) },
+      candidates: scored.map(({ item }) => ({
+        item_id: item.item_id,
+        length: item.item_id.length,
+        hex: toHex(item.item_id),
+        item_type: item.item_type,
+      })),
+    };
+  }
+
+  /**
    * Same as getItem, but forces a fresh read of "items" first — bypassing any cached copy from a
    * moment ago (see TableBackend.invalidate's comment). Use this where showing "not found" when the
    * item actually exists would be a real problem, e.g. the delete-confirmation page: a stale cache on a
@@ -170,11 +212,19 @@ export class Store {
     const exact = new Map(
       items.map((item) => [item.item_id, item])
     );
-    // Mobiles can also be found by their IMEI (QR code), Asset Tag or Serial.
-    const phoneAliases = new Map(
-      items.filter((item) => item.item_type === "mobile").map((item) => [item.item_id, mobileAliases(item.attributes)]),
-    );
-    const { byUpper, phones } = scanIndex(exact.keys(), phoneAliases);
+    // Mobiles can also be found by their IMEI (QR code), Asset Tag or Serial. Power banks are stored
+    // as "Power Bank - <number>" (see power-bank-actions.ts's ASSET_TAG_FORMAT), but the number alone
+    // — what's usually written on the device or typed/scanned by hand — is accepted too.
+    const aliases = new Map<string, string[]>();
+    for (const item of items) {
+      if (item.item_type === "mobile") {
+        aliases.set(item.item_id, mobileAliases(item.attributes));
+      } else if (item.item_type === "power_bank") {
+        const m = /^Power Bank - (\d+)$/.exec(item.item_id);
+        if (m) aliases.set(item.item_id, [m[1]]);
+      }
+    }
+    const { byUpper, phones } = scanIndex(exact.keys(), aliases);
 
     const found = new Map<string, Item>();
 
