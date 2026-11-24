@@ -38,6 +38,7 @@ export async function addLostNote(formData: FormData) {
       recorded_at: istTimestamp(),
       recorded_by: (user.email ?? "unknown").toLowerCase(),
       recorded_by_name: displayName(people, user.personId ?? "") || user.name || user.email || "",
+      photo: "", // this plain investigation-note form has no photo field; only reportLostScan() attaches one
     },
   ]);
   revalidatePath("/lost");
