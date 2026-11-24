@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import RoleSwitch from "./RoleSwitch";
 import GeoCapture from "./GeoCapture";
@@ -249,12 +250,17 @@ export default async function Home({
       <main className={styles.wrap}>
         <div className={styles.top}>
           <div className={styles.brand}>
-            <span className={styles.brandIconPlain}>
-              <Icon name="layers" size={26} />
+            {/* Instawork's wordmark is black-on-transparent — a white chip keeps it visible regardless
+                of light/dark theme, instead of the old dark icon square (which would hide it). */}
+            <span
+              className={styles.brandIconPlain}
+              style={{ background: "#fff", padding: "8px 10px" }}
+            >
+              <Image src="/Instawork.svg" alt="Instawork" width={140} height={22} style={{ width: "auto", height: 20 }} />
             </span>
 
             <div>
-              <h1>Inventory</h1>
+              <h1>IRL Inventory Dashboard</h1>
 
               <p className={styles.subtitle}>
                 {greeting}. Tracking Inventory Across Hubs.
