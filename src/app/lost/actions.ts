@@ -38,7 +38,6 @@ export async function addLostNote(formData: FormData) {
       recorded_at: istTimestamp(),
       recorded_by: (user.email ?? "unknown").toLowerCase(),
       recorded_by_name: displayName(people, user.personId ?? "") || user.name || user.email || "",
-      photo: ""
     },
   ]);
   revalidatePath("/lost");
@@ -89,11 +88,14 @@ export async function reportLostScan(formData: FormData) {
   // chosen from the dropdown (grouped by city); blank keeps each item's current hub.
   const hub = String(formData.get("hub") ?? "").trim();
 
-  // Photo: optional. Same small-JPEG-data-URL convention as rig_reports' photo (see
-  // rigs/unknown/actions.ts) — silently dropped rather than blocking the report if it looks wrong,
-  // since (unlike the rig report) a photo here was never required.
+  // Photo or PDF: required. The phone always re-encodes a photo to a small JPEG data: URL (same
+  // convention as rig_reports' photo — see rigs/unknown/actions.ts); a PDF can't be shrunk the same
+  // way, so it's only accepted as-is, and only if it was already small enough to fit.
   const photoRaw = String(formData.get("photo") ?? "");
-  const photo = photoRaw.startsWith("data:image/jpeg;base64,") && photoRaw.length <= MAX_PHOTO ? photoRaw : "";
+  const isPhotoData = photoRaw.startsWith("data:image/jpeg;base64,");
+  const isPdfData = photoRaw.startsWith("data:application/pdf;base64,");
+  const photo = (isPhotoData || isPdfData) && photoRaw.length <= MAX_PHOTO ? photoRaw : "";
+  if (!photo) back({ error: "Add a photo or PDF of the item. It is required.", status });
 
   const store = storeForAll(user.role);
   const found = await store.getItemsByIds(ids);

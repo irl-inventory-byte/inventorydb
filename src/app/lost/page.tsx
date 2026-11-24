@@ -175,7 +175,14 @@ export default async function LostItemsPage({
                               <p style={{ margin: 0 }}>
                                 <strong>{formatIst(n.recorded_at)}</strong> ({n.recorded_by_name || n.recorded_by}): {n.note}
                               </p>
-                              {n.photo && (
+                              {n.photo && n.photo.startsWith("data:application/pdf") && (
+                                <p style={{ margin: "4px 0 0" }}>
+                                  <a href={n.photo} target="_blank" rel="noopener noreferrer">
+                                    📄 View attached PDF
+                                  </a>
+                                </p>
+                              )}
+                              {n.photo && !n.photo.startsWith("data:application/pdf") && (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img
                                   src={n.photo}

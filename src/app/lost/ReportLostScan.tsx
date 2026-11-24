@@ -38,6 +38,25 @@ async function shrinkPhoto(file: File): Promise<string> {
 }
 
 /**
+ * A PDF can't be re-encoded smaller the way a photo can (no quality slider), so this just reads it
+ * as-is and checks it actually fits the same sheet-cell limit — most real PDFs won't (45,000 base64
+ * characters is only around 33KB of actual file), so this is expected to reject most PDFs with a
+ * clear message rather than silently truncating one.
+ */
+function readPdfAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const data = String(reader.result ?? "");
+      if (data.length <= MAX_PHOTO_CHARS) resolve(data);
+      else reject(new Error("too large"));
+    };
+    reader.onerror = () => reject(new Error("read failed"));
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
  * Admin/IM only: scan (or paste) item codes and report them as Lost or Broken right from this page,
  * instead of going to the Inventory page's Correct form. Reuses the same "correct" event under the
  * hood (see lib/lost.ts), so the report shows up exactly like one made there.
@@ -91,13 +110,19 @@ export default function ReportLostScan({
     if (!file) return;
     setPhotoBusy(true);
     try {
-      setPhoto(await shrinkPhoto(file));
+      const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+      setPhoto(isPdf ? await readPdfAsDataUrl(file) : await shrinkPhoto(file));
     } catch {
-      setPhotoError("This photo could not be used. Take it again.");
+      setPhotoError(
+        file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")
+          ? "This PDF is too large to attach — try a smaller file, or attach a photo instead."
+          : "This photo could not be used. Take it again.",
+      );
     } finally {
       setPhotoBusy(false);
     }
   };
+  const isPdfPhoto = photo.startsWith("data:application/pdf");
 
   const statuses = useMemo(() => new Map(items.map((i) => [i.id, i.status])), [items]);
   const typeOf = useMemo(() => new Map(items.map((i) => [i.id, i.type ?? "sd_card"])), [items]);
@@ -212,25 +237,30 @@ export default function ReportLostScan({
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <label htmlFor="lost-photo-file" style={{ fontSize: "0.72rem", color: "#64748b" }}>
-            Photo *
+            Photo or PDF *
           </label>
           <input
             id="lost-photo-file"
             type="file"
-            accept="image/*"
-            capture="environment"
+            accept="image/*,.pdf,application/pdf"
             required
             onChange={(e) => onPhotoFile(e.target.files?.[0])}
             style={{ fontSize: "0.85rem" }}
           />
-          {photoBusy && <p style={{ margin: 0, fontSize: "0.8rem", color: "#64748b" }}>Preparing the photo…</p>}
+          {photoBusy && <p style={{ margin: 0, fontSize: "0.8rem", color: "#64748b" }}>Preparing the file…</p>}
           {photoError && <p style={{ margin: 0, fontSize: "0.8rem", color: "#b3261e" }}>{photoError}</p>}
-          {photo && (
+          {photo && isPdfPhoto && (
+            <a href={photo} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.85rem" }}>
+              📄 View attached PDF
+            </a>
+          )}
+          {photo && !isPdfPhoto && (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={photo} alt="Photo to attach" style={{ marginTop: 4, maxWidth: 200, borderRadius: 8, border: "1px solid #cbd5e1" }} />
           )}
           <p style={{ margin: 0, fontSize: "0.72rem", color: "#64748b" }}>
-            Required. If more than one item is scanned above, the same photo is attached to each of them.
+            Required — a photo or a PDF. If more than one item is scanned above, the same file is attached to
+            each of them.
           </p>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
