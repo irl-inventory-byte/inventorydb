@@ -39,29 +39,33 @@ export default async function ItemPage({ params, searchParams }: InventoryItemPa
       .toUpperCase()
       .replace(/[‒–—−]/g, "-") // en dash, em dash, figure dash, minus sign → "-"
       .replace(/\s+/g, " "); // any run of whitespace (incl. non-breaking space) → one plain space
+  // The id as it was actually typed/clicked, decoded once, normalized once — computed up front (not only
+  // inside the "not found yet" branch below) because the type-hint correction further down needs the
+  // *searched-for* id, not whatever id the wrong match happens to carry.
+  let decoded = id;
+  try {
+    decoded = decodeURIComponent(id);
+  } catch {
+    // Not valid percent-encoding — fall through and use the raw id as-is below.
+  }
+  const wantedId = normalize(decoded);
+
   let item = await store.getItem(id);
   if (!item) {
-    let decoded = id;
-    try {
-      decoded = decodeURIComponent(id);
-    } catch {
-      // Not valid percent-encoding — fall through and try the raw id as-is below.
-    }
-    const wanted = normalize(decoded);
     const items = await store.list("items");
-    item = items.find((i) => normalize(i.item_id) === wanted);
+    item = items.find((i) => normalize(i.item_id) === wantedId);
   }
   // Two different items (e.g. an SD card and a power bank) can end up with the same item_id text —
   // usually an old SD card code re-typed as a power bank's Asset Tag. getItem()/the fallback above just
   // return whichever one happens to come first in the list, which could be the wrong type entirely (a
   // power bank link opening an SD card's "IC-…" history instead). The list page already knows each row's
   // real type when it builds the link, so it passes it along as ?type=; when that hint is present and the
-  // item we found doesn't match it, look for another item with the same (normalized) id that does.
+  // item we found doesn't match it, look for another item with the id actually being searched for
+  // (wantedId — NOT the wrong item's own item_id, which is a different string entirely) that does match.
   const typeHint = one(sp.type);
   if (item && typeHint && itemType(item) !== typeHint) {
     const items = await store.list("items");
-    const wanted = normalize(item.item_id);
-    const match = items.find((i) => normalize(i.item_id) === wanted && itemType(i) === typeHint);
+    const match = items.find((i) => normalize(i.item_id) === wantedId && itemType(i) === typeHint);
     if (match) item = match;
   }
   if (!item) notFound();
