@@ -227,7 +227,7 @@ export const ACTIONS = [
 export type Action = (typeof ACTIONS)[number];
 
 // "internal" = an internal person items can be handed to (no login).
-export const ROLES = ["admin", "im", "ifo", "fo", "rig", "hardware", "qc", "internal"] as const;
+export const ROLES = ["admin", "im", "ifo", "fo", "rig", "hardware", "qc", "internal", "ic"] as const;
 export type Role = (typeof ROLES)[number];
 
 export type Row = Record<string, string>;

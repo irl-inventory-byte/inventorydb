@@ -28,7 +28,7 @@ export default async function AttentionPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   // Same roles as the "Need attention" tile on the home page — Admin and IM only.
-  const user = await requireRole("admin", "im");
+  const user = await requireRole();
 
   const sp = await searchParams;
   const minDaysRaw = Number(one(sp.days) || "0");
