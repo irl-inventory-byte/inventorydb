@@ -32,7 +32,7 @@ const typeOf = (item: Row) =>
 // exact-string match in getItem() silently failed on a character nobody could see was different.
 const normalizeId = (id: string) =>
   id
-    .replace(/[  -​  　]/g, " ") // NBSP and other invisible/odd spaces -> normal space
+    .replace(/[  -​  　]/g, " ") // NBSP and other invisible/odd spaces -> normal space
     .replace(/[‐-―−]/g, "-") // en-dash, em-dash, minus sign, etc. -> plain hyphen
     .replace(/\s+/g, " ") // collapse doubled/multiple spaces
     .trim();
@@ -81,6 +81,7 @@ export class Store {
       tab === "rig_reports" ||
       tab === "acknowledgments" ||
       tab === "lost_notes" ||
+      tab === "lost_attachments" ||
       tab === "audits" ||
       tab === "settings" ||
       tab === "sd_card_durations" ||
@@ -321,7 +322,7 @@ export class Store {
       await this.backend.append("deletions", [row]);
     }
   }
-  
+
   /**
    * Record an admin edit to a past receipt in the "receipt_edits" tab.
    * Creates the tab the first time it is needed.

@@ -98,15 +98,11 @@ export const TABS = {
   ],
   // Investigation notes for lost (or broken) items: a free-text note per entry, oldest first,
   // shown on the Lost items page. One row per note added.
-  lost_notes: [
-    "note_id",
-    "item_id",
-    "note",
-    "recorded_at",
-    "recorded_by",
-    "recorded_by_name",
-    "photo", // small JPEG as a data: URL (shrunk on the phone, same as rig_reports' photo), or blank
-  ],
+  lost_notes: ["note_id", "item_id", "note", "recorded_at", "recorded_by", "recorded_by_name"],
+  // Photo/PDF proof attached when an item is reported lost/broken by scan (see lost/ReportLostScan.tsx
+  // and lost/actions.ts's reportLostScan). One row per item reported in that submission. Shown as a
+  // column on the Lost items page, next to the investigation notes.
+  lost_attachments: ["attachment_id", "item_id", "recorded_at", "recorded_by", "recorded_by_name", "photo", "pdf"],
   // City/Hub Audit confirmations: someone physically checked that an in-stock item is really
   // there. Doesn't change status or location — just a log entry, shown in the item's History.
   audits: ["audit_id", "item_id", "audited_at", "audited_by", "audited_by_name"],
@@ -163,13 +159,6 @@ export const TABS = {
     "recorded_by_name",
     "recorded_at",
     "forwarded", // "yes" | "no: <reason>" — whether the copy sent to the Google Script succeeded
-    // These two are added AT THE END on purpose: this store (Google Sheets, src/lib/store/sheets.ts)
-    // reads and writes every row by COLUMN POSITION, not by header name — inserting a new field earlier
-    // in this list shifts every column after it out of alignment with the physical sheet, which is
-    // what broke the data when these were first added in the middle. Adding more fields later must
-    // also go at the end, never inserted between existing ones.
-    "detected", // IM form only: "detected" | "not_detected" | "" (blank on Rig-form entries)
-    "note", // Rig form only: free text, optional — "" if none given (blank on IM-form entries)
   ],
   // Manual flags shown in the dashboard's "Needs attention" section, alongside the automatic delayed-card
   // table — a free-text note anyone can add (e.g. "Chase city X about missing cards"), with who added it
@@ -197,18 +186,6 @@ export const TABS = {
     "recorded_at",
     "recorded_by", // login email
     "recorded_by_name",
-  ],
-  // One row per browser location capture, taken right after a successful sign-in (see
-  // app/GeoCapture.tsx + app/api/login-location/route.ts). Only recorded if the person's browser
-  // grants the location permission prompt — nothing is written if they decline.
-  login_locations: [
-    "login_location_id",
-    "email",
-    "role",
-    "latitude",
-    "longitude",
-    "address", // reverse-geocoded city/area, best-effort — "" if the lookup failed
-    "recorded_at",
   ],
 } as const;
 
@@ -250,8 +227,7 @@ export const ACTIONS = [
 export type Action = (typeof ACTIONS)[number];
 
 // "internal" = an internal person items can be handed to (no login).
-// "ic" = IC: sends items only to an FO, always from/to Bangalore (see /ic/transfer).
-export const ROLES = ["admin", "im", "ifo", "fo", "rig", "hardware", "qc", "internal", "ic"] as const;
+export const ROLES = ["admin", "im", "ifo", "fo", "rig", "hardware", "qc", "internal"] as const;
 export type Role = (typeof ROLES)[number];
 
 export type Row = Record<string, string>;
@@ -399,7 +375,16 @@ export interface LostNote extends Row {
   recorded_at: string;
   recorded_by: string;
   recorded_by_name: string;
-  photo: string;
+}
+
+export interface LostAttachment extends Row {
+  attachment_id: string;
+  item_id: string;
+  recorded_at: string;
+  recorded_by: string;
+  recorded_by_name: string;
+  photo: string; // small JPEG as a data: URL, or ""
+  pdf: string; // a PDF as a data: URL, or ""
 }
 
 export interface Audit extends Row {
@@ -448,8 +433,6 @@ export interface SdCardDuration extends Row {
   failed_hours: string;
   failed_raw_clips: string;
   raw_clips: string;
-  detected: string; // "detected" | "not_detected" | "" — IM form only
-  note: string; // free text, optional — Rig form only
   recorded_by: string;
   recorded_by_name: string;
   recorded_at: string;
@@ -478,16 +461,6 @@ export interface DelayNote extends Row {
   recorded_by_name: string;
 }
 
-export interface LoginLocation extends Row {
-  login_location_id: string;
-  email: string;
-  role: string;
-  latitude: string;
-  longitude: string;
-  address: string;
-  recorded_at: string;
-}
-
 export interface TabRows {
   items: Item;
   events: ItemEvent;
@@ -503,10 +476,10 @@ export interface TabRows {
   rig_reports: RigReport;
   acknowledgments: Acknowledgment;
   lost_notes: LostNote;
+  lost_attachments: LostAttachment;
   audits: Audit;
   settings: Setting;
   sd_card_durations: SdCardDuration;
   attention_notes: AttentionNote;
   delay_notes: DelayNote;
-  login_locations: LoginLocation;
 }

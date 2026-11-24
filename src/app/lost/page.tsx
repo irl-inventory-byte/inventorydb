@@ -16,14 +16,11 @@ const money = (v: string) => (v ? `₹${Number(v).toLocaleString("en-IN")}` : "�
 
 /**
  * LOST ITEMS: the detail view behind the dashboard's "Lost" (and, with ?status=damaged, "Broken")
- * tile. Date, who last held the item, who recorded it, city/hub, item, amount, and a free-text
- * investigation-notes thread per item (Admin/IM can add to it). Filterable by item type.
+ * tile. Date, who last held the item, who recorded it, city/hub, item, amount, an attached
+ * photo/PDF (if one was provided when it was reported), and a free-text investigation-notes thread
+ * per item (Admin/IM can add to it). Filterable by item type.
  */
-export default async function LostItemsPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+export default async function LostItemsPage({ searchParams }: PageProps<"/lost">) {
   const user = await requireRole(...VIEW_ROLES);
   const canAddNote = user.role === "admin" || user.role === "im";
   const sp = await searchParams;
@@ -35,13 +32,21 @@ export default async function LostItemsPage({
   const reported = Number(one(sp.reported) || "0");
 
   const store = storeForAll(user.role);
-  const [items, events, hubs, notes, people] = await Promise.all([
+  const [items, events, hubs, notes, people, attachments] = await Promise.all([
     store.list("items"),
     store.list("events"),
     store.list("hubs"),
     store.list("lost_notes"),
     store.list("people"),
+    store.list("lost_attachments"),
   ]);
+
+  // Latest attachment per item (an item could in principle be reported more than once over time).
+  const attachmentFor = new Map<string, (typeof attachments)[number]>();
+  for (const a of attachments) {
+    const prev = attachmentFor.get(a.item_id);
+    if (!prev || Date.parse(a.recorded_at || "0") >= Date.parse(prev.recorded_at || "0")) attachmentFor.set(a.item_id, a);
+  }
 
   const all = lostList(items, events, hubs, status);
   const byType = Object.entries(TYPE_NAME)
@@ -136,12 +141,14 @@ export default async function LostItemsPage({
                 <th>Hub</th>
                 <th>Person(s)</th>
                 <th>Amount</th>
+                <th>Photo / PDF</th>
                 <th>Investigation notes</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => {
                 const history = notesFor(notes, r.item_id);
+                const attachment = attachmentFor.get(r.item_id);
                 const people = [r.lastHeldBy && `Last held by ${r.lastHeldBy}`, r.recordedBy && `Recorded by ${r.recordedBy}`]
                   .filter(Boolean)
                   .join(" · ");
@@ -158,6 +165,24 @@ export default async function LostItemsPage({
                     <td>{r.hub || "—"}</td>
                     <td>{people || "—"}</td>
                     <td>{money(r.amount)}</td>
+                    <td>
+                      {attachment?.photo && (
+                        <a href={attachment.photo} target="_blank" rel="noreferrer" style={{ display: "inline-block" }}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={attachment.photo}
+                            alt={`Photo for ${r.item_id}`}
+                            style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 6, border: "1px solid #e5e7eb" }}
+                          />
+                        </a>
+                      )}
+                      {attachment?.pdf && (
+                        <a href={attachment.pdf} target="_blank" rel="noreferrer" download={`${r.item_id}.pdf`} style={{ display: "block", fontSize: "0.8rem" }}>
+                          📄 View PDF
+                        </a>
+                      )}
+                      {!attachment?.photo && !attachment?.pdf && <span style={{ color: "#94a3b8" }}>—</span>}
+                    </td>
                     <td style={{ minWidth: 260 }}>
                       <details open={openItem === r.item_id}>
                         <summary style={{ cursor: "pointer" }}>
@@ -171,26 +196,9 @@ export default async function LostItemsPage({
                             </p>
                           )}
                           {history.map((n) => (
-                            <div key={n.note_id}>
-                              <p style={{ margin: 0 }}>
-                                <strong>{formatIst(n.recorded_at)}</strong> ({n.recorded_by_name || n.recorded_by}): {n.note}
-                              </p>
-                              {n.photo && n.photo.startsWith("data:application/pdf") && (
-                                <p style={{ margin: "4px 0 0" }}>
-                                  <a href={n.photo} target="_blank" rel="noopener noreferrer">
-                                    📄 View attached PDF
-                                  </a>
-                                </p>
-                              )}
-                              {n.photo && !n.photo.startsWith("data:application/pdf") && (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={n.photo}
-                                  alt={`Photo for ${r.item_id}`}
-                                  style={{ marginTop: 4, maxWidth: 180, borderRadius: 8, border: "1px solid #e2e8f0" }}
-                                />
-                              )}
-                            </div>
+                            <p key={n.note_id} style={{ margin: 0 }}>
+                              <strong>{formatIst(n.recorded_at)}</strong> ({n.recorded_by_name || n.recorded_by}): {n.note}
+                            </p>
                           ))}
                           {canAddNote && (
                             <form action={addLostNote} style={{ display: "flex", gap: 6, marginTop: 4 }} data-progress="1">

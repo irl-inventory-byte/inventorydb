@@ -11,6 +11,11 @@ import { collectIds } from "@/lib/scan";
 import { getStore } from "@/lib/store";
 import { istTimestamp } from "@/lib/time";
 
+// Matches rig_reports' photo limit (a Google Sheets cell holds at most 50,000 characters) — kept the
+// same here even though this is a Postgres text column, so a photo built by the same shrink() helper
+// on the client is always accepted.
+const MAX_ATTACHMENT = 48_000;
+
 /** Lost items: Admin and IM can add a free-text investigation note to a lost (or broken) item. */
 export async function addLostNote(formData: FormData) {
   const user = await requireRole("admin", "im");
@@ -38,23 +43,21 @@ export async function addLostNote(formData: FormData) {
       recorded_at: istTimestamp(),
       recorded_by: (user.email ?? "unknown").toLowerCase(),
       recorded_by_name: displayName(people, user.personId ?? "") || user.name || user.email || "",
-      photo: "", // this plain investigation-note form has no photo field; only reportLostScan() attaches one
     },
   ]);
   revalidatePath("/lost");
   back({ saved: "1", item: itemId });
 }
 
-// A Google Sheets cell holds at most 50,000 characters; the phone shrinks the photo to fit under this
-// (same limit as rig_reports' photo — see rigs/unknown/actions.ts).
-const MAX_PHOTO = 48_000;
-
 /**
  * Report lost/broken by scan: Admin and IM scan (or paste) one or more item codes and give a
  * required note. Reuses the same Correction machinery as the Inventory page's Correct form (a
  * "correct" event is what lostList() reads as the original report), just scoped to one target
- * status and with no hub/holder fields to fill in. A required photo is attached as the first
- * investigation note (lost_notes) for each reported item.
+ * status and with no hub/holder fields to fill in.
+ *
+ * A photo and/or PDF can be attached (see ReportLostScan.tsx) — sent as a "photo" and/or "pdf"
+ * data: URL field. One row per reported item is saved to lost_attachments so the Lost items page
+ * can show it.
  */
 export async function reportLostScan(formData: FormData) {
   const user = await requireRole("admin", "im");
@@ -89,14 +92,12 @@ export async function reportLostScan(formData: FormData) {
   // chosen from the dropdown (grouped by city); blank keeps each item's current hub.
   const hub = String(formData.get("hub") ?? "").trim();
 
-  // Photo or PDF: required. The phone always re-encodes a photo to a small JPEG data: URL (same
-  // convention as rig_reports' photo — see rigs/unknown/actions.ts); a PDF can't be shrunk the same
-  // way, so it's only accepted as-is, and only if it was already small enough to fit.
+  // Photo/PDF proof (both optional). Each is a data: URL built on the client (see ReportLostScan.tsx);
+  // anything too big or not a data: URL is dropped rather than failing the whole report.
   const photoRaw = String(formData.get("photo") ?? "");
-  const isPhotoData = photoRaw.startsWith("data:image/jpeg;base64,");
-  const isPdfData = photoRaw.startsWith("data:application/pdf;base64,");
-  const photo = (isPhotoData || isPdfData) && photoRaw.length <= MAX_PHOTO ? photoRaw : "";
-  if (!photo) back({ error: "Add a photo or PDF of the item. It is required.", status });
+  const photo = photoRaw.startsWith("data:image/") && photoRaw.length <= MAX_ATTACHMENT ? photoRaw : "";
+  const pdfRaw = String(formData.get("pdf") ?? "");
+  const pdf = pdfRaw.startsWith("data:application/pdf") && pdfRaw.length <= MAX_ATTACHMENT ? pdfRaw : "";
 
   const store = storeForAll(user.role);
   const found = await store.getItemsByIds(ids);
@@ -148,22 +149,28 @@ export async function reportLostScan(formData: FormData) {
   }
 
   if (plan.items.length) {
+    const recordedByName = displayName(people, user.personId ?? "") || user.name || user.email || "";
     await getStore().commitBatch(plan.events, plan.items);
-    if (photo) {
-      // One lost_notes row per reported item, so the photo shows up right away in that item's
-      // investigation-notes thread on the Lost items page.
-      await getStore().appendRows(
-        "lost_notes",
-        plan.items.map((item) => ({
-          note_id: `ln-${randomUUID().slice(0, 8)}`,
-          item_id: item.item_id,
-          note: `Photo attached when reported ${label}.`,
-          recorded_at: occurredAt,
-          recorded_by: (user.email ?? "unknown").toLowerCase(),
-          recorded_by_name: displayName(people, user.personId ?? "") || user.name || user.email || "",
-          photo,
-        })),
-      );
+    if (photo || pdf) {
+      // One attachment row per reported item, so each shows its own photo/PDF on the Lost page even
+      // when several items were reported together in one scan.
+      try {
+        await getStore().appendRows(
+          "lost_attachments",
+          plan.items.map((item) => ({
+            attachment_id: `la-${randomUUID().slice(0, 8)}`,
+            item_id: item.item_id,
+            recorded_at: istTimestamp(),
+            recorded_by: (user.email ?? "unknown").toLowerCase(),
+            recorded_by_name: recordedByName,
+            photo,
+            pdf,
+          })),
+        );
+      } catch {
+        // The lost_attachments table may not exist yet (run supabase/create-lost-attachments-table.sql).
+        // Don't fail the whole report over a missing attachment — the item is still correctly marked.
+      }
     }
     revalidatePath("/lost");
     revalidatePath("/dashboard");
