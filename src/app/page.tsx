@@ -64,6 +64,13 @@ const WORK: Tile[] = [
     roles: ["admin", "qc"],
   },
   {
+    href: "https://script.google.com/macros/s/AKfycbwuGFH7H6fEGcL-OPcprtbEqNrwU0hl5zEN0KlOcbkPx6wCBmKRwdBXAa5wP4kTHDUG/exec",
+    title: "QC Checkout Tracker",
+    desc: "Opens the QC checkout tracker in a new tab.",
+    icon: "check",
+    roles: ["admin", "qc"],
+  },
+  {
     href: "/attention",
     title: "Needs attention",
     desc: "Items an FO, IFO, rig team or internal person has held too long, or sent to a hub and not received.",
