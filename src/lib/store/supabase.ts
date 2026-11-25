@@ -20,7 +20,7 @@ export interface SupabaseConfig {
 const PAGE = 1000; // Supabase returns at most 1000 rows per request
 const CHUNK = 500; // rows per write request
 const EVENT_ID_CHUNK = 150; // ids per getEventsByIds request — keeps the "in.(...)" URL well under length limits
-const PARALLEL = 6; // page requests at the same time when reading a big table — lowered from 16;
+const PARALLEL = 2; // page requests at the same time when reading a big table — lowered from 16;
 // that many simultaneous connections was likely exceeding Supabase's connection limit and causing
 // the ECONNRESET failures seen on the 294K-row events full download.
 // Events only ever grow (a send or receive adds rows), so after one full download only the new rows are
@@ -388,7 +388,8 @@ export class SupabaseBackend implements TableBackend {
 
     // Safety margin: twice as many buckets as a naive total/PAGE split, so an uneven spread of rows
     // across the range rarely trips the split-and-retry path below.
-    const bucketCount = Math.max(1, Math.ceil(total / (PAGE / 2)));
+    
+    const bucketCount = Math.max(1, Math.ceil(total / PAGE));
     const span = hi0 - lo0;
     const initial: [number, number][] = [];
     for (let i = 0; i < bucketCount; i++) {
