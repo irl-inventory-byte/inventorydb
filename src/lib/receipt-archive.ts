@@ -19,6 +19,26 @@ import { getStore } from "./store";
 import { formatIst } from "./time";
 
 /**
+ * SMTP sends occasionally fail on a transient hiccup (a dropped connection, a momentary rate-limit from
+ * the provider) rather than a real, lasting problem — and because this whole step runs inside
+ * archiveReceipt()'s catch-everything wrapper (by design: an email problem must never undo or block a
+ * handover that already saved), a transient failure here was previously indistinguishable from a real
+ * one — both just silently produced "no email, no error shown anywhere but a console.error log". One
+ * retry after a short pause turns most of those transient cases into a successful send instead.
+ */
+async function sendReceiptEmailWithRetry(
+  options: Parameters<typeof sendReceiptEmail>[0],
+): Promise<ReceiptEmailResult> {
+  try {
+    return await sendReceiptEmail(options);
+  } catch (error) {
+    console.error("[receipt-archive] Email send failed, retrying once:", error);
+    await new Promise((r) => setTimeout(r, 1500));
+    return sendReceiptEmail(options);
+  }
+}
+
+/**
  * Receipt archive.
  *
  * After a handover is saved, this builds a PDF of the receipt, uploads it to
@@ -719,7 +739,7 @@ export async function saveReceipt(
     }
 
     const email: ReceiptEmailResult = toCanEmail
-      ? await sendReceiptEmail({
+      ? await sendReceiptEmailWithRetry({
           summary,
           title: ACTION_TITLE[summary.action] ?? "Batch record",
           pdf,
@@ -747,7 +767,7 @@ export async function saveReceipt(
       summary.fromId !== summary.toId &&
       fromCanEmail
     ) {
-      const fromEmail = await sendReceiptEmail({
+      const fromEmail = await sendReceiptEmailWithRetry({
         summary,
         title: ACTION_TITLE[summary.action] ?? "Batch record",
         pdf,
@@ -764,7 +784,7 @@ export async function saveReceipt(
     // regardless of role, since they asked to be named here explicitly rather than being inferred
     // from the batch's From/To parties.
     if (options?.extraRecipients?.length) {
-      const extraEmail = await sendReceiptEmail({
+      const extraEmail = await sendReceiptEmailWithRetry({
         summary,
         title: ACTION_TITLE[summary.action] ?? "Batch record",
         pdf,
