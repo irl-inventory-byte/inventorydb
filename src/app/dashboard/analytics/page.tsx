@@ -816,7 +816,7 @@ export default async function AnalyticsPage({
               <ul className={styles.list}>
                 {d.inconsistencies.slice(0, 20).map((p) => (
                   <li key={p.item_id}>
-                    <Link href={`/inventory/${encodeURIComponent(p.item_id)}`}>
+                    <Link href={`/inventory/${encodeURIComponent(p.item_id)}?type=${encodeURIComponent(p.item_type)}`}>
                       {p.item_id}
                     </Link>
                     : {p.reason}

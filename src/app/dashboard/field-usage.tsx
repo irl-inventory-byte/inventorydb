@@ -117,7 +117,10 @@ export function FieldUsageCard({
             return (
               <tr key={r.item.item_id}>
                 <td>
-                  <Link href={`/inventory/${encodeURIComponent(r.item.item_id)}`} className={styles.link}>
+                  <Link
+                    href={`/inventory/${encodeURIComponent(r.item.item_id)}?type=${encodeURIComponent(r.item.item_type)}`}
+                    className={styles.link}
+                  >
                     {r.item.item_id}
                   </Link>
                 </td>
