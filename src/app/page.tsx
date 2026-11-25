@@ -254,7 +254,7 @@ export default async function Home({
                 of light/dark theme, instead of the old dark icon square (which would hide it). */}
             <span
               className={styles.brandIconPlain}
-              style={{ background: "#fff", padding: "8px 10px" }}
+              style={{ background: "#fff", padding: "8px 10px", width: "auto", height: "auto" }}
             >
               <Image src="/Instawork.svg" alt="Instawork" width={140} height={22} style={{ width: "auto", height: 20 }} />
             </span>
