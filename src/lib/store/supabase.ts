@@ -356,6 +356,36 @@ export class SupabaseBackend implements TableBackend {
     const columns = TABS[tab];
     const lo0 = afterSeq ?? 0;
 
+    // Every other table (items, hubs, people, users, qc_checks, …) is small enough that plain OFFSET
+    // pagination is never at risk of the statement-timeout that _seq-range pagination exists to avoid —
+    // that only ever showed up on "events" at ~295K rows. Those tables take this cheap, simple path
+    // instead: skip the count+max-seq preflight below (two round trips for nothing when the whole table
+    // is one page) and just page with OFFSET/LIMIT until a short page says there's no more. Since every
+    // write bumps the table's version and forces a re-download on the next read, this runs on nearly
+    // every page load right after a save — so trimming it to the minimum number of requests matters for
+    // how fast a send/receive feels, not just for big-table correctness.
+    if (tab !== "events") {
+      const rows: Row[] = [];
+      let maxSeq = lo0;
+      for (let offset = 0; ; offset += PAGE) {
+        const res = await this.call(
+          "GET",
+          tab,
+          `select=${columns.join(",")},_seq&_seq=gt.${lo0}&order=_seq.asc&limit=${PAGE}&offset=${offset}`,
+        );
+        const page = (await res.json()) as Record<string, unknown>[];
+        for (const r of page) {
+          const row: Row = {};
+          for (const c of columns) row[c] = r[c] === null || r[c] === undefined ? "" : String(r[c]);
+          const seq = Number(r._seq);
+          if (seq > maxSeq) maxSeq = seq;
+          rows.push(row);
+        }
+        if (page.length < PAGE) break;
+      }
+      return { rows, maxSeq };
+    }
+
     const [countRes, maxRes] = await Promise.all([
       this.call("GET", tab, `select=_seq&_seq=gt.${lo0}&limit=1`, undefined, { Prefer: "count=exact" }),
       this.call("GET", tab, `select=_seq&_seq=gt.${lo0}&order=_seq.desc&limit=1`),
