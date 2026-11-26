@@ -115,8 +115,10 @@ export default async function ReceiptsPage({
       occurredAt: first.occurred_at,
       fromName: first.from_person,
       fromHub: hub(first.from_hub),
+      fromRole: roleOf.get(first.from_id) as Role | undefined,
       toName: first.to_person,
       toHub: hub(first.hub),
+      toRole: roleOf.get(first.to_id) as Role | undefined,
       // For the filters: both cities, both roles and both names on the receipt, and its IST day.
       cities: [hubCity.get(first.from_hub), hubCity.get(first.hub)].filter((c): c is string => !!c),
       roles: [roleOf.get(first.from_id), roleOf.get(first.to_id)].filter((r): r is Role => !!r),
@@ -336,10 +338,16 @@ export default async function ReceiptsPage({
                     <td style={{ whiteSpace: "nowrap" }}>{r.batchId}</td>
                     <td>
                       {r.fromName || "—"}
+                      {r.fromRole && (
+                        <div className={styles.muted}>{ROLE_LABELS[r.fromRole] ?? r.fromRole}</div>
+                      )}
                       {r.fromHub && <div className={styles.muted}>{r.fromHub}</div>}
                     </td>
                     <td>
                       {r.toName || "—"}
+                      {r.toRole && (
+                        <div className={styles.muted}>{ROLE_LABELS[r.toRole] ?? r.toRole}</div>
+                      )}
                       {r.toHub && <div className={styles.muted}>{r.toHub}</div>}
                     </td>
                     <td>{r.items.length}</td>
