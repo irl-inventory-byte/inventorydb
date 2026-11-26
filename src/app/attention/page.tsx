@@ -288,33 +288,41 @@ export default async function AttentionPage({
                               {itemNotes.length} of {groupItems.length} noted — view individually
                             </Link>
                           ) : (
-                            <div style={{ display: "flex", gap: 6 }}>
-                              <form action={addDelayNote} style={{ display: "flex", gap: 6, flex: 1, minWidth: 0 }} data-progress="1">
-                                <input type="hidden" name="item_id" value={forItem} />
-                                <input type="hidden" name="item_type" value={g.type} />
-                                <input type="hidden" name="person" value={g.person} />
-                                <input type="hidden" name="sent_by" value={g.sentBy} />
-                                <input
-                                  name="note"
-                                  defaultValue={existing?.note ?? ""}
-                                  placeholder="What happened? e.g. Called Chandu, will courier it back Mon…"
-                                  style={{ flex: 1, minWidth: 0, padding: "4px 8px", border: "1px solid #cbd5e1", borderRadius: 6, fontSize: "0.82rem" }}
-                                />
-                                <button type="submit" style={{ padding: "4px 10px", fontSize: "0.8rem" }}>
-                                  Save
-                                </button>
-                              </form>
-                              {existing && (
-                                <form action={deleteDelayNote} data-progress="1">
-                                  <input type="hidden" name="note_id" value={existing.note_id} />
-                                  <button
-                                    type="submit"
-                                    title="Delete this note"
-                                    style={{ padding: "4px 10px", fontSize: "0.8rem", color: "#dc2626", border: "1px solid #cbd5e1", borderRadius: 6, background: "#fff" }}
-                                  >
-                                    Delete
+                            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <form action={addDelayNote} style={{ display: "flex", gap: 6, flex: 1, minWidth: 0 }} data-progress="1">
+                                  <input type="hidden" name="item_id" value={forItem} />
+                                  <input type="hidden" name="item_type" value={g.type} />
+                                  <input type="hidden" name="person" value={g.person} />
+                                  <input type="hidden" name="sent_by" value={g.sentBy} />
+                                  <input
+                                    name="note"
+                                    defaultValue={existing?.note ?? ""}
+                                    placeholder="What happened? e.g. Called Chandu, will courier it back Mon…"
+                                    style={{ flex: 1, minWidth: 0, padding: "4px 8px", border: "1px solid #cbd5e1", borderRadius: 6, fontSize: "0.82rem" }}
+                                  />
+                                  <button type="submit" style={{ padding: "4px 10px", fontSize: "0.8rem" }}>
+                                    Save
                                   </button>
                                 </form>
+                                {existing && (
+                                  <form action={deleteDelayNote} data-progress="1">
+                                    <input type="hidden" name="note_id" value={existing.note_id} />
+                                    <button
+                                      type="submit"
+                                      title="Delete this note"
+                                      style={{ padding: "4px 10px", fontSize: "0.8rem", color: "#dc2626", border: "1px solid #cbd5e1", borderRadius: 6, background: "#fff" }}
+                                    >
+                                      Delete
+                                    </button>
+                                  </form>
+                                )}
+                              </div>
+                              {existing && (
+                                <span className={styles.muted} style={{ fontSize: "0.72rem" }}>
+                                  — {existing.recorded_by_name || existing.recorded_by || "—"}
+                                  {existing.recorded_at ? `, ${formatIst(existing.recorded_at)}` : ""}
+                                </span>
                               )}
                             </div>
                           )}
