@@ -222,7 +222,13 @@ export default async function ItemPage({ params, searchParams }: InventoryItemPa
           hardwareUpdates={hardwareUpdates}
           qcChecks={qcChecks}
           canHardware={HARDWARE_ROLES.includes(user.role)}
-          canRetire={HARDWARE_ROLES.includes(user.role) && item.status === "with_hardware"}
+          canRetire={
+            HARDWARE_ROLES.includes(user.role) &&
+            item.status !== "retired" &&
+            // Hardware itself may only declare dead a rig that's actually with the hardware team;
+            // Admin/IM can declare any non-retired rig dead no matter where it currently is.
+            (user.role !== "hardware" || item.status === "with_hardware")
+          }
           canQc={QC_ROLES.includes(user.role)}
         />
       )}

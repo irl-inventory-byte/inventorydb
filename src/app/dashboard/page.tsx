@@ -632,7 +632,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
           : rigCount[k]
             ? rigShare(rigCount[k])
             : (RIG_TILE[k].hint ?? ""),
-    href: `/rigs?state=${k}`,
+    // "Dead / Retired" opens the Dead rigs scan-to-retire page instead of the filtered Rig checks
+    // list — that's the page meant for working with dead rigs, not a read-only list of them.
+    href: k === "dead" ? "/rigs/retire" : `/rigs?state=${k}`,
     icon: RIG_TILE[k].icon,
     color: RIG_TILE[k].color,
     // Rigs with field officers: city-wise list too, like SD cards and mobiles.

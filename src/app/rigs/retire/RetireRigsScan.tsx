@@ -39,7 +39,7 @@ export default function RetireRigsScan({ rigs }: { rigs: { id: string; hub?: str
 
   function cameraOutcome(code: string): ScanOutcome {
     const key = code.toUpperCase();
-    if (!eligible.has(key)) return { ok: false, message: "Not eligible to retire (not with hardware, or not yours)" };
+    if (!eligible.has(key)) return { ok: false, message: "Not eligible to retire (already retired, or not found)" };
     return { id: code, ok: true, message: `Will be retired${hubOf.get(key) ? ` · ${hubOf.get(key)}` : ""}` };
   }
 
@@ -79,7 +79,7 @@ export default function RetireRigsScan({ rigs }: { rigs: { id: string; hub?: str
           {results.map((r, i) => (
             <li key={`${r.code}-${i}`} style={{ color: r.state === "ok" ? "#166534" : r.state === "duplicate" ? "#64748b" : "#b3261e" }}>
               {r.state === "ok" ? "✓" : r.state === "duplicate" ? "•" : "✕"} <code>{r.code}</code>
-              {r.state === "not_eligible" && " — not eligible (not with hardware, or not yours)"}
+              {r.state === "not_eligible" && " — not eligible (already retired, not a rig, or not found)"}
               {r.state === "duplicate" && " — scanned twice, counted once"}
             </li>
           ))}

@@ -414,16 +414,26 @@ export async function retireRig(formData: FormData) {
   if (formData.get("confirm") !== "on") {
     redirect(`${back}?${new URLSearchParams({ error: "Tick the box to confirm the rig is dead." })}`);
   }
-  if (item.status !== "with_hardware") {
-    redirect(`${back}?${new URLSearchParams({ error: "Only a rig with the hardware team can be declared dead." })}`);
+  if (item.status === "retired") {
+    redirect(`${back}?${new URLSearchParams({ error: "This rig is already retired." })}`);
+  }
+  // Admin / IM can declare a rig dead no matter where it currently sits (with an FO, in stock, in
+  // transit, anywhere) — a dead rig is dead regardless of who last had it. A Hardware login stays
+  // restricted to a rig the system shows as with the hardware team AND checked out to them
+  // personally, same as before: hardware only sees (and should only act on) what's physically in
+  // front of them.
+  if (user.role === "hardware") {
+    if (item.status !== "with_hardware") {
+      redirect(`${back}?${new URLSearchParams({ error: "Only a rig with the hardware team can be declared dead." })}`);
+    }
+    if (user.personId && item.current_holder !== user.personId) {
+      redirect(`${back}?${new URLSearchParams({ error: "This rig is with another hardware team member." })}`);
+    }
   }
 
   const me = await whoIs(user);
   const people = await getStore().list("people");
   const holderName = people.find((p) => p.person_id === item.current_holder)?.name ?? item.current_holder;
-  if (user.role === "hardware" && user.personId && item.current_holder !== user.personId) {
-    redirect(`${back}?${new URLSearchParams({ error: "This rig is with another hardware team member." })}`);
-  }
 
   const now = istTimestamp();
   const event = {
@@ -469,10 +479,12 @@ export async function retireRig(formData: FormData) {
 
 /**
  * Same rule as retireRig() above, just scanned/pasted in bulk with one shared reason instead of
- * opening each rig's own page one at a time: Admin/IM may retire any rig currently with the
- * hardware team; a Hardware login may only retire rigs the system shows as checked out to them
- * personally (item.current_holder === their person_id) — same restriction retireRig() enforces for
- * a single rig, kept here so a hardware login can't retire a rig sitting with a teammate.
+ * opening each rig's own page one at a time: Admin/IM may retire ANY rig that isn't already retired,
+ * no matter where it currently sits (with an FO, in stock, in transit, with hardware — anywhere). A
+ * Hardware login stays restricted to a rig the system shows as with the hardware team AND checked
+ * out to them personally (item.current_holder === their person_id) — same restriction retireRig()
+ * enforces for a single rig, kept here so a hardware login can't retire a rig sitting with a
+ * teammate or one it has no business touching.
  */
 export async function retireRigsBulk(formData: FormData) {
   const user = await requireRole(...HARDWARE_ROLES);
@@ -495,11 +507,18 @@ export async function retireRigsBulk(formData: FormData) {
   const notRigs = matches.filter((item) => itemType(item) !== "rig");
   const rigs = matches.filter((item) => itemType(item) === "rig");
 
-  const notWithHardware = rigs.filter((item) => item.status !== "with_hardware");
-  const eligible = rigs.filter((item) => item.status === "with_hardware");
+  const alreadyDead = rigs.filter((item) => item.status === "retired");
+  // Admin/IM: any rig that isn't already retired, regardless of status or who holds it. Hardware:
+  // only a rig the system shows as with_hardware — their own restriction below narrows that further
+  // to just the ones checked out to them.
+  const eligible =
+    user.role === "hardware"
+      ? rigs.filter((item) => item.status === "with_hardware")
+      : rigs.filter((item) => item.status !== "retired");
+  const notWithHardware = user.role === "hardware" ? rigs.filter((item) => item.status !== "with_hardware") : [];
 
   // A Hardware login may only retire what the system shows as checked out to them personally —
-  // same guard retireRig() applies to a single rig.
+  // same guard retireRig() applies to a single rig. Admin/IM have no such restriction.
   const notMine =
     user.role === "hardware" && user.personId
       ? eligible.filter((item) => item.current_holder !== user.personId)
@@ -514,9 +533,11 @@ export async function retireRigsBulk(formData: FormData) {
       ? "held by someone else on the hardware team"
       : notWithHardware.length
         ? "not currently with the hardware team"
-        : notRigs.length
-          ? "not a rig"
-          : "not found";
+        : alreadyDead.length
+          ? "already retired"
+          : notRigs.length
+            ? "not a rig"
+            : "not found";
     back({ error: `None of the scanned items could be retired (${why}). Nothing was saved.` });
     return;
   }
