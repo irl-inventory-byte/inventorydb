@@ -462,3 +462,117 @@ export async function retireRig(formData: FormData) {
   refresh(item.item_id);
   redirect(`${back}?${new URLSearchParams({ done: "retired" })}`);
 }
+
+/* ------------------------------------------------------------------ */
+/* DECLARE SEVERAL RIGS DEAD AT ONCE: Hardware team (and Admin / IM)    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Same rule as retireRig() above, just scanned/pasted in bulk with one shared reason instead of
+ * opening each rig's own page one at a time: Admin/IM may retire any rig currently with the
+ * hardware team; a Hardware login may only retire rigs the system shows as checked out to them
+ * personally (item.current_holder === their person_id) — same restriction retireRig() enforces for
+ * a single rig, kept here so a hardware login can't retire a rig sitting with a teammate.
+ */
+export async function retireRigsBulk(formData: FormData) {
+  const user = await requireRole(...HARDWARE_ROLES);
+  const back = (q: Record<string, string>) => redirect(`/rigs/retire?${new URLSearchParams(q)}`);
+
+  const reason = String(formData.get("reason") ?? "").trim().slice(0, 1000);
+  if (!reason) back({ error: "Write why these rigs are dead." });
+  if (formData.get("confirm") !== "on") back({ error: "Tick the box to confirm these rigs are dead." });
+
+  const ids = [...new Set(String(formData.get("scanned") ?? "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean))];
+  if (!ids.length) back({ error: "Scan or enter at least one rig." });
+
+  const store = getStore();
+  const found = await store.getItemsByIds(ids);
+  const missing = ids.filter((id) => !found.has(id));
+
+  // One row per real rig, de-duplicated by its actual item_id (two scanned lines can resolve to the
+  // same rig in a different letter case).
+  const matches = [...new Map(ids.filter((id) => found.has(id)).map((id) => [found.get(id)!.item_id, found.get(id)!])).values()];
+  const notRigs = matches.filter((item) => itemType(item) !== "rig");
+  const rigs = matches.filter((item) => itemType(item) === "rig");
+
+  const notWithHardware = rigs.filter((item) => item.status !== "with_hardware");
+  const eligible = rigs.filter((item) => item.status === "with_hardware");
+
+  // A Hardware login may only retire what the system shows as checked out to them personally —
+  // same guard retireRig() applies to a single rig.
+  const notMine =
+    user.role === "hardware" && user.personId
+      ? eligible.filter((item) => item.current_holder !== user.personId)
+      : [];
+  const toRetire =
+    user.role === "hardware" && user.personId
+      ? eligible.filter((item) => item.current_holder === user.personId)
+      : eligible;
+
+  if (!toRetire.length) {
+    const why = notMine.length
+      ? "held by someone else on the hardware team"
+      : notWithHardware.length
+        ? "not currently with the hardware team"
+        : notRigs.length
+          ? "not a rig"
+          : "not found";
+    back({ error: `None of the scanned items could be retired (${why}). Nothing was saved.` });
+    return;
+  }
+
+  const me = await whoIs(user);
+  const people = await getStore().list("people");
+  const now = istTimestamp();
+
+  const events = toRetire.map((item) => {
+    const holderName = people.find((p) => p.person_id === item.current_holder)?.name ?? item.current_holder;
+    return {
+      event_id: newId("e"),
+      batch_id: newId("b"),
+      item_id: item.item_id,
+      action: "retire" as const,
+      from_person: holderName,
+      to_person: "",
+      from_id: item.current_holder,
+      to_id: "",
+      from_hub: item.current_hub,
+      hub: item.current_hub,
+      status_after: "retired" as const,
+      occurred_at: now,
+      recorded_at: now,
+      recorded_by: me.email,
+      note: `Declared dead: ${reason}`,
+    };
+  });
+
+  await store.commitBatch(
+    events,
+    toRetire.map((item) => ({
+      ...item,
+      status: "retired" as const,
+      current_holder: "",
+      last_event_id: events.find((e) => e.item_id === item.item_id)!.event_id,
+      updated_at: now,
+    })),
+  );
+  await store.appendRows(
+    "hardware_updates",
+    toRetire.map((item) => ({
+      update_id: newId("hw"),
+      item_id: item.item_id,
+      recorded_at: now,
+      recorded_by: me.email,
+      recorded_by_name: me.name,
+      update_type: "Declared dead",
+      comment: reason,
+    })),
+  );
+
+  refresh();
+  back({
+    retired: String(toRetire.length),
+    skipped: String(notMine.length + notWithHardware.length + notRigs.length),
+    missing: String(missing.length),
+  });
+}

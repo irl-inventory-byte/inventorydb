@@ -117,6 +117,9 @@ export default async function RigsPage({
         <BackLink />
       </p>
       <h1>Rig checks</h1>
+      <p className={styles.row} style={{ marginTop: 0 }}>
+        <Link href="/rigs/retire">Dead rigs →</Link>
+      </p>
       <p className={styles.muted}>
         {rigs.length} rigs · {counts.qc_pending ?? 0} QC pending · {counts.pass ?? 0} pass · {counts.fail ?? 0} fail · {counts.repaired ?? 0} repaired.
         Open a rig to add a hardware update or QC result.
