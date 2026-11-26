@@ -342,6 +342,7 @@ export default async function AttentionPage({
                     <th>Person</th>
                     <th>With whom</th>
                     <th>Note</th>
+                    <th>By</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -362,6 +363,7 @@ export default async function AttentionPage({
                       <td>{note.person || "—"}</td>
                       <td>{note.sent_by || "—"}</td>
                       <td style={{ whiteSpace: "normal" }}>{note.note}</td>
+                      <td>{note.recorded_by_name || note.recorded_by || "—"}</td>
                       <td>
                         <form action={deleteDelayNote} data-progress="1">
                           <input type="hidden" name="note_id" value={note.note_id} />
