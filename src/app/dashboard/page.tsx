@@ -596,17 +596,28 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   };
 
   // RIGS: one tile per rig state (see RIG_STATES in lib/rig-state.ts). Each opens Rig checks filtered to it.
+  // Every rig tile below is built from this one deduplicated list (one entry per item_id) instead of the
+  // raw `items` array directly: a row fetched twice by the underlying paginated read (two pages can
+  // overlap when a write lands between them — see the OFFSET-pagination note in lib/store/supabase.ts)
+  // would otherwise get counted twice everywhere below, which is exactly the kind of thing that makes
+  // these tiles add up to more than the real "Rigs" total instead of matching it.
+  const seenRigIds = new Set<string>();
+  const rigItems = items.filter((i) => {
+    if (!isRig(i)) return false;
+    if (seenRigIds.has(i.item_id)) return false;
+    seenRigIds.add(i.item_id);
+    return true;
+  });
   const rigCount = Object.fromEntries(RIG_STATES.map((k) => [k, 0])) as Record<RigState, number>;
-  for (const i of items) {
-    if (!isRig(i)) continue;
+  for (const i of rigItems) {
     const st = rigState(i.status, latestQc.get(i.item_id));
     rigCount[st] = (rigCount[st] ?? 0) + 1;
   }
   // RTD items specifically still on their way to the IM (repaired by hardware, status "pending" — not
   // yet received), as opposed to the "RTD" tile's total, which also counts ones already received
   // (status "in_stock") — see rigState()'s "rtd" case in lib/rig-state.ts.
-  const rtdPendingCount = items.filter(
-    (i) => isRig(i) && i.status === "pending" && latestQc.get(i.item_id) === "repaired",
+  const rtdPendingCount = rigItems.filter(
+    (i) => i.status === "pending" && latestQc.get(i.item_id) === "repaired",
   ).length;
   // Sent to hardware, not received by them yet. rigState() in lib/rig-state.ts deliberately still
   // folds this into the "hardware" state for every OTHER page that reads it (e.g. /rigs?state=hardware
@@ -614,7 +625,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   // hardware team" and "Hardware to receive" are now two separate, non-overlapping buckets: a rig only
   // moves into "With hardware team" once hardware has actually received it (status "with_hardware");
   // until then it shows only here, in "Hardware to receive".
-  const hwPendingCount = items.filter((i) => isRig(i) && i.status === "pending_hardware").length;
+  const hwPendingCount = rigItems.filter((i) => i.status === "pending_hardware").length;
   // rigCount["hardware"] above still includes pending_hardware (that's what rigState() returns for
   // both statuses) — subtract it back out so the dashboard tile shows received-only.
   rigCount.hardware = Math.max(0, rigCount.hardware - hwPendingCount);
@@ -623,12 +634,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   // but on this dashboard, "In stock" and "IM to receive" are now two separate, non-overlapping buckets:
   // a rig only moves into "In stock" once the IM has actually received it; until then it shows only here,
   // in "IM to receive".
-  const imReceivePendingCount = items.filter(
-    (i) =>
-      isRig(i) &&
-      i.status === "pending" &&
-      latestQc.get(i.item_id) !== "repaired" &&
-      latestQc.get(i.item_id) !== "pass",
+  const imReceivePendingCount = rigItems.filter(
+    (i) => i.status === "pending" && latestQc.get(i.item_id) !== "repaired" && latestQc.get(i.item_id) !== "pass",
   ).length;
   // rigCount["in_stock"] above still includes that plain-pending slice — subtract it back out so the
   // dashboard tile shows received-only.
@@ -636,7 +643,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   // rigCount["rtd"] above still includes rtdPendingCount (repaired-but-not-yet-received) — subtract it
   // back out so the dashboard tile shows received-only, the same split as hardware and in_stock above.
   rigCount.rtd = Math.max(0, rigCount.rtd - rtdPendingCount);
-  const rigTotal = items.filter(isRig).length;
+  // Sent to QC, not received yet. rigState()'s "pending_qc" case folds this into "qc_pending" alongside
+  // rigs QC has actually received (status "with_qc") — same double-count shape as the other three above.
+  // Split it the same way so "QC pending" and "QC to receive" are non-overlapping too.
+  const qcPendingReceiptCount = rigItems.filter((i) => i.status === "pending_qc").length;
+  rigCount.qc_pending = Math.max(0, rigCount.qc_pending - qcPendingReceiptCount);
+  const rigTotal = rigItems.length;
   const rigShare = (v: number) => (rigTotal ? `${Math.round((v / rigTotal) * 100)}% of all rigs` : "");
   const RIG_TILE: Record<(typeof RIG_STATES)[number], { icon: IconName; color: string; hint?: string }> = {
     in_stock: { icon: "check", color: "var(--series-3)", hint: "Received by the IM" },
@@ -688,12 +700,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   // Every rig sent and not received yet, one tile per destination — IM, QC, hardware. ("To be received",
   // the combined admin-only version of these three, and "Hardware team (all)" / "Sanitization" were
   // removed — these replace it, broken out and visible to everyone who sees the rig tiles.)
-  const rigsOnly = items.filter(isRig);
-  const imPendingCount = rigsOnly.filter((i) => i.status === "pending").length;
-  const qcPendingReceiptCount = rigsOnly.filter((i) => i.status === "pending_qc").length;
+  // Every rig with status "pending" is already accounted for by one of the three tiles above it
+  // (RTD waiting, if hardware-repaired; QC passed, if QC-passed; this one, otherwise) — using the
+  // narrower imReceivePendingCount here, instead of every status==="pending" rig, is what keeps this
+  // tile from double-counting those other two.
   rigKpis.push({
     label: "IM to receive",
-    value: imPendingCount,
+    value: imReceivePendingCount,
     hint: "Sent to an IM, not received yet",
     href: inventory({ type: "rig", status: "pending" }),
     icon: "inbox",
