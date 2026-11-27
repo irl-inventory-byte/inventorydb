@@ -539,13 +539,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
       });
   };
 
+  // A plain `i.item_type === "rig"` only matched that exact lowercase string, so a row saved with
+  // different casing or stray whitespace ("Rig", "rig ", …) silently fell out of every rig count below
+  // and the "Rigs" total undercounted by however many rows that happened to — this is why the total
+  // showed 459 instead of the real 460. Normalizing here fixes every rig count on this page at once.
+  const isRig = (i: Item) => i.item_type.trim().toLowerCase() === "rig";
+
   // City-wise count of rigs in a given RIG STATE (in_stock, transit, …). A rig state can come from more
   // than one raw status (e.g. "in_stock" = status in_stock not yet repaired, or status pending not yet QC
   // passed), so this re-runs rigState() per item rather than matching a simple status set like citiesFor.
   const citiesForRigState = (state: RigState, hrefStatuses: Status[]) => {
     const count = new Map<string, number>();
     for (const i of items) {
-      if (i.item_type !== "rig" || rigState(i.status, latestQc.get(i.item_id)) !== state) continue;
+      if (!isRig(i) || rigState(i.status, latestQc.get(i.item_id)) !== state) continue;
       const c = cityOfHub.get(i.current_hub) || i.current_hub || "Not set";
       count.set(c, (count.get(c) ?? 0) + 1);
     }
@@ -567,7 +573,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   const routesForRigState = (state: RigState, hrefStatuses: Status[]) => {
     const count = new Map<string, { from: string; to: string; n: number }>();
     for (const i of items) {
-      if (i.item_type !== "rig" || rigState(i.status, latestQc.get(i.item_id)) !== state) continue;
+      if (!isRig(i) || rigState(i.status, latestQc.get(i.item_id)) !== state) continue;
       const e = eventByIdForRoutes.get(i.last_event_id);
       const fromCity = (e && cityOfHub.get(e.from_hub)) || e?.from_hub || "Unknown";
       const toCity = cityOfHub.get(i.current_hub) || i.current_hub || "Not set";
@@ -592,7 +598,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   // RIGS: one tile per rig state (see RIG_STATES in lib/rig-state.ts). Each opens Rig checks filtered to it.
   const rigCount = Object.fromEntries(RIG_STATES.map((k) => [k, 0])) as Record<RigState, number>;
   for (const i of items) {
-    if (i.item_type !== "rig") continue;
+    if (!isRig(i)) continue;
     const st = rigState(i.status, latestQc.get(i.item_id));
     rigCount[st] = (rigCount[st] ?? 0) + 1;
   }
@@ -600,17 +606,23 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   // yet received), as opposed to the "RTD" tile's total, which also counts ones already received
   // (status "in_stock") — see rigState()'s "rtd" case in lib/rig-state.ts.
   const rtdPendingCount = items.filter(
-    (i) => i.item_type === "rig" && i.status === "pending" && latestQc.get(i.item_id) === "repaired",
+    (i) => isRig(i) && i.status === "pending" && latestQc.get(i.item_id) === "repaired",
   ).length;
-  // Sent to hardware, not received by them yet. These are already counted under "With hardware team"
-  // above (see rigState in lib/rig-state.ts) — this is just the "not yet received" slice of that same
-  // tile, shown separately below so it's clear which of them hardware still needs to pick up.
-  const hwPendingCount = items.filter((i) => i.item_type === "rig" && i.status === "pending_hardware").length;
-  const rigTotal = items.filter((i) => i.item_type === "rig").length;
+  // Sent to hardware, not received by them yet. rigState() in lib/rig-state.ts deliberately still
+  // folds this into the "hardware" state for every OTHER page that reads it (e.g. /rigs?state=hardware
+  // needs both so hardware can see everything coming their way) — but on this dashboard, "With
+  // hardware team" and "Hardware to receive" are now two separate, non-overlapping buckets: a rig only
+  // moves into "With hardware team" once hardware has actually received it (status "with_hardware");
+  // until then it shows only here, in "Hardware to receive".
+  const hwPendingCount = items.filter((i) => isRig(i) && i.status === "pending_hardware").length;
+  // rigCount["hardware"] above still includes pending_hardware (that's what rigState() returns for
+  // both statuses) — subtract it back out so the dashboard tile shows received-only.
+  rigCount.hardware = Math.max(0, rigCount.hardware - hwPendingCount);
+  const rigTotal = items.filter(isRig).length;
   const rigShare = (v: number) => (rigTotal ? `${Math.round((v / rigTotal) * 100)}% of all rigs` : "");
   const RIG_TILE: Record<(typeof RIG_STATES)[number], { icon: IconName; color: string; hint?: string }> = {
     in_stock: { icon: "check", color: "var(--series-3)", hint: "With the IM" },
-    hardware: { icon: "wrench", color: "var(--series-1)", hint: "Sent to hardware, whether or not received yet" },
+    hardware: { icon: "wrench", color: "var(--series-1)", hint: "Received by hardware" },
     internal: { icon: "user", color: "var(--series-7)", hint: "Checked out to internal people" },
     fo: { icon: "user", color: "var(--series-2)", hint: "Checked out to an FO" },
     transit: { icon: "truck", color: "var(--series-4)", hint: "Sent by the IM to an IFO" },
@@ -658,7 +670,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   // Every rig sent and not received yet, one tile per destination — IM, QC, hardware. ("To be received",
   // the combined admin-only version of these three, and "Hardware team (all)" / "Sanitization" were
   // removed — these replace it, broken out and visible to everyone who sees the rig tiles.)
-  const rigsOnly = items.filter((i) => i.item_type === "rig");
+  const rigsOnly = items.filter(isRig);
   const imPendingCount = rigsOnly.filter((i) => i.status === "pending").length;
   const qcPendingReceiptCount = rigsOnly.filter((i) => i.status === "pending_qc").length;
   rigKpis.push({
