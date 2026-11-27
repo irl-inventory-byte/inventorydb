@@ -618,10 +618,28 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
   // rigCount["hardware"] above still includes pending_hardware (that's what rigState() returns for
   // both statuses) — subtract it back out so the dashboard tile shows received-only.
   rigCount.hardware = Math.max(0, rigCount.hardware - hwPendingCount);
+  // Sent to an IM, not received yet. rigState()'s "pending" case deliberately falls back to "in_stock"
+  // for a plain pending transfer (no QC repair, no QC pass involved) for every OTHER page that reads it —
+  // but on this dashboard, "In stock" and "IM to receive" are now two separate, non-overlapping buckets:
+  // a rig only moves into "In stock" once the IM has actually received it; until then it shows only here,
+  // in "IM to receive".
+  const imReceivePendingCount = items.filter(
+    (i) =>
+      isRig(i) &&
+      i.status === "pending" &&
+      latestQc.get(i.item_id) !== "repaired" &&
+      latestQc.get(i.item_id) !== "pass",
+  ).length;
+  // rigCount["in_stock"] above still includes that plain-pending slice — subtract it back out so the
+  // dashboard tile shows received-only.
+  rigCount.in_stock = Math.max(0, rigCount.in_stock - imReceivePendingCount);
+  // rigCount["rtd"] above still includes rtdPendingCount (repaired-but-not-yet-received) — subtract it
+  // back out so the dashboard tile shows received-only, the same split as hardware and in_stock above.
+  rigCount.rtd = Math.max(0, rigCount.rtd - rtdPendingCount);
   const rigTotal = items.filter(isRig).length;
   const rigShare = (v: number) => (rigTotal ? `${Math.round((v / rigTotal) * 100)}% of all rigs` : "");
   const RIG_TILE: Record<(typeof RIG_STATES)[number], { icon: IconName; color: string; hint?: string }> = {
-    in_stock: { icon: "check", color: "var(--series-3)", hint: "With the IM" },
+    in_stock: { icon: "check", color: "var(--series-3)", hint: "Received by the IM" },
     hardware: { icon: "wrench", color: "var(--series-1)", hint: "Received by hardware" },
     internal: { icon: "user", color: "var(--series-7)", hint: "Checked out to internal people" },
     fo: { icon: "user", color: "var(--series-2)", hint: "Checked out to an FO" },
@@ -629,7 +647,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Re
     qc_pending: { icon: "shield", color: "var(--series-7)", hint: "Received by QC" },
     qc_pass: { icon: "check", color: "var(--series-3)", hint: "Passed by QC, sent to IM, not received yet" },
     qc_fail: { icon: "alert", color: "var(--warning)", hint: "QC marked Fail, not yet sent to hardware" },
-    rtd: { icon: "send", color: "var(--series-3)", hint: "Repaired by hardware — sent to IM, whether or not received yet" },
+    rtd: { icon: "send", color: "var(--series-3)", hint: "Repaired by hardware, received by the IM" },
     dead: { icon: "archive", color: "var(--text-muted)", hint: "Declared dead by hardware" },
     rnd: { icon: "wrench", color: "var(--series-7)", hint: "Moved to R&D by hardware" },
   };
